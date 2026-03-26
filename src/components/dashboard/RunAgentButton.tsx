@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export function RunAgentButton() {
@@ -8,6 +8,12 @@ export function RunAgentButton() {
   const [lastRun, setLastRun] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<{ decisions: number; marketOpen: boolean } | null>(null)
   const router = useRouter()
+
+  // Auto-refresh dashboard data every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(() => router.refresh(), 60_000)
+    return () => clearInterval(interval)
+  }, [router])
 
   async function handleRun() {
     setIsRunning(true)
@@ -44,7 +50,7 @@ export function RunAgentButton() {
       <button
         onClick={handleRun}
         disabled={isRunning}
-        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+        className="flex items-center gap-2 bg-[#1daa6c] hover:bg-[#168b57] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
       >
         {isRunning ? (
           <>
