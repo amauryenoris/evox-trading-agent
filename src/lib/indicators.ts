@@ -135,6 +135,72 @@ export function calculateSMA(bars: AlpacaBar[], period: number): number | null {
 }
 
 // ============================================================
+// Kalman Filter — adaptive fair price estimator (E.P. Chan)
+// Adapted for single-asset mean reversion detection
+// ============================================================
+
+export function calculateKalman(
+  bars: AlpacaBar[],
+  entryStd = 1.5,
+  exitStd = 0.5
+): TechnicalIndicators['kalman'] {
+  if (bars.length < 30) return null
+
+  const closes = bars.map((b) => b.c)
+
+  // Derive observation noise R from actual return variance
+  const returns: number[] = []
+  for (let i = 1; i < closes.length; i++) {
+    returns.push((closes[i] - closes[i - 1]) / closes[i - 1])
+  }
+  const retMean = returns.reduce((s, r) => s + r, 0) / returns.length
+  const R = returns.reduce((s, r) => s + Math.pow(r - retMean, 2), 0) / returns.length
+  const Q = R * 0.01 // process noise: state evolves slowly (1% of observation noise)
+
+  // Initialize filter
+  let x = closes[0] // state estimate = fair price
+  let P = R         // initial error covariance
+
+  const forecastErrors: number[] = []
+
+  for (let i = 1; i < closes.length; i++) {
+    // Prediction step
+    const P_pred = P + Q
+
+    // Kalman gain
+    const K = P_pred / (P_pred + R)
+
+    // Forecast error before update
+    const e = closes[i] - x
+    forecastErrors.push(e)
+
+    // Update step
+    x = x + K * e
+    P = (1 - K) * P_pred
+  }
+
+  // Dynamic error std dev from rolling window (last 30 observations)
+  const windowErrors = forecastErrors.slice(-30)
+  const errMean = windowErrors.reduce((s, e) => s + e, 0) / windowErrors.length
+  const errVar = windowErrors.reduce((s, e) => s + Math.pow(e - errMean, 2), 0) / windowErrors.length
+  const errorStdDev = Math.sqrt(errVar)
+
+  const forecastError = forecastErrors[forecastErrors.length - 1]
+  const zScore = errorStdDev === 0 ? 0 : forecastError / errorStdDev
+
+  let signal: 'MEAN_REVERSION_LONG' | 'EXIT_LONG' | 'NEUTRAL'
+  if (zScore < -entryStd) {
+    signal = 'MEAN_REVERSION_LONG' // price far below fair value — potential bounce
+  } else if (zScore >= -exitStd) {
+    signal = 'EXIT_LONG'           // price reverted to fair value — exit zone
+  } else {
+    signal = 'NEUTRAL'
+  }
+
+  return { stateEstimate: x, forecastError, errorStdDev, zScore, signal }
+}
+
+// ============================================================
 // Aggregate: calculate all indicators at once
 // ============================================================
 
@@ -145,6 +211,7 @@ export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
     bollingerBands: calculateBollingerBands(bars),
     sma50: calculateSMA(bars, 50),
     sma200: calculateSMA(bars, 200),
+    kalman: calculateKalman(bars),
     currentPrice: bars[bars.length - 1].c,
     volume: bars[bars.length - 1].v,
   }

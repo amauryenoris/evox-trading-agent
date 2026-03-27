@@ -100,6 +100,13 @@ export interface TechnicalIndicators {
   } | null
   sma50: number | null
   sma200: number | null
+  kalman: {
+    stateEstimate: number   // Kalman-estimated fair price (E.P. Chan)
+    forecastError: number   // e(t) = current price - state estimate
+    errorStdDev: number     // Q(t) = dynamic std dev of forecast errors
+    zScore: number          // e(t) / Q(t) — normalized deviation
+    signal: 'MEAN_REVERSION_LONG' | 'EXIT_LONG' | 'NEUTRAL'
+  } | null
   currentPrice: number
   volume: number
 }

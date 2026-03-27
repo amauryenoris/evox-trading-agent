@@ -33,23 +33,74 @@ import type {
 // SYSTEM PROMPT (static — defines Claude's role)
 // ============================================================
 
-const SYSTEM_PROMPT = `You are an expert quantitative trader AI operating in a paper trading simulation for US stocks.
-You analyze technical indicators and your own historical performance to make precise trading decisions.
+const SYSTEM_PROMPT = `You are a quantitative trader AI operating a paper trading simulation for US stocks.
+Your methodology is based on the Market Wizards framework (Kovner, Seykota, E.P. Chan).
 
-STRICT RULES:
-- Respond ONLY with valid JSON matching the schema below. No markdown, no explanation outside JSON.
+## CORE FRAMEWORK
+
+### Primary Signal: Kalman Filter (E.P. Chan)
+The Kalman filter is your PRIMARY indicator for mean reversion entries and exits.
+- MEAN_REVERSION_LONG signal (zScore < -1.5): price is significantly below its estimated fair value — potential bounce
+- EXIT_LONG signal (zScore >= -0.5): price has reverted to fair value — time to exit
+- NEUTRAL: no statistical edge detected from the filter alone
+
+### Secondary Context: RSI, MACD, Bollinger Bands, SMA
+These are secondary — use them as a "market thermometer" (Kovner) to confirm price action, NOT as primary entry signals.
+RSI/MACD/BB alone are insufficient justification for BUY or SELL. They must confirm the Kalman signal or a clear trend breakout.
+
+### Entry Criteria — 9/10 Rule (Kovner)
+Only commit capital when at least 9 of 10 conditions align:
+- Kalman signal confirms mean reversion OR clear technical breakout above consolidation / new highs
+- Volume supports the move (not a low-liquidity drift)
+- RSI not in overbought territory for longs (RSI < 70)
+- Price not in a "falling knife" pattern (downtrend with no consolidation)
+- No contradicting macro or learning history signal
+- Position count does not exceed maximum (5)
+- Sufficient buying power available
+- Confidence from learning history >= 0.65
+- Pattern library shows positive win rate for similar conditions (if data available)
+- Risk/reward ratio is favorable (potential gain > potential loss)
+If fewer than 9 conditions align, return HOLD regardless of individual signal strength.
+
+### Exit Criteria
+- Kalman EXIT_LONG signal (zScore reverted to -0.5 or above)
+- Technical stop invalidated (pattern that justified entry no longer holds)
+- Pre-defined stop loss hit (5% below entry)
+Exit is pre-defined and non-negotiable — do not move stops hoping for recovery.
+
+### Risk Management (Kovner 1-2% Rule)
+- Maximum capital at risk per trade: 1% of total equity
+- Undertrade mandate: if pattern uncertainty or learning history is mixed, use HALF the calculated position size
+- Express undertrade recommendation in your reasoning field when applicable
+- Never recommend a size larger than available buying power allows
+
+### Position Sizing Note
+Quantity will be calculated externally using the Kovner formula:
+  capital_at_risk = equity × 0.01
+  risk_per_share = entry_price × stop_loss_pct
+  quantity = capital_at_risk / risk_per_share
+Return quantity = 0 in your JSON — the system will calculate the correct size.
+
+### Trading Psychology Rules (Seykota / Kovner)
+- Losses are operational costs, not failures — cut them fast
+- "Let winners run" — do not exit profitable positions at first sign of weakness unless Kalman says EXIT
+- If a pattern has caused losses historically, reduce confidence accordingly
+- The market is a thermometer, not a crystal ball — trade probabilities, not predictions
+
+## STRICT OUTPUT RULES
+- Respond ONLY with valid JSON matching the schema below. No markdown, no text outside JSON.
 - Never recommend BUY if: maximum positions (5) are already open, or insufficient buying power.
 - Never recommend SELL if: no position currently exists in that symbol.
 - Only recommend BUY or SELL if confidence >= 0.65. Otherwise return HOLD.
-- Consider your own learning history seriously — past losses in similar conditions should lower confidence.
-- Past wins in similar conditions should increase confidence, not guarantee action.
+- Reasoning must explicitly reference the Kalman signal and at least one secondary indicator.
+- Consider learning history seriously — past losses in similar conditions must lower confidence.
 
 RESPONSE SCHEMA (strict JSON):
 {
   "action": "BUY" | "SELL" | "HOLD",
   "symbol": "string",
   "quantity": 0,
-  "reasoning": "2-4 sentences explaining the decision based on indicators and learning history",
+  "reasoning": "3-5 sentences: cite Kalman signal, secondary indicators, 9/10 rule assessment, and learning history",
   "confidence": 0.0
 }`
 
@@ -89,6 +140,23 @@ function smaLabel(price: number, sma: number | null, period: number): string {
   return `$${sma.toFixed(2)} (${price > sma ? '+' : ''}${pct}% — ${price > sma ? 'ABOVE' : 'BELOW'} SMA${period})`
 }
 
+function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
+  if (!kalman) return 'N/A — insufficient data'
+  const dir = kalman.forecastError >= 0 ? 'ABOVE' : 'BELOW'
+  const signalMap = {
+    MEAN_REVERSION_LONG: '*** MEAN_REVERSION_LONG — price significantly below fair value, potential bounce ***',
+    EXIT_LONG: '*** EXIT_LONG — price reverted to fair value, consider closing longs ***',
+    NEUTRAL: 'NEUTRAL — no statistical edge detected',
+  }
+  return [
+    `Fair Value Estimate: $${kalman.stateEstimate.toFixed(2)}`,
+    `Forecast Error e(t): ${kalman.forecastError >= 0 ? '+' : ''}${kalman.forecastError.toFixed(4)} (price is ${dir} fair value)`,
+    `Error Std Dev Q(t): ${kalman.errorStdDev.toFixed(4)}`,
+    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < -1.5 | exit threshold: >= -0.5)`,
+    `Signal: ${signalMap[kalman.signal]}`,
+  ].join('\n')
+}
+
 // ============================================================
 // BUILD ENRICHED PROMPT PER SYMBOL
 // ============================================================
@@ -110,7 +178,10 @@ async function buildEnrichedPrompt(
 Current Price: $${indicators.currentPrice.toFixed(2)}
 Volume: ${indicators.volume.toLocaleString()}
 
---- TECHNICAL INDICATORS ---
+--- PRIMARY SIGNAL: KALMAN FILTER (E.P. Chan) ---
+${kalmanLabel(indicators.kalman)}
+
+--- SECONDARY INDICATORS (context only — confirm Kalman signal, do not replace it) ---
 RSI(14): ${indicators.rsi?.toFixed(2) ?? 'N/A'} ${rsiLabel(indicators.rsi)}
 MACD: line=${indicators.macd?.macdLine.toFixed(4) ?? 'N/A'}, signal=${indicators.macd?.signalLine.toFixed(4) ?? 'N/A'}, histogram=${indicators.macd?.histogram.toFixed(4) ?? 'N/A'} ${macdLabel(indicators.macd)}
 Bollinger Bands: upper=$${indicators.bollingerBands?.upper.toFixed(2) ?? 'N/A'}, middle=$${indicators.bollingerBands?.middle.toFixed(2) ?? 'N/A'}, lower=$${indicators.bollingerBands?.lower.toFixed(2) ?? 'N/A'}, %B=${indicators.bollingerBands?.percentB.toFixed(3) ?? 'N/A'} ${bbLabel(indicators.bollingerBands)}
@@ -146,14 +217,33 @@ Analyze ${symbol} and provide your trading decision as JSON.`
 // POSITION SIZING
 // ============================================================
 
+// Kovner 1-2% Rule: risk at most 1% of equity per trade
+// risk_per_share = entry_price * stop_loss_pct
+// quantity = capital_at_risk / risk_per_share
+// undertrade: halve quantity if Kalman signal is NEUTRAL (entering on secondary indicators only)
 function calculateBuyQuantity(
   currentPrice: number,
   portfolioEquity: number,
-  availableCash: number
+  availableCash: number,
+  kalmanSignal?: string
 ): number {
-  const maxPositionValue = portfolioEquity * parseFloat(process.env.MAX_POSITION_SIZE ?? '0.10')
-  const affordable = Math.min(maxPositionValue, availableCash * 0.95)
-  return Math.max(0, Math.floor(affordable / currentPrice))
+  const riskPct = parseFloat(process.env.RISK_PCT ?? '0.01')
+  const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+
+  const capitalAtRisk = portfolioEquity * riskPct
+  const riskPerShare = currentPrice * stopLossPct
+  if (riskPerShare === 0) return 0
+
+  let qty = Math.floor(capitalAtRisk / riskPerShare)
+
+  // Undertrade mandate (Seykota): halve position if no Kalman confirmation
+  if (!kalmanSignal || kalmanSignal === 'NEUTRAL') {
+    qty = Math.floor(qty / 2)
+  }
+
+  // Safety cap: never exceed 95% of available cash
+  const maxAffordable = Math.floor((availableCash * 0.95) / currentPrice)
+  return Math.max(0, Math.min(qty, maxAffordable))
 }
 
 // ============================================================
@@ -277,7 +367,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
               const qty = calculateBuyQuantity(
                 indicators.currentPrice,
                 parseFloat(account.equity),
-                parseFloat(account.buying_power)
+                parseFloat(account.buying_power),
+                indicators.kalman?.signal
               )
               if (qty > 0) {
                 const order = await submitOrder(symbol, qty, 'buy')
@@ -339,7 +430,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         timestamp,
         symbol,
         decision: { action: 'HOLD', symbol, quantity: 0, reasoning: 'Analysis failed', confidence: 0 },
-        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, currentPrice: 0, volume: 0 },
+        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0 },
         portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
         error: String(err),
