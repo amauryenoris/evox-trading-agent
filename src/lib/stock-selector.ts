@@ -7,6 +7,7 @@ import type {
   SelectionEvaluation,
   TradeEvaluation,
 } from './types'
+import { getStockSnapshots } from './alpaca'
 import {
   insertSelectionDecision,
   getRecentSelections,
@@ -14,21 +15,35 @@ import {
   insertSelectionEvaluation,
 } from './db'
 
+// Default sector watchlist — overridable via SECTOR_WATCHLIST env var
+const DEFAULT_SECTOR_WATCHLIST = [
+  // Big Tech
+  'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META', 'AMZN', 'TSLA',
+  // Oil & Energy
+  'XOM', 'CVX', 'OXY', 'COP', 'XLE',
+  // Mining, Gold & Rare Earth
+  'MP', 'UUUU', 'NEM', 'FCX', 'GOLD',
+].join(',')
+
 const SELECTION_SYSTEM_PROMPT = `You are a quantitative trader AI selecting stocks for detailed technical analysis.
-You will be given a list of the most active stocks in the market today.
-Your job is to select the 5-8 most promising candidates for deeper analysis.
+You will receive two pools of candidates: the most active stocks from the market screener, and a curated sector watchlist.
+Your job is to select 6-8 symbols that maximize both opportunity and sector diversification.
 
 CRITERIA:
-- Prefer stocks with high volume (strong institutional interest)
+- Prefer stocks with high volume (strong institutional interest) from the screener pool
 - Prefer stocks with significant price movement (momentum opportunities)
-- Consider portfolio diversification (avoid selecting highly correlated stocks)
-- Use your past selection performance to refine your choices
+- MANDATORY: include at least 1 stock from each of these sectors in your final selection:
+    * Big Tech (AAPL, MSFT, NVDA, GOOGL, META, AMZN, TSLA)
+    * Oil & Energy (XOM, CVX, OXY, COP, XLE)
+    * Mining / Gold / Rare Earth (MP, UUUU, NEM, FCX, GOLD)
+- Use your past selection performance to refine your choices within sectors
+- Avoid selecting highly correlated stocks (e.g. don't pick 3 energy stocks)
 - Stocks currently held should only be included if you may want to evaluate them for exit
 
 RESPOND ONLY with valid JSON (no markdown):
 {
   "selected": ["SYMBOL1", "SYMBOL2", ...],
-  "reasoning": "2-3 sentences explaining your selection criteria for this cycle"
+  "reasoning": "2-3 sentences explaining your selection including sector coverage"
 }`
 
 export async function selectStocksForAnalysis(
@@ -40,6 +55,20 @@ export async function selectStocksForAnalysis(
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set')
 
   const heldSymbols = new Set(positions.map((p) => p.symbol))
+
+  // Fetch sector watchlist snapshots and merge with screener candidates
+  const sectorSymbols = (process.env.SECTOR_WATCHLIST ?? DEFAULT_SECTOR_WATCHLIST)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const screenerSymbolSet = new Set(candidates.map((c) => c.symbol))
+  const sectorOnlySymbols = sectorSymbols.filter((s) => !screenerSymbolSet.has(s))
+  const sectorSnapshots = await getStockSnapshots(sectorOnlySymbols)
+
+  // All candidates = screener (most active) + sector watchlist not already in screener
+  const allCandidates: ScreenerStock[] = [...candidates, ...sectorSnapshots]
+
   const [selectionEvals] = await Promise.all([getSelectionEvaluations(50)])
 
   const learningLines: string[] = []
@@ -55,10 +84,16 @@ export async function selectStocksForAnalysis(
     })
   }
 
-  const candidateLines = candidates.slice(0, 30).map((s) => {
+  const screenerLines = candidates.slice(0, 30).map((s) => {
     const change = s.changePercent >= 0 ? `+${s.changePercent.toFixed(1)}%` : `${s.changePercent.toFixed(1)}%`
     const held = heldSymbols.has(s.symbol) ? ' [CURRENTLY HELD]' : ''
     return `${s.symbol}: $${s.price.toFixed(2)} (${change}) Vol: ${(s.volume / 1e6).toFixed(1)}M${held}`
+  })
+
+  const sectorLines = sectorSnapshots.map((s) => {
+    const change = s.changePercent >= 0 ? `+${s.changePercent.toFixed(1)}%` : `${s.changePercent.toFixed(1)}%`
+    const held = heldSymbols.has(s.symbol) ? ' [CURRENTLY HELD]' : ''
+    return `${s.symbol}: $${s.price.toFixed(2)} (${change})${held}`
   })
 
   const prompt = `STOCK SELECTION REQUEST
@@ -67,11 +102,14 @@ CURRENT PORTFOLIO: ${positions.length}/5 positions open
 Available cash: $${parseFloat(account.cash).toFixed(0)}
 Currently held: ${positions.length > 0 ? positions.map((p) => p.symbol).join(', ') : 'none'}
 
-TODAY'S MOST ACTIVE STOCKS (${candidates.length} candidates):
-${candidateLines.join('\n')}
+--- POOL A: MARKET SCREENER (most active by volume today) ---
+${screenerLines.join('\n')}
+
+--- POOL B: SECTOR WATCHLIST (Big Tech / Oil & Energy / Mining & Rare Earth) ---
+${sectorLines.length > 0 ? sectorLines.join('\n') : '(all sector stocks already in screener pool)'}
 ${learningLines.length > 0 ? '\n--- YOUR PAST SELECTION LEARNING ---\n' + learningLines.join('\n') : ''}
 
-Select 5-8 symbols for detailed technical analysis.`
+Select 6-8 symbols for detailed technical analysis. Must include at least 1 from each sector in Pool B.`
 
   const client = new Anthropic({ apiKey })
   const response = await client.messages.create({
@@ -89,14 +127,15 @@ Select 5-8 symbols for detailed technical analysis.`
 
   const decision: SelectionDecision = {
     timestamp: new Date().toISOString(),
-    candidatesOffered: candidates,
+    candidatesOffered: allCandidates,
     selectedSymbols: parsed.selected,
     reasoning: parsed.reasoning,
   }
   await insertSelectionDecision(decision)
 
-  // Only return symbols that actually exist in the candidates list
-  return parsed.selected.filter((s) => candidates.some((c) => c.symbol === s))
+  // Accept any symbol from either pool
+  const allSymbolSet = new Set(allCandidates.map((c) => c.symbol))
+  return parsed.selected.filter((s) => allSymbolSet.has(s))
 }
 
 export async function recordSelectionOutcome(

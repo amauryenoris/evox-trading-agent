@@ -148,6 +148,32 @@ export async function getMarketMovers(limit = 30): Promise<ScreenerStock[]> {
 }
 
 /**
+ * Returns current price snapshots for an arbitrary list of symbols.
+ * Used to enrich sector watchlist stocks with live price/change data
+ * before passing them to the stock selector.
+ */
+export async function getStockSnapshots(symbols: string[]): Promise<ScreenerStock[]> {
+  if (symbols.length === 0) return []
+  try {
+    const snapshotUrl = `${dataUrl()}/v2/stocks/snapshots?symbols=${symbols.join(',')}&feed=iex`
+    const snapshots = await alpacaFetch<Record<string, AlpacaSnapshot>>(snapshotUrl)
+
+    return symbols
+      .filter((sym) => snapshots[sym])
+      .map((sym) => {
+        const snap = snapshots[sym]
+        const currentPrice = snap.latestTrade?.p ?? snap.dailyBar?.c ?? 0
+        const prevClose = snap.prevDailyBar?.c ?? currentPrice
+        const changePercent = prevClose > 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0
+        return { symbol: sym, price: currentPrice, changePercent, volume: 0 }
+      })
+      .filter((s) => s.price > 0)
+  } catch {
+    return []
+  }
+}
+
+/**
  * Returns the most recent filled sell order for a symbol after a given timestamp.
  * Used to find the exit price when a position is detected as closed.
  */

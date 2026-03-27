@@ -284,7 +284,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     }
   } catch (err) {
     console.warn('Dynamic selection failed, using static watchlist:', err)
-    watchlist = (process.env.TRADING_WATCHLIST ?? 'AAPL,MSFT,NVDA,SPY,QQQ')
+    watchlist = (process.env.TRADING_WATCHLIST ?? 'AAPL,MSFT,NVDA,XOM,CVX,MP,NEM,GOOGL,META')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
