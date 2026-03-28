@@ -1,0 +1,43 @@
+name: Trading Agent Cycle
+
+on:
+  schedule:
+    # Every hour from 10am to 4pm ET (14:00-20:00 UTC), Mon-Fri
+    - cron: "0 14-20 * * 1-5"
+  workflow_dispatch: # Allow manual trigger from GitHub Actions tab
+
+jobs:
+  run-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+      ALPACA_DATA_URL: ${{ secrets.ALPACA_DATA_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      TRADING_WATCHLIST: ${{ secrets.TRADING_WATCHLIST }}
+      SECTOR_WATCHLIST: ${{ secrets.SECTOR_WATCHLIST }}
+      MAX_POSITION_SIZE: ${{ secrets.MAX_POSITION_SIZE }}
+      MAX_POSITIONS: ${{ secrets.MAX_POSITIONS }}
+      STOP_LOSS_PCT: ${{ secrets.STOP_LOSS_PCT }}
+      RISK_PCT: ${{ secrets.RISK_PCT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run agent cycle
+        run: npm run cycle
