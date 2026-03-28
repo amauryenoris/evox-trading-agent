@@ -173,6 +173,66 @@ export async function getStockSnapshots(symbols: string[]): Promise<ScreenerStoc
   }
 }
 
+export async function submitStopOrder(
+  symbol: string,
+  qty: number,
+  stopPrice: number
+): Promise<AlpacaOrder> {
+  return alpacaFetch<AlpacaOrder>(`${baseUrl()}/v2/orders`, {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      qty: String(qty),
+      side: 'sell',
+      type: 'stop',
+      time_in_force: 'gtc',
+      stop_price: stopPrice.toFixed(2),
+    }),
+  })
+}
+
+export interface AlpacaNewsArticle {
+  id: number
+  headline: string
+  summary: string
+  author: string
+  created_at: string
+  symbols: string[]
+}
+
+export async function getNewsForSymbols(
+  symbols: string[],
+  hoursBack = 24,
+  limit = 5
+): Promise<AlpacaNewsArticle[]> {
+  try {
+    const start = new Date(Date.now() - hoursBack * 3600 * 1000).toISOString()
+    const url = new URL(`${dataUrl()}/v1beta1/news`)
+    url.searchParams.set('symbols', symbols.join(','))
+    url.searchParams.set('start', start)
+    url.searchParams.set('limit', String(limit))
+    url.searchParams.set('sort', 'desc')
+    const res = await alpacaFetch<{ news: AlpacaNewsArticle[] }>(url.toString())
+    return res.news ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getMacroNews(hoursBack = 12, limit = 8): Promise<AlpacaNewsArticle[]> {
+  try {
+    const start = new Date(Date.now() - hoursBack * 3600 * 1000).toISOString()
+    const url = new URL(`${dataUrl()}/v1beta1/news`)
+    url.searchParams.set('start', start)
+    url.searchParams.set('limit', String(limit))
+    url.searchParams.set('sort', 'desc')
+    const res = await alpacaFetch<{ news: AlpacaNewsArticle[] }>(url.toString())
+    return res.news ?? []
+  } catch {
+    return []
+  }
+}
+
 /**
  * Returns the most recent filled sell order for a symbol after a given timestamp.
  * Used to find the exit price when a position is detected as closed.

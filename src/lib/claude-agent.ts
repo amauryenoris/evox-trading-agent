@@ -6,9 +6,13 @@ import {
   getClock,
   getBars,
   submitOrder,
+  submitStopOrder,
   closePosition,
   getLatestSellOrder,
   getMarketMovers,
+  getMacroNews,
+  getNewsForSymbols,
+  type AlpacaNewsArticle,
 } from './alpaca'
 import { calculateAllIndicators } from './indicators'
 import { appendAgentLogEntries } from './agent-log'
@@ -19,6 +23,7 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
+import { getAllOpenPositionContexts } from './db'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import type {
   AgentDecision,
@@ -94,6 +99,7 @@ Return quantity = 0 in your JSON — the system will calculate the correct size.
 - Only recommend BUY or SELL if confidence >= 0.65. Otherwise return HOLD.
 - Reasoning must explicitly reference the Kalman signal and at least one secondary indicator.
 - Consider learning history seriously — past losses in similar conditions must lower confidence.
+- Consider macro and symbol-specific news: if recent headlines contradict your technical thesis (e.g., bearish earnings, geopolitical shock affecting the sector), reduce confidence or return HOLD. News context is provided in the prompt under MACRO & MARKET CONTEXT and RECENT NEWS FOR [SYMBOL].
 
 RESPONSE SCHEMA (strict JSON):
 {
@@ -161,18 +167,30 @@ function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
 // BUILD ENRICHED PROMPT PER SYMBOL
 // ============================================================
 
-async function buildEnrichedPrompt(
+function buildEnrichedPrompt(
   symbol: string,
   indicators: TechnicalIndicators,
   account: AlpacaAccount,
   positions: AlpacaPosition[],
-  learningContext: string
-): Promise<string> {
+  learningContext: string,
+  macroContext: string,
+  symbolNews: AlpacaNewsArticle[]
+): string {
   const equity = parseFloat(account.equity)
   const maxPositionValue = equity * parseFloat(process.env.MAX_POSITION_SIZE ?? '0.10')
   const currentPosition = positions.find((p) => p.symbol === symbol)
 
+  const symbolNewsSection = symbolNews.length > 0
+    ? symbolNews.map((n) => `• ${n.headline} (${new Date(n.created_at).toLocaleTimeString('en-US')})`).join('\n')
+    : 'No recent news for this symbol in the last 24 hours.'
+
   return `ANALYSIS REQUEST: ${symbol}
+
+--- MACRO & MARKET CONTEXT (last 12h headlines) ---
+${macroContext}
+
+--- RECENT NEWS FOR ${symbol} (last 24h) ---
+${symbolNewsSection}
 
 --- MARKET DATA ---
 Current Price: $${indicators.currentPrice.toFixed(2)}
@@ -247,6 +265,37 @@ function calculateBuyQuantity(
 }
 
 // ============================================================
+// STOP LOSS ENFORCEMENT (Capa B — manual safety check each cycle)
+// ============================================================
+
+async function enforceStopLosses(positions: AlpacaPosition[]): Promise<void> {
+  const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+  let openContexts
+  try {
+    openContexts = await getAllOpenPositionContexts()
+  } catch {
+    return
+  }
+
+  for (const ctx of openContexts) {
+    const alpacaPos = positions.find((p) => p.symbol === ctx.symbol)
+    if (!alpacaPos) continue // already closed
+
+    const currentPrice = parseFloat(alpacaPos.current_price)
+    const stopPrice = ctx.buyPrice * (1 - stopLossPct)
+
+    if (currentPrice <= stopPrice) {
+      console.warn(`[enforceStopLosses] Stop triggered: ${ctx.symbol} @ $${currentPrice.toFixed(2)} <= stop $${stopPrice.toFixed(2)}`)
+      try {
+        await closePosition(ctx.symbol)
+      } catch (err) {
+        console.error(`[enforceStopLosses] Failed to close ${ctx.symbol}:`, err)
+      }
+    }
+  }
+}
+
+// ============================================================
 // MAIN AGENT CYCLE
 // ============================================================
 
@@ -292,7 +341,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   const marketOpen = clock.is_open
 
-  // 3. Evaluate closed positions (learning loop)
+  // 3. Enforce stop losses — close any positions that fell through Alpaca's stop order
+  await enforceStopLosses(positions)
+
+  // 4. Fetch macro news once — shared across all symbol analyses in this cycle
+  const macroNews = await getMacroNews(12, 8).catch(() => [] as AlpacaNewsArticle[])
+  const macroContext = macroNews.length > 0
+    ? macroNews.map((n) => `• ${n.headline} (${new Date(n.created_at).toLocaleTimeString('en-US')})`).join('\n')
+    : 'No major macro news in the last 12 hours.'
+
+  // 5. Evaluate closed positions (learning loop)
   const evaluations: TradeEvaluation[] = []
   const closedContexts = await detectClosedPositions(positions)
 
@@ -313,7 +371,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     }
   }
 
-  // 4. Analysis cycle for each symbol
+  // 6. Analysis cycle for each symbol
   const decisions: AgentLogEntry[] = []
 
   for (const symbol of watchlist) {
@@ -330,12 +388,17 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Build learning context (same for all symbols in this cycle — cached reads)
       const learningContext = await buildLearningContext(indicators)
 
-      const userPrompt = await buildEnrichedPrompt(
+      // Fetch symbol-specific news
+      const symbolNews = await getNewsForSymbols([symbol], 24, 5).catch(() => [] as AlpacaNewsArticle[])
+
+      const userPrompt = buildEnrichedPrompt(
         symbol,
         indicators,
         account,
         positions,
-        learningContext
+        learningContext,
+        macroContext,
+        symbolNews
       )
 
       // Call Claude
@@ -376,6 +439,17 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                 orderExecuted = true
                 decision.quantity = qty
 
+                // Submit GTC stop order immediately (Capa A protection)
+                const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+                const stopPrice = indicators.currentPrice * (1 - stopLossPct)
+                let stopOrderId: string | undefined
+                try {
+                  const stopOrder = await submitStopOrder(symbol, qty, stopPrice)
+                  stopOrderId = stopOrder.id
+                } catch (stopErr) {
+                  console.warn(`Failed to submit stop order for ${symbol}:`, stopErr)
+                }
+
                 // Save buy context for future learning
                 await saveOpenPositionContext({
                   symbol,
@@ -385,6 +459,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   indicators,
                   claudeReasoning: decision.reasoning,
                   patternIdsUsed: [],
+                  stopOrderId,
                 })
               } else {
                 error = 'Insufficient buying power for position'

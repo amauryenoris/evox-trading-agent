@@ -153,6 +153,7 @@ export interface OpenPositionContext {
   indicators: TechnicalIndicators
   claudeReasoning: string
   patternIdsUsed: string[]
+  stopOrderId?: string
 }
 
 export interface TradeEvaluation {

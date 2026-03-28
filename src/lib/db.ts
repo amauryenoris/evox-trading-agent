@@ -82,23 +82,33 @@ export async function saveOpenPositionContext(ctx: OpenPositionContext): Promise
     indicators: ctx.indicators,
     reasoning: ctx.claudeReasoning,
     pattern_ids: ctx.patternIdsUsed,
+    stop_order_id: ctx.stopOrderId ?? null,
   }, { onConflict: 'symbol' })
   if (error) throw new Error(`Failed to save position context: ${error.message}`)
+}
+
+function mapRowToOpenPositionContext(row: Record<string, unknown>): OpenPositionContext {
+  return {
+    symbol: row.symbol as string,
+    buyTimestamp: row.buy_timestamp as string,
+    buyPrice: row.buy_price as number,
+    quantity: row.quantity as number,
+    indicators: row.indicators as OpenPositionContext['indicators'],
+    claudeReasoning: (row.reasoning as string) ?? '',
+    patternIdsUsed: (row.pattern_ids as string[]) ?? [],
+    stopOrderId: (row.stop_order_id as string | null) ?? undefined,
+  }
 }
 
 export async function getOpenPositionContexts(): Promise<OpenPositionContext[]> {
   const db = getClient()
   const { data, error } = await db.from('open_position_contexts').select('*')
   if (error) throw new Error(`Failed to fetch position contexts: ${error.message}`)
-  return (data ?? []).map((row) => ({
-    symbol: row.symbol,
-    buyTimestamp: row.buy_timestamp,
-    buyPrice: row.buy_price,
-    quantity: row.quantity,
-    indicators: row.indicators,
-    claudeReasoning: row.reasoning ?? '',
-    patternIdsUsed: row.pattern_ids ?? [],
-  }))
+  return (data ?? []).map(mapRowToOpenPositionContext)
+}
+
+export async function getAllOpenPositionContexts(): Promise<OpenPositionContext[]> {
+  return getOpenPositionContexts()
 }
 
 export async function deleteOpenPositionContext(symbol: string): Promise<void> {
