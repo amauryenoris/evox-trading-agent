@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export function RunAgentButton() {
-  const [isRunning, setIsRunning] = useState(false)
-  const [lastRun, setLastRun] = useState<string | null>(null)
-  const [lastResult, setLastResult] = useState<{ decisions: number; marketOpen: boolean } | null>(null)
+  const [isDispatching, setIsDispatching] = useState(false)
+  const [dispatched, setDispatched] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   // Auto-refresh dashboard data every 60 seconds
@@ -16,46 +16,53 @@ export function RunAgentButton() {
   }, [router])
 
   async function handleRun() {
-    setIsRunning(true)
+    setIsDispatching(true)
+    setDispatched(false)
+    setError(null)
     try {
       const res = await fetch('/api/run-agent', { method: 'POST' })
       const data = await res.json()
-      setLastRun(new Date().toLocaleTimeString())
       if (data.success) {
-        setLastResult({
-          decisions: data.decisions?.length ?? 0,
-          marketOpen: data.marketOpen ?? false,
-        })
+        setDispatched(true)
+        // Refresh dashboard after a delay to catch results
+        setTimeout(() => router.refresh(), 30_000)
+      } else {
+        setError(data.error ?? 'Unknown error')
       }
-      router.refresh()
     } catch (err) {
-      console.error('Agent run failed:', err)
+      setError(String(err))
     } finally {
-      setIsRunning(false)
+      setIsDispatching(false)
     }
   }
 
   return (
     <div className="flex items-center gap-3">
-      {lastRun && lastResult && (
+      {dispatched && (
         <span className="text-xs text-slate-500">
-          Last run {lastRun} · {lastResult.decisions} decisions ·{' '}
-          {lastResult.marketOpen ? (
-            <span className="text-green-400">Market open</span>
-          ) : (
-            <span className="text-amber-400">Market closed</span>
-          )}
+          Dispatched ✓ —{' '}
+          <a
+            href="https://github.com/amauryenoris/evox-trading-agent/actions"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#1daa6c] hover:underline"
+          >
+            ver en Actions
+          </a>
         </span>
+      )}
+      {error && (
+        <span className="text-xs text-red-400">Error: {error}</span>
       )}
       <button
         onClick={handleRun}
-        disabled={isRunning}
+        disabled={isDispatching}
         className="flex items-center gap-2 bg-[#1daa6c] hover:bg-[#168b57] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
       >
-        {isRunning ? (
+        {isDispatching ? (
           <>
             <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Analyzing...
+            Dispatching...
           </>
         ) : (
           <>
