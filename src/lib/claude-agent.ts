@@ -23,7 +23,8 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
-import { getAllOpenPositionContexts } from './db'
+import { getAllOpenPositionContexts, getTodayBuyExecutions } from './db'
+import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import type {
   AgentDecision,
@@ -78,6 +79,7 @@ Exit is pre-defined and non-negotiable — do not move stops hoping for recovery
 - Undertrade mandate: if pattern uncertainty or learning history is mixed, use HALF the calculated position size
 - Express undertrade recommendation in your reasoning field when applicable
 - Never recommend a size larger than available buying power allows
+- Position size is adjusted by market regime multiplier BEFORE the Kovner formula is applied: TRENDING=1.0, TRANSITION=0.75, RANGING=0.5, HIGH_VOLATILITY=0.25
 
 ### Position Sizing Note
 Quantity will be calculated externally using the Kovner formula:
@@ -199,6 +201,11 @@ Volume: ${indicators.volume.toLocaleString()}
 --- PRIMARY SIGNAL: KALMAN FILTER (E.P. Chan) ---
 ${kalmanLabel(indicators.kalman)}
 
+--- MARKET REGIME ---
+ADX(14): ${indicators.adx?.toFixed(2) ?? 'N/A'} ${indicators.adx !== null ? (indicators.adx > 30 ? '(TRENDING — strong directional move)' : indicators.adx >= 20 ? '(TRANSITION — regime unclear)' : '(RANGING — weak trend)') : ''}
+ATR(14) Percentile: ${indicators.atrPercentile !== null ? (indicators.atrPercentile * 100).toFixed(0) + '%' : 'N/A'} ${indicators.atrPercentile !== null && indicators.atrPercentile > 0.80 ? '(HIGH VOLATILITY — elevated risk)' : ''}
+Regime: ${indicators.marketRegime ?? 'N/A'} → Position size multiplier: ${regimeMultiplier(indicators.marketRegime ?? null).toFixed(2)}x
+
 --- SECONDARY INDICATORS (context only — confirm Kalman signal, do not replace it) ---
 RSI(14): ${indicators.rsi?.toFixed(2) ?? 'N/A'} ${rsiLabel(indicators.rsi)}
 MACD: line=${indicators.macd?.macdLine.toFixed(4) ?? 'N/A'}, signal=${indicators.macd?.signalLine.toFixed(4) ?? 'N/A'}, histogram=${indicators.macd?.histogram.toFixed(4) ?? 'N/A'} ${macdLabel(indicators.macd)}
@@ -232,18 +239,58 @@ Analyze ${symbol} and provide your trading decision as JSON.`
 }
 
 // ============================================================
+// EXECUTION GATES
+// ============================================================
+
+function checkLiquidity(volume: number): boolean {
+  return volume >= 1_000_000
+}
+
+function checkTradingHours(): boolean {
+  const now = new Date()
+  const etFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  })
+  const parts = etFormatter.formatToParts(now)
+  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
+  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
+  const totalMinutes = hour * 60 + minute
+  // 9:45 AM ET = 585 minutes, 3:30 PM ET = 930 minutes
+  return totalMinutes >= 585 && totalMinutes <= 930
+}
+
+async function checkOvertradingLimit(): Promise<boolean> {
+  const count = await getTodayBuyExecutions()
+  return count < 3
+}
+
+function regimeMultiplier(regime: string | null): number {
+  const map: Record<string, number> = {
+    TRENDING: 1.0,
+    TRANSITION: 0.75,
+    RANGING: 0.5,
+    HIGH_VOLATILITY: 0.25,
+  }
+  return regime ? (map[regime] ?? 1.0) : 1.0
+}
+
+// ============================================================
 // POSITION SIZING
 // ============================================================
 
 // Kovner 1-2% Rule: risk at most 1% of equity per trade
 // risk_per_share = entry_price * stop_loss_pct
 // quantity = capital_at_risk / risk_per_share
-// undertrade: halve quantity if Kalman signal is NEUTRAL (entering on secondary indicators only)
+// regime multiplier applied first, then undertrade halving if Kalman NEUTRAL
 function calculateBuyQuantity(
   currentPrice: number,
   portfolioEquity: number,
   availableCash: number,
-  kalmanSignal?: string
+  kalmanSignal?: string,
+  marketRegime?: string | null
 ): number {
   const riskPct = parseFloat(process.env.RISK_PCT ?? '0.01')
   const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
@@ -253,6 +300,10 @@ function calculateBuyQuantity(
   if (riskPerShare === 0) return 0
 
   let qty = Math.floor(capitalAtRisk / riskPerShare)
+
+  // Regime multiplier (applied before Kalman undertrade)
+  const regimeMult = regimeMultiplier(marketRegime ?? null)
+  qty = Math.floor(qty * regimeMult)
 
   // Undertrade mandate (Seykota): halve position if no Kalman confirmation
   if (!kalmanSignal || kalmanSignal === 'NEUTRAL') {
@@ -427,11 +478,44 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         } else {
           try {
             if (decision.action === 'BUY') {
+              // Gate 1: liquidity
+              if (!checkLiquidity(indicators.volume)) {
+                error = `Liquidity gate: volume ${indicators.volume.toLocaleString()} < 1,000,000`
+                decision.action = 'HOLD'
+              }
+              // Gate 2: trading hours
+              else if (!checkTradingHours()) {
+                error = 'Trading hours gate: outside 9:45am–3:30pm ET window'
+                decision.action = 'HOLD'
+              }
+              // Gate 3: overtrading limit
+              else if (!(await checkOvertradingLimit())) {
+                error = 'Overtrading gate: 3 BUYs already executed today'
+                decision.action = 'HOLD'
+              }
+              // Gate 4: portfolio risk / drawdown / correlation
+              else {
+                const openContexts = await getAllOpenPositionContexts()
+                const { data: recentLog } = await import('./db').then(async (m) => {
+                  const log = await m.getAgentLog(200)
+                  return { data: log }
+                })
+                const riskCheck = await isNewPositionAllowed(
+                  symbol, account, positions, openContexts, recentLog
+                )
+                if (!riskCheck.allowed) {
+                  error = riskCheck.reason ?? 'Portfolio risk gate: position not allowed'
+                  decision.action = 'HOLD'
+                }
+              }
+
+              if (decision.action === 'BUY') {
               const qty = calculateBuyQuantity(
                 indicators.currentPrice,
                 parseFloat(account.equity),
                 parseFloat(account.buying_power),
-                indicators.kalman?.signal
+                indicators.kalman?.signal,
+                indicators.marketRegime
               )
               if (qty > 0) {
                 const order = await submitOrder(symbol, qty, 'buy')
@@ -464,6 +548,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
               } else {
                 error = 'Insufficient buying power for position'
               }
+              } // end inner if (decision.action === 'BUY') after gates
             } else if (decision.action === 'SELL') {
               const hasPosition = positions.some((p) => p.symbol === symbol)
               if (hasPosition) {
@@ -505,7 +590,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         timestamp,
         symbol,
         decision: { action: 'HOLD', symbol, quantity: 0, reasoning: 'Analysis failed', confidence: 0 },
-        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0 },
+        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
         portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
         error: String(err),

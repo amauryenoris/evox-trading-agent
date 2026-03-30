@@ -7,7 +7,10 @@ import { AgentReasoningLog } from '@/components/dashboard/AgentReasoningLog'
 import { PatternLibraryCard } from '@/components/dashboard/PatternLibraryCard'
 import { RunAgentButton } from '@/components/dashboard/RunAgentButton'
 import { MarketStatusBadge } from '@/components/dashboard/MarketStatusBadge'
+import { WeeklyReportsCard } from '@/components/dashboard/WeeklyReportsCard'
+import { GenerateReportButton } from '@/components/dashboard/GenerateReportButton'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
+import type { WeeklyReportRecord } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,12 +26,13 @@ async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
 }
 
 export default async function DashboardPage() {
-  const [portfolio, positions, agentLog, trades, patterns] = await Promise.all([
+  const [portfolio, positions, agentLog, trades, patterns, reports] = await Promise.all([
     fetchJSON<PortfolioSummary | null>('/api/portfolio', null),
     fetchJSON<PositionDisplay[]>('/api/positions', []),
     fetchJSON<AgentLogEntry[]>('/api/agent-log', []),
     fetchJSON<AlpacaOrder[]>('/api/trades', []),
     fetchJSON<TradingPattern[]>('/api/patterns', []),
+    fetchJSON<WeeklyReportRecord[]>('/api/reports', []),
   ])
 
   return (
@@ -43,6 +47,7 @@ export default async function DashboardPage() {
           <Suspense fallback={<span className="text-xs text-slate-600">Loading market status...</span>}>
             <MarketStatusBadge />
           </Suspense>
+          <GenerateReportButton />
           <RunAgentButton />
         </div>
       </div>
@@ -72,6 +77,11 @@ export default async function DashboardPage() {
           <TradeHistoryTable orders={trades} />
         </section>
       </div>
+
+      {/* Weekly reports */}
+      <section id="reports">
+        <WeeklyReportsCard reports={reports} />
+      </section>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import type { AlpacaBar, TechnicalIndicators } from './types'
+import type { AlpacaBar, TechnicalIndicators, MarketRegime } from './types'
 
 // ============================================================
 // EMA helper (used internally by MACD)
@@ -201,10 +201,131 @@ export function calculateKalman(
 }
 
 // ============================================================
+// ATR(14) — True Range with Wilder smoothing
+// ============================================================
+
+export function calculateATR(bars: AlpacaBar[], period = 14): number | null {
+  if (bars.length < period + 1) return null
+
+  const trueRanges: number[] = []
+  for (let i = 1; i < bars.length; i++) {
+    const high = bars[i].h
+    const low = bars[i].l
+    const prevClose = bars[i - 1].c
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose))
+    trueRanges.push(tr)
+  }
+
+  // Seed with simple mean of first `period` TRs
+  let atr = trueRanges.slice(0, period).reduce((s, v) => s + v, 0) / period
+
+  // Wilder's smoothing
+  for (let i = period; i < trueRanges.length; i++) {
+    atr = (atr * (period - 1) + trueRanges[i]) / period
+  }
+
+  return atr
+}
+
+// ============================================================
+// ADX(14) — Average Directional Index with Wilder smoothing
+// ============================================================
+
+export function calculateADX(bars: AlpacaBar[], period = 14): number | null {
+  if (bars.length < period * 2 + 1) return null
+
+  const plusDM: number[] = []
+  const minusDM: number[] = []
+  const trueRanges: number[] = []
+
+  for (let i = 1; i < bars.length; i++) {
+    const upMove = bars[i].h - bars[i - 1].h
+    const downMove = bars[i - 1].l - bars[i].l
+
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0)
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0)
+
+    const high = bars[i].h
+    const low = bars[i].l
+    const prevClose = bars[i - 1].c
+    trueRanges.push(Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose)))
+  }
+
+  // Seed smoothed values
+  let smoothedTR = trueRanges.slice(0, period).reduce((s, v) => s + v, 0)
+  let smoothedPlusDM = plusDM.slice(0, period).reduce((s, v) => s + v, 0)
+  let smoothedMinusDM = minusDM.slice(0, period).reduce((s, v) => s + v, 0)
+
+  const dxValues: number[] = []
+
+  for (let i = period; i < trueRanges.length; i++) {
+    smoothedTR = smoothedTR - smoothedTR / period + trueRanges[i]
+    smoothedPlusDM = smoothedPlusDM - smoothedPlusDM / period + plusDM[i]
+    smoothedMinusDM = smoothedMinusDM - smoothedMinusDM / period + minusDM[i]
+
+    const plusDI = smoothedTR === 0 ? 0 : (smoothedPlusDM / smoothedTR) * 100
+    const minusDI = smoothedTR === 0 ? 0 : (smoothedMinusDM / smoothedTR) * 100
+    const diSum = plusDI + minusDI
+    const dx = diSum === 0 ? 0 : (Math.abs(plusDI - minusDI) / diSum) * 100
+    dxValues.push(dx)
+  }
+
+  if (dxValues.length < period) return null
+
+  // Seed ADX with simple mean of first `period` DX values
+  let adx = dxValues.slice(0, period).reduce((s, v) => s + v, 0) / period
+
+  // Wilder's smoothing for the rest
+  for (let i = period; i < dxValues.length; i++) {
+    adx = (adx * (period - 1) + dxValues[i]) / period
+  }
+
+  return adx
+}
+
+// ============================================================
+// ATR Percentile — position of current ATR in recent history
+// ============================================================
+
+export function getATRPercentile(currentATR: number, allATRValues: number[]): number {
+  if (allATRValues.length === 0) return 0.5
+  const below = allATRValues.filter((v) => v <= currentATR).length
+  return below / allATRValues.length
+}
+
+// ============================================================
+// Market Regime Detection
+// ============================================================
+
+export function detectMarketRegime(
+  adx: number | null,
+  atrPercentile: number | null
+): MarketRegime {
+  if (atrPercentile !== null && atrPercentile > 0.80) return 'HIGH_VOLATILITY'
+  if (adx !== null && adx > 30) return 'TRENDING'
+  if (adx !== null && adx >= 20) return 'TRANSITION'
+  return 'RANGING'
+}
+
+// ============================================================
 // Aggregate: calculate all indicators at once
 // ============================================================
 
 export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
+  const atr = calculateATR(bars)
+  const adx = calculateADX(bars)
+
+  // Build rolling ATR history for percentile calculation
+  const atrHistory: number[] = []
+  for (let i = 30; i <= bars.length; i++) {
+    const slice = bars.slice(0, i)
+    const val = calculateATR(slice)
+    if (val !== null) atrHistory.push(val)
+  }
+
+  const atrPercentile = atr !== null ? getATRPercentile(atr, atrHistory) : null
+  const marketRegime = detectMarketRegime(adx, atrPercentile)
+
   return {
     rsi: calculateRSI(bars),
     macd: calculateMACD(bars),
@@ -214,5 +335,9 @@ export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
     kalman: calculateKalman(bars),
     currentPrice: bars[bars.length - 1].c,
     volume: bars[bars.length - 1].v,
+    adx,
+    atr,
+    atrPercentile,
+    marketRegime,
   }
 }

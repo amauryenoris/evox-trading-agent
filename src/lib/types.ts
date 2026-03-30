@@ -85,6 +85,8 @@ export interface AlpacaClock {
 // TECHNICAL INDICATORS
 // ============================================================
 
+export type MarketRegime = 'TRENDING' | 'RANGING' | 'HIGH_VOLATILITY' | 'TRANSITION'
+
 export interface TechnicalIndicators {
   rsi: number | null
   macd: {
@@ -109,6 +111,10 @@ export interface TechnicalIndicators {
   } | null
   currentPrice: number
   volume: number
+  adx: number | null
+  atr: number | null
+  atrPercentile: number | null
+  marketRegime: MarketRegime | null
 }
 
 // ============================================================

@@ -15,6 +15,13 @@ function getClient(): SupabaseClient {
   return createClient(url, key)
 }
 
+function getServiceClient(): SupabaseClient {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
+  return createClient(url, key)
+}
+
 // ============================================================
 // AGENT LOG
 // ============================================================
@@ -60,6 +67,7 @@ export async function getAgentLog(limit = 500): Promise<AgentLogEntry[]> {
     indicators: row.indicators ?? {
       rsi: null, macd: null, bollingerBands: null,
       sma50: null, sma200: null, currentPrice: 0, volume: 0,
+      adx: null, atr: null, atrPercentile: null, marketRegime: null,
     },
     portfolioSnapshot: row.portfolio_snapshot ?? { equity: '0', cash: '0', positionCount: 0 },
     orderExecuted: row.order_executed ?? false,
@@ -163,6 +171,7 @@ export async function getTradeEvaluations(limit = 200): Promise<TradeEvaluation[
     buyIndicators: row.indicators_at_buy ?? {
       rsi: null, macd: null, bollingerBands: null,
       sma50: null, sma200: null, currentPrice: 0, volume: 0,
+      adx: null, atr: null, atrPercentile: null, marketRegime: null,
     },
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],
@@ -274,4 +283,129 @@ export async function getSelectionEvaluations(limit = 100): Promise<SelectionEva
     pnlPct: row.pnl_pct ?? 0,
     lesson: row.lesson ?? '',
   }))
+}
+
+// ============================================================
+// TODAY'S BUY EXECUTIONS — for overtrading gate
+// ============================================================
+
+export async function getTodayBuyExecutions(): Promise<number> {
+  const db = getClient()
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString()
+
+  const { count, error } = await db
+    .from('agent_log')
+    .select('*', { count: 'exact', head: true })
+    .eq('action', 'BUY')
+    .eq('order_executed', true)
+    .gte('timestamp', todayStart)
+    .lt('timestamp', todayEnd)
+
+  if (error) throw new Error(`Failed to count today BUYs: ${error.message}`)
+  return count ?? 0
+}
+
+// ============================================================
+// WEEKLY REPORTS
+// ============================================================
+
+export interface WeeklyReportSummary {
+  equityStart: number
+  equityEnd: number
+  pnlUSD: number
+  pnlPct: number
+  totalCycles: number
+  buyDecisions: number
+  sellDecisions: number
+  holdDecisions: number
+  tradesExecuted: number
+  winRate: number
+  avgWinPct: number
+  avgLossPct: number
+  profitFactor: number
+}
+
+export interface WeeklyReportRecord {
+  id: string
+  createdAt: string
+  weekStart: string
+  weekEnd: string
+  storagePath: string
+  summary: WeeklyReportSummary
+}
+
+export async function insertWeeklyReport(
+  record: Omit<WeeklyReportRecord, 'id' | 'createdAt'>
+): Promise<WeeklyReportRecord> {
+  const db = getServiceClient()
+  const { data, error } = await db
+    .from('weekly_reports')
+    .insert({
+      week_start: record.weekStart,
+      week_end: record.weekEnd,
+      storage_path: record.storagePath,
+      summary: record.summary,
+    })
+    .select()
+    .single()
+  if (error) throw new Error(`Failed to insert weekly report: ${error.message}`)
+  return {
+    id: data.id,
+    createdAt: data.created_at,
+    weekStart: data.week_start,
+    weekEnd: data.week_end,
+    storagePath: data.storage_path,
+    summary: data.summary,
+  }
+}
+
+export async function getWeeklyReports(limit = 20): Promise<WeeklyReportRecord[]> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('weekly_reports')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(`Failed to fetch weekly reports: ${error.message}`)
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    weekStart: row.week_start,
+    weekEnd: row.week_end,
+    storagePath: row.storage_path,
+    summary: row.summary ?? {},
+  }))
+}
+
+export async function getWeeklyReportById(id: string): Promise<WeeklyReportRecord | null> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('weekly_reports')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error) return null
+  if (!data) return null
+  return {
+    id: data.id,
+    createdAt: data.created_at,
+    weekStart: data.week_start,
+    weekEnd: data.week_end,
+    storagePath: data.storage_path,
+    summary: data.summary ?? {},
+  }
+}
+
+export async function createStorageSignedUrl(
+  storagePath: string,
+  expiresInSeconds = 3600
+): Promise<string> {
+  const db = getServiceClient()
+  const { data, error } = await db.storage
+    .from('weekly-reports')
+    .createSignedUrl(storagePath, expiresInSeconds)
+  if (error) throw new Error(`Failed to create signed URL: ${error.message}`)
+  return data.signedUrl
 }
