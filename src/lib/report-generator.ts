@@ -238,7 +238,8 @@ function drawKPIBoxes(doc: PDFKit.PDFDocument, summary: WeeklyReportSummary): vo
 
 function drawSectionTitle(doc: PDFKit.PDFDocument, title: string): void {
   doc.moveDown(0.8)
-  doc.font('Helvetica-Bold').fontSize(13).fillColor(C_GREEN).text(title)
+  // Pass explicit MARGIN as x so cursor position after absolute KPI/header calls doesn't corrupt layout
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(C_GREEN).text(title, MARGIN, doc.y)
   const lineY = doc.y + 2
   doc
     .moveTo(MARGIN, lineY)
@@ -369,24 +370,24 @@ function generatePDF(
 
     const pnlSign = summary.pnlUSD >= 0 ? '+' : ''
     doc.fontSize(10).fillColor(C_BLACK)
-    doc.text(`Equity (start of week):   $${summary.equityStart.toFixed(2)}`)
-    doc.text(`Equity (end of week):     $${summary.equityEnd.toFixed(2)}`)
+    doc.text(`Equity (start of week):   $${summary.equityStart.toFixed(2)}`, MARGIN)
+    doc.text(`Equity (end of week):     $${summary.equityEnd.toFixed(2)}`, MARGIN)
     doc
       .fillColor(summary.pnlUSD >= 0 ? C_GREEN : C_RED)
-      .text(`Weekly P&L:               ${pnlSign}$${summary.pnlUSD.toFixed(2)} (${pnlSign}${(summary.pnlPct * 100).toFixed(2)}%)`)
+      .text(`Weekly P&L:               ${pnlSign}$${summary.pnlUSD.toFixed(2)} (${pnlSign}${(summary.pnlPct * 100).toFixed(2)}%)`, MARGIN)
     doc.fillColor(C_BLACK)
 
     // ---- Trade Statistics ----
     drawSectionTitle(doc, 'Trade Statistics')
 
     doc.fontSize(10).fillColor(C_BLACK)
-    doc.text(`Total cycles analyzed:    ${summary.totalCycles}`)
-    doc.text(`BUY / SELL / HOLD:        ${summary.buyDecisions} / ${summary.sellDecisions} / ${summary.holdDecisions}`)
-    doc.text(`Trades executed:          ${summary.tradesExecuted}`)
-    doc.text(`Win rate:                 ${(summary.winRate * 100).toFixed(1)}%`)
-    doc.text(`Avg win:                  +${(summary.avgWinPct * 100).toFixed(2)}%`)
-    doc.text(`Avg loss:                 ${(summary.avgLossPct * 100).toFixed(2)}%`)
-    doc.text(`Profit factor:            ${summary.profitFactor.toFixed(2)}`)
+    doc.text(`Total cycles analyzed:    ${summary.totalCycles}`, MARGIN)
+    doc.text(`BUY / SELL / HOLD:        ${summary.buyDecisions} / ${summary.sellDecisions} / ${summary.holdDecisions}`, MARGIN)
+    doc.text(`Trades executed:          ${summary.tradesExecuted}`, MARGIN)
+    doc.text(`Win rate:                 ${(summary.winRate * 100).toFixed(1)}%`, MARGIN)
+    doc.text(`Avg win:                  +${(summary.avgWinPct * 100).toFixed(2)}%`, MARGIN)
+    doc.text(`Avg loss:                 ${(summary.avgLossPct * 100).toFixed(2)}%`, MARGIN)
+    doc.text(`Profit factor:            ${summary.profitFactor.toFixed(2)}`, MARGIN)
 
     // ---- Trade Log ----
     const weekEvals = evaluations.filter((e) => {
@@ -435,11 +436,11 @@ function generatePDF(
 
       for (const p of topPatterns) {
         doc.font('Helvetica-Bold').fontSize(10).fillColor(C_BLACK)
-        doc.text(`• ${p.description}`, { indent: 10 })
+        doc.text(`• ${p.description}`, MARGIN + 10)
         doc.font('Helvetica').fontSize(9).fillColor(C_GRAY_MID)
         doc.text(
           `  Win rate: ${(p.winRate * 100).toFixed(0)}%  |  Avg P&L: ${p.avgPnLPct >= 0 ? '+' : ''}${p.avgPnLPct.toFixed(1)}%  |  Samples: ${p.sampleCount}  |  Action: ${p.action}`,
-          { indent: 10 }
+          MARGIN + 10
         )
         doc.moveDown(0.3)
       }
@@ -454,7 +455,7 @@ function generatePDF(
 
       doc.font('Helvetica').fontSize(10).fillColor(C_BLACK)
       for (const lesson of uniqueLessons) {
-        doc.text(`• ${lesson}`, { indent: 10 })
+        doc.text(`• ${lesson}`, MARGIN + 10)
         doc.moveDown(0.2)
       }
     }
@@ -466,6 +467,8 @@ function generatePDF(
       drawFooter(doc, i + 1, range.count)
     }
 
+    // Flush obligatorio con bufferPages: true antes de end()
+    doc.flushPages()
     doc.end()
   })
 }
