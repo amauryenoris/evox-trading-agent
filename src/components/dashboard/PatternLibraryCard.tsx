@@ -14,7 +14,7 @@ export function PatternLibraryCard({ patterns }: Props) {
       </h2>
       {ranked.length === 0 ? (
         <p className="text-slate-600 text-sm py-6 text-center">
-          Patterns appear after 2+ completed trades
+          Patterns appear after 1+ completed trades
         </p>
       ) : (
         <div className="space-y-2">
@@ -22,10 +22,18 @@ export function PatternLibraryCard({ patterns }: Props) {
             const winPct = (p.winRate * 100).toFixed(0)
             const avgPnL = p.avgPnLPct >= 0 ? `+${p.avgPnLPct.toFixed(1)}%` : `${p.avgPnLPct.toFixed(1)}%`
             const isGood = p.winRate >= 0.6
+            const symbol = p.id.split('_').pop() ?? ''
             return (
               <div key={p.id} className="border border-[#1e1e2e] rounded-lg p-3">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <p className="text-xs text-slate-300 leading-relaxed flex-1">{p.description}</p>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {symbol && (
+                      <span className="text-xs font-bold text-slate-100 bg-[#1e1e2e] px-1.5 py-0.5 rounded shrink-0">
+                        {symbol}
+                      </span>
+                    )}
+                    <p className="text-xs text-slate-300 leading-relaxed">{p.description}</p>
+                  </div>
                   <span
                     className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${
                       p.action === 'BUY'
