@@ -340,9 +340,11 @@ function calculateBuyQuantity(
     qty = Math.floor(qty / 2)
   }
 
-  // Safety cap: never exceed 95% of available cash
+  // Safety cap A: never exceed 95% of available cash
   const maxAffordable = Math.floor((availableCash * 0.95) / currentPrice)
-  return Math.max(0, Math.min(qty, maxAffordable))
+  // Safety cap B: never exceed 10% of total equity (prevents oversizing on cheap stocks)
+  const maxByEquity = Math.floor((portfolioEquity * 0.10) / currentPrice)
+  return Math.max(0, Math.min(qty, Math.min(maxAffordable, maxByEquity)))
 }
 
 // ============================================================
@@ -547,6 +549,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                 indicators.kalman?.signal,
                 indicators.marketRegime
               )
+              console.log(`[BUY SIZING] ${symbol}: qty=${qty} | price=$${indicators.currentPrice} | equity=$${account.equity} | regime=${indicators.marketRegime}`)
               if (qty > 0) {
                 const order = await submitOrder(symbol, qty, 'buy')
                 orderId = order.id

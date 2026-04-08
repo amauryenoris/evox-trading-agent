@@ -385,8 +385,8 @@ function generatePDF(
     doc.text(`BUY / SELL / HOLD:        ${summary.buyDecisions} / ${summary.sellDecisions} / ${summary.holdDecisions}`, MARGIN)
     doc.text(`Trades executed:          ${summary.tradesExecuted}`, MARGIN)
     doc.text(`Win rate:                 ${(summary.winRate * 100).toFixed(1)}%`, MARGIN)
-    doc.text(`Avg win:                  +${(summary.avgWinPct * 100).toFixed(2)}%`, MARGIN)
-    doc.text(`Avg loss:                 ${(summary.avgLossPct * 100).toFixed(2)}%`, MARGIN)
+    doc.text(`Avg win:                  +${summary.avgWinPct.toFixed(2)}%`, MARGIN)
+    doc.text(`Avg loss:                 ${summary.avgLossPct.toFixed(2)}%`, MARGIN)
     doc.text(`Profit factor:            ${summary.profitFactor.toFixed(2)}`, MARGIN)
 
     // ---- Trade Log ----
@@ -416,7 +416,7 @@ function generatePDF(
           `$${ev.sellPrice.toFixed(2)}`,
           String(ev.quantity),
           `${ev.pnlUSD >= 0 ? '+' : ''}$${ev.pnlUSD.toFixed(2)}`,
-          `${ev.pnlPct >= 0 ? '+' : ''}${(ev.pnlPct * 100).toFixed(1)}%`,
+          `${ev.pnlPct >= 0 ? '+' : ''}${ev.pnlPct.toFixed(1)}%`,
           ev.outcome,
         ],
         colors: [null, null, null, null, ev.pnlUSD >= 0 ? C_GREEN : C_RED, null, null],
