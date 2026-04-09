@@ -66,6 +66,50 @@ function toDateString(d: Date): string {
 }
 
 // ============================================================
+// ENHANCED DIAGNOSTICS TYPES
+// ============================================================
+
+interface HoldsBreakdown {
+  total: number
+  confidenceBelow065: number
+  zscoreOutOfRange: number
+  noKalmanSignal: number
+  gate1Liquidity: number
+  gate2Hours: number
+  gate3Overtrading: number
+  gate4Portfolio: number
+  otherHold: number
+  avgConfidenceOnHolds: number
+}
+
+interface RegimeDistribution {
+  trending: number
+  transition: number
+  ranging: number
+  highVolatility: number
+  total: number
+}
+
+interface ConfidenceSummary {
+  avgBuys: number
+  avgHolds: number
+  avgSells: number
+  pctAboveThreshold: number
+}
+
+interface KalmanSummary {
+  avgZscoreAtEntry: number
+  pctEntriesBelowMinus1_5: number
+}
+
+interface EnhancedDiagnostics {
+  holdsBreakdown: HoldsBreakdown
+  regimeDistribution: RegimeDistribution
+  confidenceSummary: ConfidenceSummary
+  kalmanSummary: KalmanSummary
+}
+
+// ============================================================
 // SUMMARY CALCULATION
 // ============================================================
 
@@ -119,6 +163,118 @@ function calculateSummary(
     avgWinPct,
     avgLossPct,
     profitFactor: isFinite(profitFactor) ? profitFactor : 0,
+  }
+}
+
+function calculateDiagnostics(
+  agentLog: AgentLogEntry[],
+  evaluations: TradeEvaluation[],
+  weekStart: Date,
+  weekEnd: Date
+): EnhancedDiagnostics {
+  const weekEntries = agentLog.filter((e) => {
+    const t = new Date(e.timestamp)
+    return t >= weekStart && t <= weekEnd
+  })
+  const weekEvals = evaluations.filter((e) => {
+    const t = new Date(e.sellTimestamp)
+    return t >= weekStart && t <= weekEnd
+  })
+
+  // ── HOLDs Breakdown ─────────────────────────────────────────
+  const nonExecuted = weekEntries.filter((e) => !e.orderExecuted)
+  let confidenceBelow065 = 0
+  let zscoreOutOfRange = 0
+  let noKalmanSignal = 0
+  let gate1Liquidity = 0
+  let gate2Hours = 0
+  let gate3Overtrading = 0
+  let gate4Portfolio = 0
+  let otherHold = 0
+
+  for (const e of nonExecuted) {
+    const err = e.error ?? ''
+    if (err.includes('Liquidity gate')) {
+      gate1Liquidity++
+    } else if (err.includes('Trading hours gate')) {
+      gate2Hours++
+    } else if (err.includes('Overtrading gate')) {
+      gate3Overtrading++
+    } else if (err.includes('gate') || err.includes('Gate')) {
+      gate4Portfolio++
+    } else if (e.decision.action === 'HOLD' && e.indicators.kalman === null) {
+      noKalmanSignal++
+    } else if (e.decision.action === 'HOLD' && e.indicators.kalman?.signal === 'NEUTRAL') {
+      zscoreOutOfRange++
+    } else if (e.decision.action === 'HOLD' && e.decision.confidence < 0.65) {
+      confidenceBelow065++
+    } else {
+      otherHold++
+    }
+  }
+
+  const holdEntries = weekEntries.filter((e) => e.decision.action === 'HOLD')
+  const avgConfidenceOnHolds = holdEntries.length > 0
+    ? holdEntries.reduce((s, e) => s + e.decision.confidence, 0) / holdEntries.length
+    : 0
+
+  // ── Regime Distribution ──────────────────────────────────────
+  const regimeCounts = { TRENDING: 0, TRANSITION: 0, RANGING: 0, HIGH_VOLATILITY: 0 }
+  for (const e of weekEntries) {
+    const r = e.indicators.marketRegime
+    if (r && r in regimeCounts) regimeCounts[r as keyof typeof regimeCounts]++
+  }
+  const total = weekEntries.length || 1
+
+  // ── Confidence Summary ───────────────────────────────────────
+  const buyExec = weekEntries.filter((e) => e.orderExecuted && e.decision.action === 'BUY')
+  const sellExec = weekEntries.filter((e) => e.orderExecuted && e.decision.action === 'SELL')
+  const avgConfidenceBuys = buyExec.length > 0
+    ? buyExec.reduce((s, e) => s + e.decision.confidence, 0) / buyExec.length : 0
+  const avgConfidenceSells = sellExec.length > 0
+    ? sellExec.reduce((s, e) => s + e.decision.confidence, 0) / sellExec.length : 0
+  const aboveThreshold = weekEntries.filter((e) => e.decision.confidence >= 0.65).length
+  const pctAboveThreshold = weekEntries.length > 0 ? (aboveThreshold / weekEntries.length) * 100 : 0
+
+  // ── Kalman Summary ───────────────────────────────────────────
+  const tradesWithKalman = weekEvals.filter((e) => e.buyIndicators?.kalman != null)
+  const avgZscoreAtEntry = tradesWithKalman.length > 0
+    ? tradesWithKalman.reduce((s, e) => s + (e.buyIndicators.kalman?.zScore ?? 0), 0) / tradesWithKalman.length
+    : 0
+  const belowMinus1_5 = tradesWithKalman.filter((e) => (e.buyIndicators.kalman?.zScore ?? 0) < -1.5).length
+  const pctEntriesBelowMinus1_5 = tradesWithKalman.length > 0
+    ? (belowMinus1_5 / tradesWithKalman.length) * 100 : 0
+
+  return {
+    holdsBreakdown: {
+      total: nonExecuted.length,
+      confidenceBelow065,
+      zscoreOutOfRange,
+      noKalmanSignal,
+      gate1Liquidity,
+      gate2Hours,
+      gate3Overtrading,
+      gate4Portfolio,
+      otherHold,
+      avgConfidenceOnHolds,
+    },
+    regimeDistribution: {
+      trending: regimeCounts.TRENDING,
+      transition: regimeCounts.TRANSITION,
+      ranging: regimeCounts.RANGING,
+      highVolatility: regimeCounts.HIGH_VOLATILITY,
+      total,
+    },
+    confidenceSummary: {
+      avgBuys: avgConfidenceBuys,
+      avgHolds: avgConfidenceOnHolds,
+      avgSells: avgConfidenceSells,
+      pctAboveThreshold,
+    },
+    kalmanSummary: {
+      avgZscoreAtEntry,
+      pctEntriesBelowMinus1_5,
+    },
   }
 }
 
@@ -345,12 +501,18 @@ function drawFooter(doc: PDFKit.PDFDocument, pageNum: number, totalPages: number
 // PDF GENERATION
 // ============================================================
 
+function pct(n: number, total: number): string {
+  return total > 0 ? `${((n / total) * 100).toFixed(0)}%` : '0%'
+}
+
 function generatePDF(
   summary: WeeklyReportSummary,
+  agentLog: AgentLogEntry[],
   evaluations: TradeEvaluation[],
   patterns: TradingPattern[],
   weekStart: Date,
-  weekEnd: Date
+  weekEnd: Date,
+  diagnostics: EnhancedDiagnostics
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: MARGIN, size: 'A4', bufferPages: true })
@@ -389,6 +551,48 @@ function generatePDF(
     doc.text(`Avg loss:                 ${summary.avgLossPct.toFixed(2)}%`, MARGIN)
     doc.text(`Profit factor:            ${summary.profitFactor.toFixed(2)}`, MARGIN)
 
+    // ---- HOLDs Breakdown ----
+    const hb = diagnostics.holdsBreakdown
+    drawSectionTitle(doc, `HOLDs Breakdown  (${hb.total} non-executed cycles)`)
+    doc.fontSize(10).fillColor(C_BLACK)
+    const holdRows = [
+      [`Confidence < 0.65`,        hb.confidenceBelow065,  hb.total],
+      [`Z-score out of range`,      hb.zscoreOutOfRange,    hb.total],
+      [`No Kalman signal`,          hb.noKalmanSignal,      hb.total],
+      [`Gate 1 — Low liquidity`,    hb.gate1Liquidity,      hb.total],
+      [`Gate 2 — Outside hours`,    hb.gate2Hours,          hb.total],
+      [`Gate 3 — Overtrading`,      hb.gate3Overtrading,    hb.total],
+      [`Gate 4 — Portfolio risk`,   hb.gate4Portfolio,      hb.total],
+      [`Other (Claude HOLD)`,       hb.otherHold,           hb.total],
+    ]
+    for (const [label, n, tot] of holdRows) {
+      doc.text(`  ${String(label).padEnd(30)}  ${String(n).padStart(4)}  (${pct(Number(n), Number(tot))})`, MARGIN)
+    }
+    doc.text(`  Avg confidence on HOLDs:          ${hb.avgConfidenceOnHolds.toFixed(3)}`, MARGIN)
+
+    // ---- Market Regime Distribution ----
+    const rd = diagnostics.regimeDistribution
+    drawSectionTitle(doc, `Market Regime Distribution  (${rd.total} cycles)`)
+    doc.fontSize(10).fillColor(C_BLACK)
+    const regimeRows: [string, number][] = [
+      ['TRENDING',        rd.trending],
+      ['TRANSITION',      rd.transition],
+      ['RANGING',         rd.ranging],
+      ['HIGH_VOLATILITY', rd.highVolatility],
+    ]
+    for (const [label, n] of regimeRows) {
+      doc.text(`  ${label.padEnd(20)}  ${String(n).padStart(4)} cycles  (${pct(n, rd.total)})`, MARGIN)
+    }
+
+    // ---- Confidence Summary ----
+    const cs = diagnostics.confidenceSummary
+    drawSectionTitle(doc, 'Confidence Summary')
+    doc.fontSize(10).fillColor(C_BLACK)
+    doc.text(`  Avg confidence — BUYs:   ${cs.avgBuys.toFixed(3)}`, MARGIN)
+    doc.text(`  Avg confidence — HOLDs:  ${cs.avgHolds.toFixed(3)}`, MARGIN)
+    doc.text(`  Avg confidence — SELLs:  ${cs.avgSells.toFixed(3)}`, MARGIN)
+    doc.text(`  Analyses above 0.65:     ${cs.pctAboveThreshold.toFixed(1)}%`, MARGIN)
+
     // ---- Trade Log ----
     const weekEvals = evaluations.filter((e) => {
       const t = new Date(e.sellTimestamp)
@@ -423,6 +627,50 @@ function generatePDF(
       }))
 
       drawStyledTable(doc, tradeColumns, tradeRows)
+
+      // ---- Trade Detail — Kalman & Regime ----
+      const ks = diagnostics.kalmanSummary
+      drawSectionTitle(doc, 'Trade Detail — Kalman & Regime')
+
+      const detailColumns: TableColumn[] = [
+        { label: 'Symbol',       width: 60 },
+        { label: 'Z-Entry',      width: 65, align: 'right' },
+        { label: 'Fair Value',   width: 75, align: 'right' },
+        { label: 'Deviation',    width: 65, align: 'right' },
+        { label: 'Regime',       width: 110 },
+        { label: 'Confidence',   width: 60, align: 'right' },
+        { label: 'Outcome',      width: 60 },
+      ]
+
+      const detailRows: TableRow[] = weekEvals.map((ev) => {
+        const kalman = ev.buyIndicators?.kalman
+        const zEntry = kalman ? kalman.zScore.toFixed(3) : 'N/A'
+        const fairVal = kalman ? `$${kalman.stateEstimate.toFixed(2)}` : 'N/A'
+        const devPct = kalman
+          ? `${(((ev.buyPrice - kalman.stateEstimate) / kalman.stateEstimate) * 100).toFixed(1)}%`
+          : 'N/A'
+        const regime = ev.buyIndicators?.marketRegime ?? 'N/A'
+        // Find matching agent_log entry for confidence
+        const matchingLog = agentLog.find(
+          (l) => l.symbol === ev.symbol && l.orderExecuted && l.decision.action === 'BUY'
+        )
+        const confidence = matchingLog ? matchingLog.decision.confidence.toFixed(2) : 'N/A'
+        const zColor = kalman && kalman.zScore < -1.5 ? C_GREEN : kalman ? C_RED : C_BLACK
+        return {
+          cells: [ev.symbol, zEntry, fairVal, devPct, regime, confidence, ev.outcome],
+          colors: [null, zColor, null, null, null, null, ev.outcome === 'profit' ? C_GREEN : ev.outcome === 'loss' ? C_RED : C_BLACK],
+        }
+      })
+
+      drawStyledTable(doc, detailColumns, detailRows)
+
+      // Kalman quality summary line
+      doc.fontSize(9).fillColor(C_GRAY_MID)
+      doc.text(
+        `Kalman quality — Avg Z-Score at entry: ${ks.avgZscoreAtEntry.toFixed(3)}  |  Entries below -1.5: ${ks.pctEntriesBelowMinus1_5.toFixed(0)}% (target: 100%)`,
+        MARGIN
+      )
+      doc.moveDown(0.5)
     }
 
     // ---- Top 5 Patterns ----
@@ -493,7 +741,8 @@ export async function generateAndSaveReport(): Promise<WeeklyReportRecord> {
   ])
 
   const summary = calculateSummary(agentLog, evaluations, weekStart, weekEnd)
-  const pdfBuffer = await generatePDF(summary, evaluations, patterns, weekStart, weekEnd)
+  const diagnostics = calculateDiagnostics(agentLog, evaluations, weekStart, weekEnd)
+  const pdfBuffer = await generatePDF(summary, agentLog, evaluations, patterns, weekStart, weekEnd, diagnostics)
 
   const filename = `report-${toDateString(weekStart)}_${toDateString(weekEnd)}.pdf`
   const db = createClient(supabaseUrl, serviceKey)
