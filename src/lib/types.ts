@@ -122,6 +122,7 @@ export interface TechnicalIndicators {
 // ============================================================
 
 export type AgentAction = 'BUY' | 'SELL' | 'HOLD'
+export type SignalType = 'MEAN_REVERSION' | 'TREND_FOLLOWING' | 'OTHER'
 
 export interface AgentDecision {
   action: AgentAction
@@ -129,6 +130,8 @@ export interface AgentDecision {
   quantity: number
   reasoning: string
   confidence: number
+  signal_type?: SignalType
+  regime_compatible?: boolean
 }
 
 export interface AgentLogEntry {

@@ -71,6 +71,7 @@ function toDateString(d: Date): string {
 
 interface HoldsBreakdown {
   total: number
+  preFilterBlock: number
   confidenceBelow065: number
   zscoreOutOfRange: number
   noKalmanSignal: number
@@ -190,11 +191,14 @@ function calculateDiagnostics(
   let gate2Hours = 0
   let gate3Overtrading = 0
   let gate4Portfolio = 0
+  let preFilterBlock = 0
   let otherHold = 0
 
   for (const e of nonExecuted) {
     const err = e.error ?? ''
-    if (err.includes('Liquidity gate')) {
+    if (err.startsWith('Pre-filter:')) {
+      preFilterBlock++
+    } else if (err.includes('Liquidity gate')) {
       gate1Liquidity++
     } else if (err.includes('Trading hours gate')) {
       gate2Hours++
@@ -248,6 +252,7 @@ function calculateDiagnostics(
   return {
     holdsBreakdown: {
       total: nonExecuted.length,
+      preFilterBlock,
       confidenceBelow065,
       zscoreOutOfRange,
       noKalmanSignal,
@@ -556,7 +561,8 @@ function generatePDF(
     drawSectionTitle(doc, `HOLDs Breakdown  (${hb.total} non-executed cycles)`)
     doc.fontSize(10).fillColor(C_BLACK)
     const holdRows = [
-      [`Confidence < 0.65`,        hb.confidenceBelow065,  hb.total],
+      [`Pre-filter block`,          hb.preFilterBlock,      hb.total],
+      [`Confidence < threshold`,    hb.confidenceBelow065,  hb.total],
       [`Z-score out of range`,      hb.zscoreOutOfRange,    hb.total],
       [`No Kalman signal`,          hb.noKalmanSignal,      hb.total],
       [`Gate 1 — Low liquidity`,    hb.gate1Liquidity,      hb.total],

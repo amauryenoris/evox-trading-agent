@@ -94,11 +94,19 @@ Return quantity = 0 in your JSON — the system will calculate the correct size.
 - If a pattern has caused losses historically, reduce confidence accordingly
 - The market is a thermometer, not a crystal ball — trade probabilities, not predictions
 
+## REGIME RESTRICTIONS (mandatory — override 9/10 rule if violated)
+- Mean reversion trades (Kalman z-score based) are ONLY valid when market_regime == RANGING.
+  If regime is TRANSITION: return HOLD. Price is moving, not oscillating — mean reversion fails.
+- If regime is HIGH_VOLATILITY: return HOLD unless confidence >= 0.82.
+- If regime is TRENDING: only consider trend-following setups, not mean reversion.
+- Set signal_type to MEAN_REVERSION if using Kalman z-score, TREND_FOLLOWING if using breakout, OTHER otherwise.
+- Set regime_compatible: false if the above rules block your entry, and return HOLD.
+
 ## STRICT OUTPUT RULES
 - Respond ONLY with valid JSON matching the schema below. No markdown, no text outside JSON.
 - Never recommend BUY if: maximum positions (5) are already open, or insufficient buying power.
 - Never recommend SELL if: no position currently exists in that symbol.
-- Only recommend BUY or SELL if confidence >= 0.65. Otherwise return HOLD.
+- Only recommend BUY or SELL if confidence meets the regime threshold (RANGING: 0.65, TRENDING: 0.70, TRANSITION: 0.78, HIGH_VOLATILITY: 0.82). Otherwise return HOLD.
 - Reasoning must explicitly reference the Kalman signal and at least one secondary indicator.
 - Consider learning history seriously — past losses in similar conditions must lower confidence.
 - Consider macro and symbol-specific news: if recent headlines contradict your technical thesis (e.g., bearish earnings, geopolitical shock affecting the sector), reduce confidence or return HOLD. News context is provided in the prompt under MACRO & MARKET CONTEXT and RECENT NEWS FOR [SYMBOL].
@@ -109,8 +117,68 @@ RESPONSE SCHEMA (strict JSON):
   "symbol": "string",
   "quantity": 0,
   "reasoning": "3-5 sentences: cite Kalman signal, secondary indicators, 9/10 rule assessment, and learning history",
-  "confidence": 0.0
+  "confidence": 0.0,
+  "signal_type": "MEAN_REVERSION | TREND_FOLLOWING | OTHER",
+  "regime_compatible": true
 }`
+
+// ============================================================
+// CONFIDENCE THRESHOLDS BY REGIME (Gate 0 + Pre-filter)
+// ============================================================
+
+const CONFIDENCE_THRESHOLDS: Record<string, number> = {
+  RANGING: 0.65,
+  TRENDING: 0.70,
+  TRANSITION: 0.78,
+  HIGH_VOLATILITY: 0.82,
+}
+
+// ============================================================
+// PRE-CLAUDE FILTER — runs before enriched prompt (Fix #1)
+// ============================================================
+
+function preClaudeFilter(
+  indicators: TechnicalIndicators,
+  positions: AlpacaPosition[],
+): { action: 'HOLD'; reason: string } | null {
+  const { kalman, marketRegime } = indicators
+
+  // Rule 1: no Kalman signal — no point asking Claude
+  if (!kalman || kalman.zScore > -1.5) {
+    return {
+      action: 'HOLD',
+      reason: `Pre-filter: z-score ${kalman?.zScore?.toFixed(3) ?? 'null'} > -1.5 — no signal`,
+    }
+  }
+
+  // Rule 2: mean reversion only valid in RANGING
+  if (marketRegime !== 'RANGING') {
+    return {
+      action: 'HOLD',
+      reason: `Pre-filter: mean reversion blocked — regime is ${marketRegime ?? 'null'}`,
+    }
+  }
+
+  return null // proceed to Claude
+}
+
+// ============================================================
+// GATE 0 — Regime-adjusted confidence threshold (Fix #3)
+// ============================================================
+
+function passesConfidenceGate(
+  confidence: number,
+  regime: string | null,
+): { passes: boolean; reason?: string } {
+  const threshold = CONFIDENCE_THRESHOLDS[regime ?? ''] ?? 0.80
+  if (confidence < threshold) {
+    return {
+      passes: false,
+      reason: `Gate 0: confidence ${confidence.toFixed(2)} < ${threshold} required for ${regime ?? 'unknown'} regime`,
+    }
+  }
+  return { passes: true }
+}
 
 // ============================================================
 // INDICATOR INTERPRETATION HELPERS
@@ -468,6 +536,23 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       const indicators = calculateAllIndicators(bars)
 
+      // Pre-filter: skip Claude call for obvious HOLDs (Fix #1)
+      const preFilter = preClaudeFilter(indicators, positions)
+      if (preFilter) {
+        console.log(`[PRE-FILTER] ${symbol}: ${preFilter.reason}`)
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: preFilter.reason, confidence: 0 },
+          indicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: preFilter.reason,
+        })
+        continue
+      }
+
       // Build learning context (same for all symbols in this cycle — cached reads)
       const learningContext = await buildLearningContext(indicators)
 
@@ -503,8 +588,21 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       let orderId: string | undefined
       let error: string | undefined
 
+      // Regime gate: override if Claude returned regime_compatible=false (Fix #2)
+      if (decision.action !== 'HOLD' && decision.regime_compatible === false) {
+        error = `Regime gate: Claude set regime_compatible=false — ${decision.reasoning.slice(0, 80)}`
+        decision.action = 'HOLD'
+      }
+
+      // Gate 0: regime-adjusted confidence threshold (Fix #3)
+      const confidenceCheck = passesConfidenceGate(decision.confidence, indicators.marketRegime)
+      if (decision.action !== 'HOLD' && !confidenceCheck.passes) {
+        error = confidenceCheck.reason
+        decision.action = 'HOLD'
+      }
+
       // Execute order if market is open and decision is actionable
-      if (decision.action !== 'HOLD' && decision.confidence >= 0.65) {
+      if (decision.action !== 'HOLD') {
         if (!marketOpen) {
           error = 'Market closed — order queued but not executed'
         } else {

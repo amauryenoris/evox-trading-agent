@@ -64,11 +64,23 @@ export async function getAgentLog(limit = 500): Promise<AgentLogEntry[]> {
       reasoning: row.reasoning ?? '',
       confidence: row.confidence ?? 0,
     },
-    indicators: row.indicators ?? {
-      rsi: null, macd: null, bollingerBands: null,
-      sma50: null, sma200: null, currentPrice: 0, volume: 0,
-      adx: null, atr: null, atrPercentile: null, marketRegime: null,
-    },
+    indicators: (() => {
+      const raw = row.indicators ?? {}
+      return {
+        rsi: raw.rsi ?? null,
+        macd: raw.macd ?? null,
+        bollingerBands: raw.bollingerBands ?? null,
+        sma50: raw.sma50 ?? null,
+        sma200: raw.sma200 ?? null,
+        currentPrice: raw.currentPrice ?? 0,
+        volume: raw.volume ?? 0,
+        adx: raw.adx ?? null,
+        atr: raw.atr ?? null,
+        atrPercentile: raw.atrPercentile ?? null,
+        marketRegime: raw.marketRegime ?? null,
+        kalman: raw.kalman ?? null,
+      }
+    })(),
     portfolioSnapshot: row.portfolio_snapshot ?? { equity: '0', cash: '0', positionCount: 0 },
     orderExecuted: row.order_executed ?? false,
     orderId: row.order_id ?? undefined,
@@ -168,11 +180,23 @@ export async function getTradeEvaluations(limit = 200): Promise<TradeEvaluation[
     pnlUSD: row.pnl_usd ?? 0,
     pnlPct: row.pnl_pct ?? 0,
     holdingDays: Math.round((row.holding_period_hours ?? 0) / 24),
-    buyIndicators: row.indicators_at_buy ?? {
-      rsi: null, macd: null, bollingerBands: null,
-      sma50: null, sma200: null, currentPrice: 0, volume: 0,
-      adx: null, atr: null, atrPercentile: null, marketRegime: null,
-    },
+    buyIndicators: (() => {
+      const raw = row.indicators_at_buy ?? {}
+      return {
+        rsi: raw.rsi ?? null,
+        macd: raw.macd ?? null,
+        bollingerBands: raw.bollingerBands ?? null,
+        sma50: raw.sma50 ?? null,
+        sma200: raw.sma200 ?? null,
+        currentPrice: raw.currentPrice ?? 0,
+        volume: raw.volume ?? 0,
+        adx: raw.adx ?? null,
+        atr: raw.atr ?? null,
+        atrPercentile: raw.atrPercentile ?? null,
+        marketRegime: raw.marketRegime ?? null,
+        kalman: raw.kalman ?? null, // explicit null prevents N/A in Trade Detail table
+      }
+    })(),
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],
     outcome: row.outcome ?? 'breakeven',
