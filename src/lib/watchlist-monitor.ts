@@ -3,8 +3,8 @@ import {
   getActiveNearMisses,
   updateNearMiss,
   getActiveNearMissForSymbol,
-} from './db.js'
-import type { TechnicalIndicators, ThresholdMap, NearMissEntry } from './types.js'
+} from './db'
+import type { TechnicalIndicators, ThresholdMap, NearMissEntry } from './types'
 
 // Near-miss zone: z-score between -1.0 and threshold (e.g. -1.493 when threshold is -1.5)
 const NEAR_MISS_UPPER = -1.0

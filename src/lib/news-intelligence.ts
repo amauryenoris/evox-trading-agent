@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { getNewsForSymbols, getMacroNews } from './alpaca.js'
-import { saveNewsEvent } from './db.js'
-import type { ThresholdMap, NewsEvent } from './types.js'
+import { getNewsForSymbols, getMacroNews } from './alpaca'
+import { saveNewsEvent } from './db'
+import type { ThresholdMap, NewsEvent } from './types'
 
 const BASE_THRESHOLD = -1.5
 const MAX_NEWS_PER_CYCLE = 10
