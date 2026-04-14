@@ -4,6 +4,8 @@ import {
   getTradeEvaluations,
   getPatternLibrary,
   insertWeeklyReport,
+  getWeeklyNewsStats,
+  getWeeklyWatchlistStats,
   type WeeklyReportRecord,
   type WeeklyReportSummary,
 } from './db'
@@ -510,6 +512,9 @@ function pct(n: number, total: number): string {
   return total > 0 ? `${((n / total) * 100).toFixed(0)}%` : '0%'
 }
 
+type WeeklyNewsStats = Awaited<ReturnType<typeof getWeeklyNewsStats>>
+type WeeklyWatchlistStats = Awaited<ReturnType<typeof getWeeklyWatchlistStats>>
+
 function generatePDF(
   summary: WeeklyReportSummary,
   agentLog: AgentLogEntry[],
@@ -517,7 +522,9 @@ function generatePDF(
   patterns: TradingPattern[],
   weekStart: Date,
   weekEnd: Date,
-  diagnostics: EnhancedDiagnostics
+  diagnostics: EnhancedDiagnostics,
+  newsStats?: WeeklyNewsStats,
+  watchlistStats?: WeeklyWatchlistStats,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: MARGIN, size: 'A4', bufferPages: true })
@@ -588,6 +595,101 @@ function generatePDF(
     ]
     for (const [label, n] of regimeRows) {
       doc.text(`  ${label.padEnd(20)}  ${String(n).padStart(4)} cycles  (${pct(n, rd.total)})`, MARGIN)
+    }
+
+    // ---- News Intelligence Summary ----
+    if (newsStats) {
+      drawSectionTitle(doc, 'News Intelligence Summary')
+      doc.fontSize(10).fillColor(C_BLACK)
+      doc.text(`  Total news articles processed:     ${newsStats.total}`, MARGIN)
+      doc.text(`  MACRO news events:                 ${newsStats.macro}`, MARGIN)
+      doc.text(`  SYMBOL-specific news events:       ${newsStats.symbol}`, MARGIN)
+      doc.text(`  Macro threshold adjustment:        ${newsStats.macroAdjustment >= 0 ? '+' : ''}${newsStats.macroAdjustment.toFixed(3)}`, MARGIN)
+
+      if (newsStats.bullishBoosts.length > 0) {
+        const boostList = newsStats.bullishBoosts
+          .map((b) => `${b.symbol ?? 'MACRO'} (${b.adjustment.toFixed(3)})`)
+          .join(', ')
+        doc.text(`  Bullish boosts (threshold relaxed): ${newsStats.bullishBoosts.length}`, MARGIN)
+        doc.fontSize(9).fillColor(C_GRAY_MID)
+        doc.text(`    Symbols: ${boostList}`, MARGIN)
+        doc.fontSize(10).fillColor(C_BLACK)
+      }
+
+      if (newsStats.bearishPenalties.length > 0) {
+        const penaltyList = newsStats.bearishPenalties
+          .map((b) => `${b.symbol ?? 'MACRO'} (+${b.adjustment.toFixed(3)})`)
+          .join(', ')
+        doc.text(`  Bearish penalties (tightened):     ${newsStats.bearishPenalties.length}`, MARGIN)
+        doc.fontSize(9).fillColor(C_GRAY_MID)
+        doc.text(`    Symbols: ${penaltyList}`, MARGIN)
+        doc.fontSize(10).fillColor(C_BLACK)
+      }
+    }
+
+    // ---- Near-Miss Watchlist Summary ----
+    if (watchlistStats) {
+      drawSectionTitle(doc, 'Near-Miss Watchlist Summary')
+      doc.fontSize(10).fillColor(C_BLACK)
+      doc.text(`  Active entries (end of week):      ${watchlistStats.activeEndOfWeek}`, MARGIN)
+      doc.text(`  New entries added this week:       ${watchlistStats.newThisWeek}`, MARGIN)
+      doc.text(`  Triggered (converted to BUY):      ${watchlistStats.triggered}`, MARGIN)
+      doc.text(`  Expired without entry:             ${watchlistStats.expired}`, MARGIN)
+      doc.text(`  Cancelled (conditions reverted):   ${watchlistStats.cancelled}`, MARGIN)
+
+      if (watchlistStats.activeEntries.length > 0) {
+        doc.moveDown(0.5)
+        const wmCols: TableColumn[] = [
+          { label: 'Symbol',    width: 65 },
+          { label: 'Initial Z', width: 70, align: 'right' },
+          { label: 'Latest Z',  width: 70, align: 'right' },
+          { label: 'Regime',    width: 95 },
+          { label: 'Cycles',    width: 60, align: 'right' },
+          { label: 'Boost',     width: 135, align: 'right' },
+        ]
+        const wmRows: TableRow[] = watchlistStats.activeEntries.map((e) => ({
+          cells: [
+            e.symbol,
+            e.initial_zscore.toFixed(3),
+            (e.latest_zscore ?? e.initial_zscore).toFixed(3),
+            e.latest_regime ?? e.initial_regime,
+            String(e.monitoring_cycles),
+            e.news_boost_applied !== 0 ? e.news_boost_applied.toFixed(3) : '—',
+          ],
+          colors: [
+            null,
+            C_GRAY_MID,
+            (e.latest_zscore ?? e.initial_zscore) < e.effective_threshold ? C_GREEN : C_GRAY_MID,
+            null,
+            null,
+            e.news_boost_applied < 0 ? C_GREEN : e.news_boost_applied > 0 ? C_RED : C_BLACK,
+          ],
+        }))
+        drawStyledTable(doc, wmCols, wmRows)
+      }
+
+      if (watchlistStats.triggeredEntries.length > 0) {
+        doc.fontSize(10).fillColor(C_BLACK)
+        doc.text('  Watchlist entries that triggered BUY this week:', MARGIN)
+        const trigCols: TableColumn[] = [
+          { label: 'Symbol',    width: 80 },
+          { label: 'Cycles',    width: 80, align: 'right' },
+          { label: 'Initial Z', width: 100, align: 'right' },
+          { label: 'Boost',     width: 100, align: 'right' },
+          { label: 'Status',    width: 135 },
+        ]
+        const trigRows: TableRow[] = watchlistStats.triggeredEntries.map((e) => ({
+          cells: [
+            e.symbol,
+            String(e.monitoring_cycles),
+            e.initial_zscore.toFixed(3),
+            e.news_boost_applied !== 0 ? e.news_boost_applied.toFixed(3) : '—',
+            'TRIGGERED → BUY',
+          ],
+          colors: [null, null, null, null, C_GREEN],
+        }))
+        drawStyledTable(doc, trigCols, trigRows)
+      }
     }
 
     // ---- Confidence Summary ----
@@ -740,17 +842,24 @@ export async function generateAndSaveReport(): Promise<WeeklyReportRecord> {
 
   const { weekStart, weekEnd } = getWeekRange()
 
-  const [agentLog, evaluations, patterns] = await Promise.all([
+  const weekStartStr = toDateString(weekStart)
+  const weekEndStr = toDateString(weekEnd)
+
+  const [agentLog, evaluations, patterns, newsStats, watchlistStats] = await Promise.all([
     getAgentLog(2000),
     getTradeEvaluations(500),
     getPatternLibrary(),
+    getWeeklyNewsStats(weekStartStr, weekEndStr).catch(() => undefined),
+    getWeeklyWatchlistStats(weekStartStr, weekEndStr).catch(() => undefined),
   ])
 
   const summary = calculateSummary(agentLog, evaluations, weekStart, weekEnd)
   const diagnostics = calculateDiagnostics(agentLog, evaluations, weekStart, weekEnd)
-  const pdfBuffer = await generatePDF(summary, agentLog, evaluations, patterns, weekStart, weekEnd, diagnostics)
+  const pdfBuffer = await generatePDF(
+    summary, agentLog, evaluations, patterns, weekStart, weekEnd, diagnostics, newsStats, watchlistStats
+  )
 
-  const filename = `report-${toDateString(weekStart)}_${toDateString(weekEnd)}.pdf`
+  const filename = `report-${weekStartStr}_${weekEndStr}.pdf`
   const db = createClient(supabaseUrl, serviceKey)
   const { error: uploadError } = await db.storage
     .from('weekly-reports')
@@ -759,8 +868,8 @@ export async function generateAndSaveReport(): Promise<WeeklyReportRecord> {
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`)
 
   const record = await insertWeeklyReport({
-    weekStart: toDateString(weekStart),
-    weekEnd: toDateString(weekEnd),
+    weekStart: weekStartStr,
+    weekEnd: weekEndStr,
     storagePath: filename,
     summary,
   })

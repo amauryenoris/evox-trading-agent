@@ -6,6 +6,8 @@ import type {
   TradingPattern,
   SelectionDecision,
   SelectionEvaluation,
+  NewsEvent,
+  NearMissEntry,
 } from './types'
 
 function getClient(): SupabaseClient {
@@ -419,6 +421,148 @@ export async function getWeeklyReportById(id: string): Promise<WeeklyReportRecor
     weekEnd: data.week_end,
     storagePath: data.storage_path,
     summary: data.summary ?? {},
+  }
+}
+
+// ── news_events ──────────────────────────────────────────────────────────────
+
+export async function saveNewsEvent(
+  event: Omit<NewsEvent, 'id' | 'created_at'>
+): Promise<void> {
+  const db = getClient()
+  const { error } = await db.from('news_events').insert(event)
+  if (error) throw new Error(`Failed to save news event: ${error.message}`)
+}
+
+export async function getActiveNewsEvents(symbols: string[]): Promise<NewsEvent[]> {
+  const db = getClient()
+  const now = new Date().toISOString()
+  const { data, error } = await db
+    .from('news_events')
+    .select('*')
+    .gt('expires_at', now)
+    .or(`symbol.in.(${symbols.join(',')}),scope.eq.MACRO`)
+  if (error) throw new Error(`Failed to fetch active news events: ${error.message}`)
+  return (data ?? []) as NewsEvent[]
+}
+
+// ── near_miss_watchlist ───────────────────────────────────────────────────────
+
+export async function insertNearMiss(
+  entry: Omit<NearMissEntry, 'id' | 'created_at'>
+): Promise<void> {
+  const db = getClient()
+  const { error } = await db.from('near_miss_watchlist').insert(entry)
+  if (error) throw new Error(`Failed to insert near miss: ${error.message}`)
+}
+
+export async function getActiveNearMisses(): Promise<NearMissEntry[]> {
+  const db = getClient()
+  const now = new Date().toISOString()
+  const { data, error } = await db
+    .from('near_miss_watchlist')
+    .select('*')
+    .eq('status', 'ACTIVE')
+    .gt('expires_at', now)
+  if (error) throw new Error(`Failed to fetch active near misses: ${error.message}`)
+  return (data ?? []) as NearMissEntry[]
+}
+
+export async function updateNearMiss(
+  id: string,
+  updates: Partial<Omit<NearMissEntry, 'id' | 'created_at'>>
+): Promise<void> {
+  const db = getClient()
+  const { error } = await db.from('near_miss_watchlist').update(updates).eq('id', id)
+  if (error) throw new Error(`Failed to update near miss ${id}: ${error.message}`)
+}
+
+export async function getActiveNearMissForSymbol(
+  symbol: string
+): Promise<NearMissEntry | null> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('near_miss_watchlist')
+    .select('*')
+    .eq('symbol', symbol)
+    .eq('status', 'ACTIVE')
+    .maybeSingle()
+  if (error) throw new Error(`Failed to fetch near miss for ${symbol}: ${error.message}`)
+  return data as NearMissEntry | null
+}
+
+// ── weekly report stats ───────────────────────────────────────────────────────
+
+export async function getWeeklyNewsStats(
+  weekStart: string,
+  weekEnd: string
+): Promise<{
+  total: number
+  macro: number
+  symbol: number
+  bullishBoosts: Array<{ symbol: string | null; adjustment: number }>
+  bearishPenalties: Array<{ symbol: string | null; adjustment: number }>
+  macroAdjustment: number
+}> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('news_events')
+    .select('*')
+    .gte('created_at', weekStart)
+    .lte('created_at', weekEnd)
+  if (error) throw new Error(`Failed to fetch weekly news stats: ${error.message}`)
+  const events = (data ?? []) as NewsEvent[]
+
+  const macro = events.filter((e) => e.scope === 'MACRO').length
+  const symbol = events.filter((e) => e.scope === 'SYMBOL').length
+  const bullishBoosts = events
+    .filter((e) => e.threshold_adjustment < 0)
+    .map((e) => ({ symbol: e.symbol, adjustment: e.threshold_adjustment }))
+  const bearishPenalties = events
+    .filter((e) => e.threshold_adjustment > 0)
+    .map((e) => ({ symbol: e.symbol, adjustment: e.threshold_adjustment }))
+  const macroAdjustment = events
+    .filter((e) => e.scope === 'MACRO')
+    .reduce((sum, e) => sum + e.threshold_adjustment, 0)
+
+  return { total: events.length, macro, symbol, bullishBoosts, bearishPenalties, macroAdjustment }
+}
+
+export async function getWeeklyWatchlistStats(
+  weekStart: string,
+  weekEnd: string
+): Promise<{
+  activeEndOfWeek: number
+  newThisWeek: number
+  triggered: number
+  expired: number
+  cancelled: number
+  activeEntries: NearMissEntry[]
+  triggeredEntries: NearMissEntry[]
+}> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('near_miss_watchlist')
+    .select('*')
+    .gte('detected_at', weekStart)
+    .lte('detected_at', weekEnd)
+  if (error) throw new Error(`Failed to fetch weekly watchlist stats: ${error.message}`)
+  const entries = (data ?? []) as NearMissEntry[]
+
+  const { data: activeData } = await db
+    .from('near_miss_watchlist')
+    .select('*')
+    .eq('status', 'ACTIVE')
+  const activeEndOfWeek = (activeData ?? []).length
+
+  return {
+    activeEndOfWeek,
+    newThisWeek: entries.length,
+    triggered: entries.filter((e) => e.status === 'TRIGGERED').length,
+    expired: entries.filter((e) => e.status === 'EXPIRED').length,
+    cancelled: entries.filter((e) => e.status === 'CANCELLED').length,
+    activeEntries: (activeData ?? []) as NearMissEntry[],
+    triggeredEntries: entries.filter((e) => e.status === 'TRIGGERED'),
   }
 }
 

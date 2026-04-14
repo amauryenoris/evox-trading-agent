@@ -26,6 +26,14 @@ import {
 import { getAllOpenPositionContexts, getTodayBuyExecutions } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
+import { newsIntelligenceLayer } from './news-intelligence'
+import {
+  detectNearMisses,
+  updateWatchlist,
+  checkAutoEntry,
+  markWatchlistTriggered,
+} from './watchlist-monitor'
+import { getActiveNearMissForSymbol } from './db'
 import type {
   AgentDecision,
   AgentLogEntry,
@@ -33,6 +41,7 @@ import type {
   AlpacaPosition,
   TechnicalIndicators,
   TradeEvaluation,
+  ThresholdMap,
 } from './types'
 
 // ============================================================
@@ -138,16 +147,19 @@ const CONFIDENCE_THRESHOLDS: Record<string, number> = {
 // ============================================================
 
 function preClaudeFilter(
+  symbol: string,
   indicators: TechnicalIndicators,
   positions: AlpacaPosition[],
+  thresholdMap: ThresholdMap,
 ): { action: 'HOLD'; reason: string } | null {
   const { kalman, marketRegime } = indicators
+  const threshold = thresholdMap[symbol] ?? -1.5
 
   // Rule 1: no Kalman signal — no point asking Claude
-  if (!kalman || kalman.zScore > -1.5) {
+  if (!kalman || kalman.zScore > threshold) {
     return {
       action: 'HOLD',
-      reason: `Pre-filter: z-score ${kalman?.zScore?.toFixed(3) ?? 'null'} > -1.5 — no signal`,
+      reason: `Pre-filter: z-score ${kalman?.zScore?.toFixed(3) ?? 'null'} > ${threshold.toFixed(3)} — no signal`,
     }
   }
 
@@ -244,7 +256,9 @@ function buildEnrichedPrompt(
   positions: AlpacaPosition[],
   learningContext: string,
   macroContext: string,
-  symbolNews: AlpacaNewsArticle[]
+  symbolNews: AlpacaNewsArticle[],
+  watchlistContext?: string,
+  effectiveThreshold?: number,
 ): string {
   const equity = parseFloat(account.equity)
   const maxPositionValue = equity * parseFloat(process.env.MAX_POSITION_SIZE ?? '0.10')
@@ -302,7 +316,13 @@ Max Simultaneous Positions: ${process.env.MAX_POSITIONS ?? '5'}
 
 --- YOUR LEARNING HISTORY ---
 ${learningContext}
-
+${watchlistContext ? `
+--- NEAR-MISS WATCHLIST CONTEXT ---
+${watchlistContext}
+` : ''}${effectiveThreshold !== undefined && effectiveThreshold !== -1.5 ? `
+--- NEWS-ADJUSTED THRESHOLD ---
+Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: -1.5, news adjustment: ${(effectiveThreshold - (-1.5)).toFixed(3)})
+` : ''}
 Analyze ${symbol} and provide your trading decision as JSON.`
 }
 
@@ -501,6 +521,43 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     ? macroNews.map((n) => `• ${n.headline} (${new Date(n.created_at).toLocaleTimeString('en-US')})`).join('\n')
     : 'No major macro news in the last 12 hours.'
 
+  // 4a. Pre-compute indicators for all watchlist symbols (needed by news + watchlist layers)
+  const indicatorsCache = new Map<string, TechnicalIndicators>()
+  for (const sym of watchlist) {
+    try {
+      const bars = await getBars(sym, '1Day', 260, 250)
+      if (bars.length >= 30) {
+        indicatorsCache.set(sym, calculateAllIndicators(bars))
+      }
+    } catch (err) {
+      console.warn(`[PRE-PASS] Failed to compute indicators for ${sym}:`, err)
+    }
+  }
+
+  // 4b. News Intelligence Layer — classify news and build dynamic threshold map
+  const defaultThresholds: ThresholdMap = { __MACRO__: 0 }
+  for (const s of watchlist) defaultThresholds[s] = -1.5
+
+  const thresholdMap = await newsIntelligenceLayer(watchlist).catch((err) => {
+    console.error('[NEWS] Layer failed, using defaults:', err)
+    return defaultThresholds
+  })
+
+  // 4c. Watchlist Monitor — update active entries + detect auto-entries
+  const currentIndicatorsRecord = Object.fromEntries(indicatorsCache)
+  await updateWatchlist(thresholdMap, currentIndicatorsRecord).catch((err) => {
+    console.error('[WATCHLIST] Update failed:', err)
+  })
+  const autoEntrySymbols = await checkAutoEntry(
+    thresholdMap, currentIndicatorsRecord, positions.length
+  ).catch((err) => {
+    console.error('[WATCHLIST] checkAutoEntry failed:', err)
+    return [] as string[]
+  })
+  if (autoEntrySymbols.length > 0) {
+    console.log(`[WATCHLIST] Auto-entry candidates: ${autoEntrySymbols.join(', ')}`)
+  }
+
   // 5. Evaluate closed positions (learning loop)
   const evaluations: TradeEvaluation[] = []
   const closedContexts = await detectClosedPositions(positions)
@@ -527,19 +584,28 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   for (const symbol of watchlist) {
     try {
-      // Fetch historical bars
-      const bars = await getBars(symbol, '1Day', 260, 250)
-      if (bars.length < 30) {
-        console.warn(`Not enough bars for ${symbol}, skipping`)
+      // Use pre-computed indicators from pre-pass (avoids double bar fetch)
+      const indicators = indicatorsCache.get(symbol)
+      if (!indicators) {
+        console.warn(`[MAIN-LOOP] No indicators for ${symbol}, skipping`)
         continue
       }
 
-      const indicators = calculateAllIndicators(bars)
+      // Check if this symbol has a pending auto-entry from the watchlist monitor
+      const isAutoEntry = autoEntrySymbols.includes(symbol)
 
       // Pre-filter: skip Claude call for obvious HOLDs (Fix #1)
-      const preFilter = preClaudeFilter(indicators, positions)
+      // Auto-entry symbols bypass the pre-filter — conditions already met
+      const preFilter = isAutoEntry ? null : preClaudeFilter(symbol, indicators, positions, thresholdMap)
       if (preFilter) {
         console.log(`[PRE-FILTER] ${symbol}: ${preFilter.reason}`)
+
+        // Detect near-misses for z-scores in the near-miss zone (-1.0 to threshold)
+        const zscore = indicators.kalman?.zScore ?? 0
+        if (zscore <= -1.0) {
+          await detectNearMisses(symbol, indicators, thresholdMap).catch(() => {})
+        }
+
         decisions.push({
           id: randomUUID(),
           timestamp,
@@ -559,6 +625,21 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Fetch symbol-specific news
       const symbolNews = await getNewsForSymbols([symbol], 24, 5).catch(() => [] as AlpacaNewsArticle[])
 
+      // Build watchlist context if this is an auto-entry
+      let watchlistContext: string | undefined
+      const effectiveThreshold = thresholdMap[symbol] ?? -1.5
+      if (isAutoEntry) {
+        const watchlistEntry = await getActiveNearMissForSymbol(symbol).catch(() => null)
+        if (watchlistEntry) {
+          const boostNote = watchlistEntry.news_boost_applied !== 0
+            ? ` News boost applied: ${watchlistEntry.news_boost_applied.toFixed(3)} (threshold relaxed to ${watchlistEntry.effective_threshold.toFixed(3)}).`
+            : ''
+          watchlistContext = `This symbol was in the Near-Miss Watchlist for ${watchlistEntry.monitoring_cycles} cycles. ` +
+            `Initial z-score: ${watchlistEntry.initial_zscore.toFixed(3)}. Current z-score now meets entry threshold.${boostNote} ` +
+            `This is a monitored entry — higher conviction expected.`
+        }
+      }
+
       const userPrompt = buildEnrichedPrompt(
         symbol,
         indicators,
@@ -566,7 +647,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         positions,
         learningContext,
         macroContext,
-        symbolNews
+        symbolNews,
+        watchlistContext,
+        effectiveThreshold,
       )
 
       // Call Claude (with retry on 429/529)
@@ -666,6 +749,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                 }
 
                 // Save buy context for future learning
+                const entryLogId = randomUUID()
                 await saveOpenPositionContext({
                   symbol,
                   buyTimestamp: timestamp,
@@ -676,6 +760,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   patternIdsUsed: [],
                   stopOrderId,
                 })
+
+                // If this BUY came from the Near-Miss Watchlist, link the log entry
+                if (isAutoEntry) {
+                  await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
+                }
               } else {
                 error = 'Insufficient buying power for position'
               }

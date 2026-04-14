@@ -255,3 +255,41 @@ export interface PositionDisplay {
   unrealizedPnLPct: number
   changeToday: number
 }
+
+export interface NewsEvent {
+  id?: string
+  timestamp: string
+  symbol: string | null
+  scope: 'MACRO' | 'SYMBOL'
+  sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+  impact: 'HIGH' | 'MEDIUM' | 'LOW'
+  threshold_adjustment: number
+  headline: string
+  reasoning?: string
+  expires_at?: string
+  applied_to_symbols?: string[]
+  created_at?: string
+}
+
+export interface NearMissEntry {
+  id: string
+  symbol: string
+  detected_at: string
+  initial_zscore: number
+  gap_to_threshold: number
+  initial_regime: string
+  indicators_snapshot: Record<string, unknown>
+  status: 'ACTIVE' | 'TRIGGERED' | 'EXPIRED' | 'CANCELLED'
+  latest_zscore?: number
+  latest_regime?: string
+  news_boost_applied: number
+  effective_threshold: number
+  monitoring_cycles: number
+  expires_at: string
+  triggered_agent_log_id?: string
+  cancel_reason?: string
+  created_at?: string
+}
+
+// Keys: symbol tickers + '__MACRO__' | Values: adjusted z-score threshold (default -1.5)
+export type ThresholdMap = Record<string, number>
