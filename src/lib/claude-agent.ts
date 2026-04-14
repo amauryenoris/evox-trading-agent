@@ -42,6 +42,8 @@ import type {
   TechnicalIndicators,
   TradeEvaluation,
   ThresholdMap,
+  LearnContext,
+  PreFilterFlag,
 } from './types'
 
 // ============================================================
@@ -151,27 +153,67 @@ function preClaudeFilter(
   indicators: TechnicalIndicators,
   positions: AlpacaPosition[],
   thresholdMap: ThresholdMap,
-): { action: 'HOLD'; reason: string } | null {
+  portfolioEquity?: number,
+  portfolioDrawdownPct?: number,
+): { blocked: false; learnContext: LearnContext | null } {
   const { kalman, marketRegime } = indicators
   const threshold = thresholdMap[symbol] ?? -1.5
+  const flags: PreFilterFlag[] = []
 
-  // Rule 1: no Kalman signal — no point asking Claude
+  // Rule 1: z-score above threshold — no Kalman signal
   if (!kalman || kalman.zScore > threshold) {
+    const zscore = kalman?.zScore ?? 0
+    flags.push({
+      rule: 'zscore',
+      detail: `z-score ${zscore.toFixed(3)} > ${threshold.toFixed(3)}`,
+      gap: parseFloat(Math.abs(zscore - threshold).toFixed(3)),
+    })
+  }
+
+  // Rule 2: mean reversion only valid in RANGING (only flag if z-score would otherwise pass)
+  if (marketRegime !== 'RANGING' && kalman && kalman.zScore <= threshold) {
+    flags.push({
+      rule: 'regime',
+      detail: `mean reversion in ${marketRegime ?? 'null'} — not ideal`,
+      gap: 0,
+    })
+  }
+
+  // Rule 3: portfolio drawdown > 10%
+  if (portfolioDrawdownPct !== undefined && portfolioDrawdownPct < -0.10) {
+    flags.push({
+      rule: 'drawdown',
+      detail: `drawdown ${(portfolioDrawdownPct * 100).toFixed(1)}%`,
+      gap: 0,
+    })
+  }
+
+  // Rule 4: HIGH_VOLATILITY with too many open positions
+  if (marketRegime === 'HIGH_VOLATILITY' && positions.length >= 3) {
+    flags.push({
+      rule: 'volatility',
+      detail: 'HIGH_VOLATILITY + positions >= 3',
+      gap: 0,
+    })
+  }
+
+  // LEARN mode: always proceed to Claude — never block
+  if (flags.length > 0) {
+    const nearest_flag = flags.reduce((prev, curr) =>
+      curr.gap > 0 && (prev.gap === 0 || curr.gap < prev.gap) ? curr : prev
+    , flags[0])
     return {
-      action: 'HOLD',
-      reason: `Pre-filter: z-score ${kalman?.zScore?.toFixed(3) ?? 'null'} > ${threshold.toFixed(3)} — no signal`,
+      blocked: false,
+      learnContext: {
+        pre_filter_triggered: true,
+        flags,
+        nearest_flag,
+        mode: 'LEARN',
+      },
     }
   }
 
-  // Rule 2: mean reversion only valid in RANGING
-  if (marketRegime !== 'RANGING') {
-    return {
-      action: 'HOLD',
-      reason: `Pre-filter: mean reversion blocked — regime is ${marketRegime ?? 'null'}`,
-    }
-  }
-
-  return null // proceed to Claude
+  return { blocked: false, learnContext: null }
 }
 
 // ============================================================
@@ -259,6 +301,7 @@ function buildEnrichedPrompt(
   symbolNews: AlpacaNewsArticle[],
   watchlistContext?: string,
   effectiveThreshold?: number,
+  learnContext?: LearnContext,
 ): string {
   const equity = parseFloat(account.equity)
   const maxPositionValue = equity * parseFloat(process.env.MAX_POSITION_SIZE ?? '0.10')
@@ -323,7 +366,19 @@ ${watchlistContext}
 --- NEWS-ADJUSTED THRESHOLD ---
 Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: -1.5, news adjustment: ${(effectiveThreshold - (-1.5)).toFixed(3)})
 ` : ''}
-Analyze ${symbol} and provide your trading decision as JSON.`
+Analyze ${symbol} and provide your trading decision as JSON.${learnContext ? `
+
+=== LEARN MODE — PRE-FILTER FLAGS ===
+These conditions were flagged but did NOT block execution.
+Evaluate the full setup and provide your decision regardless.
+
+Flags: ${JSON.stringify(learnContext.flags, null, 2)}
+
+Include these fields in your JSON response:
+- "learning_note": string — what this case teaches about the setup
+- "near_miss_score": number (1-10) — setup quality score
+- "what_would_trigger": string — what specific condition needs to change for a BUY
+=====================================` : ''}`
 }
 
 // ============================================================
@@ -594,29 +649,22 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Check if this symbol has a pending auto-entry from the watchlist monitor
       const isAutoEntry = autoEntrySymbols.includes(symbol)
 
-      // Pre-filter: skip Claude call for obvious HOLDs (Fix #1)
+      // Pre-filter: LEARN mode — collect flags but always proceed to Claude
       // Auto-entry symbols bypass the pre-filter — conditions already met
-      const preFilter = isAutoEntry ? null : preClaudeFilter(symbol, indicators, positions, thresholdMap)
-      if (preFilter) {
-        console.log(`[PRE-FILTER] ${symbol}: ${preFilter.reason}`)
+      const portfolioDrawdownPct = (parseFloat(account.equity) - 100000) / 100000
+      const { learnContext } = isAutoEntry
+        ? { learnContext: null }
+        : preClaudeFilter(symbol, indicators, positions, thresholdMap, parseFloat(account.equity), portfolioDrawdownPct)
 
-        // Detect near-misses for z-scores in the near-miss zone (-1.0 to threshold)
-        const zscore = indicators.kalman?.zScore ?? 0
-        if (zscore <= -1.0) {
-          await detectNearMisses(symbol, indicators, thresholdMap).catch(() => {})
-        }
+      if (learnContext) {
+        const flagSummary = learnContext.flags.map(f => f.detail).join('; ')
+        console.log(`[LEARN-MODE] ${symbol}: flags detected (${flagSummary}) — proceeding to Claude`)
+      }
 
-        decisions.push({
-          id: randomUUID(),
-          timestamp,
-          symbol,
-          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: preFilter.reason, confidence: 0 },
-          indicators,
-          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
-          orderExecuted: false,
-          error: preFilter.reason,
-        })
-        continue
+      // Detect near-misses for z-scores in the near-miss zone (-1.0 to threshold)
+      const zscore = indicators.kalman?.zScore ?? 0
+      if (zscore <= -1.0) {
+        await detectNearMisses(symbol, indicators, thresholdMap).catch(() => {})
       }
 
       // Build learning context (same for all symbols in this cycle — cached reads)
@@ -650,6 +698,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         symbolNews,
         watchlistContext,
         effectiveThreshold,
+        learnContext ?? undefined,
       )
 
       // Call Claude (with retry on 429/529)
@@ -786,12 +835,25 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         }
       }
 
+      // Merge learning fields into indicators jsonb so dashboard can read them
+      const indicatorsWithLearning = {
+        ...indicators,
+        ...(decision.learning_note !== undefined && { learning_note: decision.learning_note }),
+        ...(decision.near_miss_score !== undefined && { near_miss_score: decision.near_miss_score }),
+        ...(decision.what_would_trigger !== undefined && { what_would_trigger: decision.what_would_trigger }),
+      }
+
+      // If pre-filter flags were raised, store them in error field for display
+      const preFilterError = learnContext
+        ? `Pre-filter flags: ${JSON.stringify(learnContext.flags)}`
+        : undefined
+
       const entry: AgentLogEntry = {
         id: randomUUID(),
         timestamp,
         symbol,
         decision,
-        indicators,
+        indicators: indicatorsWithLearning,
         portfolioSnapshot: {
           equity: account.equity,
           cash: account.cash,
@@ -799,7 +861,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         },
         orderExecuted,
         orderId,
-        error,
+        error: error ?? preFilterError,
       }
 
       decisions.push(entry)

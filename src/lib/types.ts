@@ -124,6 +124,19 @@ export interface TechnicalIndicators {
 export type AgentAction = 'BUY' | 'SELL' | 'HOLD'
 export type SignalType = 'MEAN_REVERSION' | 'TREND_FOLLOWING' | 'OTHER'
 
+export interface PreFilterFlag {
+  rule: 'zscore' | 'regime' | 'drawdown' | 'volatility'
+  detail: string
+  gap: number
+}
+
+export interface LearnContext {
+  pre_filter_triggered: true
+  flags: PreFilterFlag[]
+  nearest_flag: PreFilterFlag
+  mode: 'LEARN'
+}
+
 export interface AgentDecision {
   action: AgentAction
   symbol: string
@@ -132,6 +145,9 @@ export interface AgentDecision {
   confidence: number
   signal_type?: SignalType
   regime_compatible?: boolean
+  learning_note?: string
+  near_miss_score?: number
+  what_would_trigger?: string
 }
 
 export interface AgentLogEntry {

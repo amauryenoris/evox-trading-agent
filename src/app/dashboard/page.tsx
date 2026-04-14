@@ -9,6 +9,10 @@ import { RunAgentButton } from '@/components/dashboard/RunAgentButton'
 import { MarketStatusBadge } from '@/components/dashboard/MarketStatusBadge'
 import { WeeklyReportsCard } from '@/components/dashboard/WeeklyReportsCard'
 import { GenerateReportButton } from '@/components/dashboard/GenerateReportButton'
+import { SystemStatus } from '@/components/dashboard/SystemStatus'
+import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
+import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
+import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
 import type { WeeklyReportRecord } from '@/lib/db'
 
@@ -41,7 +45,7 @@ export default async function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Trading Dashboard</h1>
-          <p className="text-sm text-slate-500">Autonomous AI agent · Paper Trading</p>
+          <p className="text-sm text-slate-500">Autonomous AI agent · Paper Trading · LEARN Mode</p>
         </div>
         <div className="flex items-center gap-4">
           <Suspense fallback={<span className="text-xs text-slate-600">Loading market status...</span>}>
@@ -52,23 +56,34 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Portfolio overview */}
-      <section id="positions">
+      {/* 1. System Status — top for immediate context */}
+      <SystemStatus />
+
+      {/* 2. Portfolio overview */}
+      <section id="portfolio">
         <PortfolioOverviewCard data={portfolio} />
       </section>
 
-      {/* P&L chart */}
-      <PnLChart entries={agentLog} />
-
-      {/* Positions + Agent log */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      {/* 3. Open Positions */}
+      <section id="positions">
         <PositionsTable positions={positions} />
-        <section id="agent">
-          <AgentReasoningLog entries={agentLog} />
-        </section>
-      </div>
+      </section>
 
-      {/* Pattern library + Trade history */}
+      {/* 4. Near-Miss Watchlist (only shown when there are active entries) */}
+      <NearMissWatchlist />
+
+      {/* 5. News Intelligence */}
+      <NewsIntelligence />
+
+      {/* 6. Agent Decisions */}
+      <section id="agent">
+        <AgentReasoningLog entries={agentLog} />
+      </section>
+
+      {/* 7. Performance Analytics */}
+      <PerformanceAnalytics />
+
+      {/* 8. Pattern Library + Trade History */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <section id="patterns">
           <PatternLibraryCard patterns={patterns} />
@@ -78,7 +93,10 @@ export default async function DashboardPage() {
         </section>
       </div>
 
-      {/* Weekly reports */}
+      {/* P&L chart (supplementary) */}
+      <PnLChart entries={agentLog} />
+
+      {/* 9. Weekly Reports */}
       <section id="reports">
         <WeeklyReportsCard reports={reports} />
       </section>
