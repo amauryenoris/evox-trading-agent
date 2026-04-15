@@ -76,6 +76,7 @@ export async function getAgentLog(limit = 500): Promise<AgentLogEntry[]> {
         sma200: raw.sma200 ?? null,
         currentPrice: raw.currentPrice ?? 0,
         volume: raw.volume ?? 0,
+        prevDayVolume: raw.prevDayVolume ?? 0,
         adx: raw.adx ?? null,
         atr: raw.atr ?? null,
         atrPercentile: raw.atrPercentile ?? null,
@@ -192,11 +193,12 @@ export async function getTradeEvaluations(limit = 200): Promise<TradeEvaluation[
         sma200: raw.sma200 ?? null,
         currentPrice: raw.currentPrice ?? 0,
         volume: raw.volume ?? 0,
+        prevDayVolume: raw.prevDayVolume ?? 0,
         adx: raw.adx ?? null,
         atr: raw.atr ?? null,
         atrPercentile: raw.atrPercentile ?? null,
         marketRegime: raw.marketRegime ?? null,
-        kalman: raw.kalman ?? null, // explicit null prevents N/A in Trade Detail table
+        kalman: raw.indicators_at_buy?.kalman ?? raw.kalman ?? null,
       }
     })(),
     claudePostMortem: row.buy_reasoning ?? '',

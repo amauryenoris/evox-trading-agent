@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getAgentLog, getTodayBuyExecutions, getAllOpenPositionContexts } from '@/lib/db'
-import { getClock } from '@/lib/alpaca'
+import { getAgentLog, getTodayBuyExecutions } from '@/lib/db'
+import { getClock, getPositions } from '@/lib/alpaca'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const [log, todayBuys, openContexts, clock] = await Promise.all([
+    const [log, todayBuys, alpacaPositions, clock] = await Promise.all([
       getAgentLog(1),
       getTodayBuyExecutions(),
-      getAllOpenPositionContexts(),
+      getPositions(),
       getClock().catch(() => null),
     ])
 
@@ -19,7 +19,7 @@ export async function GET() {
 
     // Gates status derived from latest available data
     const marketOpen = clock?.is_open ?? false
-    const positionCount = openContexts.length
+    const positionCount = alpacaPositions.length
 
     const gates = {
       hours: {

@@ -76,7 +76,10 @@ export function SystemStatus() {
     )
   }
 
-  const positionColor = data.positionCount >= data.maxPositions ? 'text-red-400' : 'text-green-400'
+  const positionColor =
+    data.positionCount >= 5 ? 'text-red-400' :
+    data.positionCount >= 4 ? 'text-amber-400' :
+    'text-green-400'
 
   return (
     <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4 space-y-3">

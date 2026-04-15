@@ -111,6 +111,7 @@ export interface TechnicalIndicators {
   } | null
   currentPrice: number
   volume: number
+  prevDayVolume: number
   adx: number | null
   atr: number | null
   atrPercentile: number | null

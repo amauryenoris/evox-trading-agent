@@ -415,8 +415,8 @@ async function callClaudeWithRetry(
 // EXECUTION GATES
 // ============================================================
 
-function checkLiquidity(volume: number): boolean {
-  return volume >= 1_000_000
+function checkLiquidity(prevDayVolume: number): boolean {
+  return prevDayVolume >= 1_000_000
 }
 
 function checkTradingHours(): boolean {
@@ -643,6 +643,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const indicators = indicatorsCache.get(symbol)
       if (!indicators) {
         console.warn(`[MAIN-LOOP] No indicators for ${symbol}, skipping`)
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: '', confidence: 0 },
+          indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: 'Skipped: no indicators available in cache',
+        })
         continue
       }
 
@@ -741,8 +751,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           try {
             if (decision.action === 'BUY') {
               // Gate 1: liquidity
-              if (!checkLiquidity(indicators.volume)) {
-                error = `Liquidity gate: volume ${indicators.volume.toLocaleString()} < 1,000,000`
+              if (!checkLiquidity(indicators.prevDayVolume)) {
+                error = `Liquidity gate: prev day volume ${indicators.prevDayVolume.toLocaleString()} < 1,000,000`
                 decision.action = 'HOLD'
               }
               // Gate 2: trading hours
@@ -872,7 +882,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         timestamp,
         symbol,
         decision: { action: 'HOLD', symbol, quantity: 0, reasoning: 'Analysis failed', confidence: 0 },
-        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
+        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
         portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
         error: String(err),

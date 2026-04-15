@@ -335,6 +335,7 @@ export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
     kalman: calculateKalman(bars),
     currentPrice: bars[bars.length - 1].c,
     volume: bars[bars.length - 1].v,
+    prevDayVolume: bars.length >= 2 ? bars[bars.length - 2].v : bars[bars.length - 1].v,
     adx,
     atr,
     atrPercentile,

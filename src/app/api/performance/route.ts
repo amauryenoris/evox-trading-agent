@@ -4,7 +4,7 @@ import { getAccount } from '@/lib/alpaca'
 
 export const dynamic = 'force-dynamic'
 
-const SPY_JAN1_2026 = 585.50
+const SPY_JAN1_2026 = 588.44 // SPY close Jan 2, 2026 (first trading day of 2026)
 
 export async function GET() {
   try {
