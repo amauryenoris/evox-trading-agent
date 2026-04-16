@@ -6,6 +6,12 @@ import type { ThresholdMap, NewsEvent } from './types'
 const BASE_THRESHOLD = -1.5
 const MAX_NEWS_PER_CYCLE = 10
 
+// Hard caps — prevent excessive threshold relaxation or tightening
+const MAX_MACRO_ADJUSTMENT    = -0.300  // floor: max bullish relaxation per cycle
+const MAX_BEARISH_MACRO       =  0.300  // ceiling: max bearish tightening per cycle
+const MAX_SYMBOL_ADJUSTMENT   = -0.300  // floor: max bullish relaxation per symbol
+const MAX_BEARISH_SYMBOL      =  0.300  // ceiling: max bearish tightening per symbol
+
 interface NewsClassification {
   scope: 'MACRO' | 'SYMBOL'
   symbol: string | null
@@ -153,30 +159,59 @@ function buildDefaultMap(symbols: string[]): ThresholdMap {
   return map
 }
 
+// Fix #2: Returns STRONGEST adjustment per symbol — not sum of all.
+// Bearish (positive adj) overrides bullish (negative adj) when both exist.
+function getSymbolAdjustment(newsItems: NewsClassification[]): number {
+  if (newsItems.length === 0) return 0
+
+  const bullish = newsItems.filter((c) => c.threshold_adjustment < 0)
+  const bearish = newsItems.filter((c) => c.threshold_adjustment > 0)
+
+  const strongestBullish = bullish.length > 0
+    ? Math.min(...bullish.map((c) => c.threshold_adjustment))  // most negative
+    : 0
+  const strongestBearish = bearish.length > 0
+    ? Math.max(...bearish.map((c) => c.threshold_adjustment))  // most positive
+    : 0
+
+  // Bearish overrides bullish if both exist
+  if (strongestBearish > 0) return strongestBearish
+  return strongestBullish
+}
+
 function buildThresholdMap(symbols: string[], classified: NewsClassification[]): ThresholdMap {
   const map: ThresholdMap = {}
 
   // Start all symbols at base threshold
   for (const s of symbols) map[s] = BASE_THRESHOLD
 
-  // Calculate macro adjustment (sum of all MACRO news adjustments)
-  const macroAdjustment = classified
+  // Fix #1: Calculate macro adjustment (sum), then apply hard cap at ±0.300
+  let macroAdjustment = classified
     .filter((c) => c.scope === 'MACRO')
     .reduce((sum, c) => sum + c.threshold_adjustment, 0)
+  macroAdjustment = Math.max(macroAdjustment, MAX_MACRO_ADJUSTMENT)  // floor at -0.300
+  macroAdjustment = Math.min(macroAdjustment, MAX_BEARISH_MACRO)     // ceiling at +0.300
   map['__MACRO__'] = macroAdjustment
+  console.log(`[NEWS] Macro adjustment: ${macroAdjustment.toFixed(3)} (capped at ±${Math.abs(MAX_MACRO_ADJUSTMENT)})`)
 
-  // Track which symbols have their own news
-  const symbolsWithOwnNews = new Set<string>()
-
-  // Apply SYMBOL-level adjustments
+  // Fix #2: Group symbol news and apply STRONGEST adjustment per symbol
+  const symbolNewsMap = new Map<string, NewsClassification[]>()
   for (const c of classified) {
     if (c.scope === 'SYMBOL' && c.symbol && map[c.symbol] !== undefined) {
-      const current = map[c.symbol]
-      const adjusted = current + c.threshold_adjustment
-      // Cap adjustments: threshold must stay between -1.8 and -1.2
-      map[c.symbol] = Math.max(-1.8, Math.min(-1.2, adjusted))
-      symbolsWithOwnNews.add(c.symbol)
+      if (!symbolNewsMap.has(c.symbol)) symbolNewsMap.set(c.symbol, [])
+      symbolNewsMap.get(c.symbol)!.push(c)
     }
+  }
+
+  const symbolsWithOwnNews = new Set<string>()
+  for (const [symbol, newsItems] of symbolNewsMap) {
+    let symbolAdj = getSymbolAdjustment(newsItems)
+    symbolAdj = Math.max(symbolAdj, MAX_SYMBOL_ADJUSTMENT)  // floor at -0.300
+    symbolAdj = Math.min(symbolAdj, MAX_BEARISH_SYMBOL)     // ceiling at +0.300
+
+    const adjusted = BASE_THRESHOLD + macroAdjustment + symbolAdj
+    map[symbol] = Math.max(-1.8, Math.min(-1.2, adjusted))
+    symbolsWithOwnNews.add(symbol)
   }
 
   // Apply macro adjustment to symbols without their own news
@@ -192,7 +227,8 @@ function buildThresholdMap(symbols: string[], classified: NewsClassification[]):
   const adjustedCount = Object.entries(map)
     .filter(([k, v]) => k !== '__MACRO__' && v !== BASE_THRESHOLD)
     .length
-  console.log(`[NEWS] Threshold map built — ${adjustedCount} symbols adjusted, macro=${macroAdjustment.toFixed(3)}`)
+  const uniqueSymbolBoosts = symbolsWithOwnNews.size
+  console.log(`[NEWS] Threshold map built — ${adjustedCount} symbols adjusted, ${uniqueSymbolBoosts} unique symbols with own news, macro=${macroAdjustment.toFixed(3)}`)
 
   return map
 }
