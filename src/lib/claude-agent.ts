@@ -145,6 +145,68 @@ const CONFIDENCE_THRESHOLDS: Record<string, number> = {
 }
 
 // ============================================================
+// EXIT RULES — deterministic exits run before Claude analysis
+// ============================================================
+
+function getTradingDaysOpen(buyTimestamp: string): number {
+  const msPerDay = 1000 * 60 * 60 * 24
+  const elapsed = Date.now() - new Date(buyTimestamp).getTime()
+  const calendarDays = elapsed / msPerDay
+  // Approximate: 5/7 of calendar days are trading days
+  return Math.floor(calendarDays * (5 / 7))
+}
+
+async function enforceExitRules(
+  positions: AlpacaPosition[],
+  indicatorsCache: Map<string, TechnicalIndicators>,
+  openContexts: { symbol: string; buyTimestamp: string }[],
+): Promise<AgentLogEntry[]> {
+  const exitEntries: AgentLogEntry[] = []
+  const timestamp = new Date().toISOString()
+
+  for (const position of positions) {
+    const ind = indicatorsCache.get(position.symbol)
+    if (!ind?.kalman) continue
+
+    const zScore = ind.kalman.zScore
+    const pnlPct = parseFloat(position.unrealized_plpc)
+    const ctx = openContexts.find((c) => c.symbol === position.symbol)
+    const daysOpen = ctx ? getTradingDaysOpen(ctx.buyTimestamp) : 0
+
+    let exitReason: string | null = null
+
+    if (zScore >= -0.5) {
+      exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.5 — price reverted to fair value`
+    } else if (pnlPct >= 0.10) {
+      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
+    } else if (daysOpen >= 20) {
+      exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
+    }
+
+    if (!exitReason) continue
+
+    console.log(`[EXIT-RULES] Closing ${position.symbol}: ${exitReason}`)
+    try {
+      await closePosition(position.symbol)
+      exitEntries.push({
+        id: randomUUID(),
+        timestamp,
+        symbol: position.symbol,
+        decision: { action: 'SELL', symbol: position.symbol, quantity: 0, reasoning: exitReason, confidence: 1.0 },
+        indicators: ind,
+        portfolioSnapshot: { equity: position.market_value, cash: '0', positionCount: positions.length },
+        orderExecuted: true,
+        error: undefined,
+      })
+    } catch (err) {
+      console.error(`[EXIT-RULES] Failed to close ${position.symbol}:`, err)
+    }
+  }
+
+  return exitEntries
+}
+
+// ============================================================
 // PRE-CLAUDE FILTER — runs before enriched prompt (Fix #1)
 // ============================================================
 
@@ -160,21 +222,31 @@ function preClaudeFilter(
   const threshold = thresholdMap[symbol] ?? -1.5
   const flags: PreFilterFlag[] = []
 
-  // Rule 1: z-score above threshold — no Kalman signal
-  if (!kalman || kalman.zScore > threshold) {
+  // Check if EITHER signal is present before flagging
+  const hasMeanReversionSignal = kalman && kalman.zScore <= threshold && marketRegime === 'RANGING'
+  const hasTrendFollowingSignal = (
+    marketRegime === 'TRENDING' &&
+    (indicators.adx ?? 0) > 25 &&
+    indicators.macd !== null && indicators.macd.histogram > 0 && indicators.macd.macdLine > indicators.macd.signalLine &&
+    indicators.currentPrice > (indicators.sma50 ?? 0) &&
+    (indicators.rsi ?? 0) > 50 && (indicators.rsi ?? 0) < 75
+  )
+
+  // Rule 1: flag only if NEITHER signal is active
+  if (!hasMeanReversionSignal && !hasTrendFollowingSignal) {
     const zscore = kalman?.zScore ?? 0
     flags.push({
       rule: 'zscore',
-      detail: `z-score ${zscore.toFixed(3)} > ${threshold.toFixed(3)}`,
-      gap: parseFloat(Math.abs(zscore - threshold).toFixed(3)),
+      detail: `no signal: z-score ${zscore.toFixed(3)} (MR threshold: ${threshold.toFixed(3)}), trend: ${hasTrendFollowingSignal ? 'yes' : 'no'}`,
+      gap: kalman ? parseFloat(Math.abs(zscore - threshold).toFixed(3)) : 0,
     })
   }
 
-  // Rule 2: mean reversion only valid in RANGING (only flag if z-score would otherwise pass)
-  if (marketRegime !== 'RANGING' && kalman && kalman.zScore <= threshold) {
+  // Rule 2: mean reversion only valid in RANGING — only flag if MR signal but wrong regime, and no TF signal
+  if (!hasTrendFollowingSignal && marketRegime !== 'RANGING' && kalman && kalman.zScore <= threshold) {
     flags.push({
       rule: 'regime',
-      detail: `mean reversion in ${marketRegime ?? 'null'} — not ideal`,
+      detail: `mean reversion in ${marketRegime ?? 'null'} — not ideal, no trend following signal either`,
       gap: 0,
     })
   }
@@ -214,6 +286,95 @@ function preClaudeFilter(
   }
 
   return { blocked: false, learnContext: null }
+}
+
+// ============================================================
+// SIGNAL TYPE DETECTOR — mean reversion vs trend following
+// ============================================================
+
+interface SignalResult {
+  type: 'MEAN_REVERSION' | 'TREND_FOLLOWING' | 'NO_SIGNAL'
+  confidence: number
+}
+
+function generateSignalType(indicators: TechnicalIndicators): SignalResult {
+  const { kalman, adx, macd, sma50, rsi, currentPrice, marketRegime, bollingerBands } = indicators
+
+  // Mean Reversion: price significantly below fair value in a ranging market
+  if (
+    marketRegime === 'RANGING' &&
+    kalman && kalman.zScore < -1.5 &&
+    (rsi ?? 50) < 45 &&
+    bollingerBands && bollingerBands.percentB < 0.2
+  ) {
+    return {
+      type: 'MEAN_REVERSION',
+      confidence: Math.min(Math.abs(kalman.zScore) / 3, 1.0),
+    }
+  }
+
+  // Trend Following: strong directional momentum confirmed across indicators
+  if (
+    marketRegime === 'TRENDING' &&
+    (adx ?? 0) > 25 &&
+    macd !== null && macd.histogram > 0 && macd.macdLine > macd.signalLine &&
+    currentPrice > (sma50 ?? 0) &&
+    (rsi ?? 0) > 50 && (rsi ?? 0) < 75
+  ) {
+    return {
+      type: 'TREND_FOLLOWING',
+      confidence: Math.min((adx ?? 25) / 50, 1.0),
+    }
+  }
+
+  return { type: 'NO_SIGNAL', confidence: 0 }
+}
+
+// ============================================================
+// POSITION ROTATION — swap weakest position for better setup
+// ============================================================
+
+interface RotationDecision {
+  rotate: boolean
+  exitSymbol?: string
+  reason: string
+}
+
+async function evaluateRotation(
+  newSignal: SignalResult,
+  openPositions: AlpacaPosition[],
+  indicatorsCache: Map<string, TechnicalIndicators>,
+): Promise<RotationDecision> {
+  // Only evaluate if signal is strong enough
+  if (newSignal.confidence < 0.70) {
+    return { rotate: false, reason: 'Signal too weak for rotation' }
+  }
+
+  const exitCandidates: { symbol: string; reason: string; priority: number }[] = []
+
+  for (const pos of openPositions) {
+    const ind = indicatorsCache.get(pos.symbol)
+    if (!ind?.kalman) continue
+
+    const zScore = ind.kalman.zScore
+    const pnlPct = parseFloat(pos.unrealized_plpc)
+
+    // Priority 1: position already completed its mean reversion objective
+    if (zScore >= -0.5) {
+      exitCandidates.push({ symbol: pos.symbol, reason: `z-score ${zScore.toFixed(3)} reverted to fair value`, priority: 1 })
+    }
+    // Priority 2: position profitable and new setup has very high confidence
+    else if (pnlPct > 0.05 && newSignal.confidence > 0.80) {
+      exitCandidates.push({ symbol: pos.symbol, reason: `Rotating to better setup (P&L +${(pnlPct * 100).toFixed(1)}%, new confidence ${newSignal.confidence.toFixed(2)})`, priority: 2 })
+    }
+  }
+
+  if (exitCandidates.length === 0) {
+    return { rotate: false, reason: 'No rotation candidates — all positions still in progress' }
+  }
+
+  const toExit = exitCandidates.sort((a, b) => a.priority - b.priority)[0]
+  return { rotate: true, exitSymbol: toExit.symbol, reason: toExit.reason }
 }
 
 // ============================================================
@@ -613,6 +774,18 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     console.log(`[WATCHLIST] Auto-entry candidates: ${autoEntrySymbols.join(', ')}`)
   }
 
+  // 4d. Enforce deterministic exit rules (z-score reversion, profit target, time stop)
+  // Runs after indicators cache is built — needs z-scores to evaluate exits
+  const exitRuleEntries = await (async () => {
+    try {
+      const openCtxs = await getAllOpenPositionContexts()
+      return await enforceExitRules(positions, indicatorsCache, openCtxs)
+    } catch (err) {
+      console.error('[EXIT-RULES] enforceExitRules failed:', err)
+      return [] as AgentLogEntry[]
+    }
+  })()
+
   // 5. Evaluate closed positions (learning loop)
   const evaluations: TradeEvaluation[] = []
   const closedContexts = await detectClosedPositions(positions)
@@ -635,7 +808,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   }
 
   // 6. Analysis cycle for each symbol
-  const decisions: AgentLogEntry[] = []
+  // Seed decisions with any deterministic exits that already fired this cycle
+  const decisions: AgentLogEntry[] = [...exitRuleEntries]
 
   for (const symbol of watchlist) {
     try {
@@ -658,6 +832,37 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // Check if this symbol has a pending auto-entry from the watchlist monitor
       const isAutoEntry = autoEntrySymbols.includes(symbol)
+
+      // Generate signal type (mean reversion vs trend following) before filtering
+      const signalResult = generateSignalType(indicators)
+      console.log(`[SIGNAL] ${symbol}: ${signalResult.type} (confidence ${signalResult.confidence.toFixed(2)})`)
+
+      // Position rotation: if portfolio is full and signal is strong, try to swap weakest position
+      if (positions.length >= 5 && signalResult.type !== 'NO_SIGNAL') {
+        const rotation = await evaluateRotation(signalResult, positions, indicatorsCache)
+        if (rotation.rotate && rotation.exitSymbol) {
+          console.log(`[ROTATION] Closing ${rotation.exitSymbol} to make room for ${symbol}: ${rotation.reason}`)
+          try {
+            await closePosition(rotation.exitSymbol)
+            decisions.push({
+              id: randomUUID(),
+              timestamp,
+              symbol: rotation.exitSymbol,
+              decision: { action: 'SELL', symbol: rotation.exitSymbol, quantity: 0, reasoning: `Rotation: ${rotation.reason}`, confidence: 1.0 },
+              indicators: indicatorsCache.get(rotation.exitSymbol) ?? indicators,
+              portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+              orderExecuted: true,
+            })
+            // Optimistically remove from positions so BUY gates pass this cycle
+            const rotatedPositions = positions.filter((p) => p.symbol !== rotation.exitSymbol)
+            positions.splice(0, positions.length, ...rotatedPositions)
+          } catch (err) {
+            console.error(`[ROTATION] Failed to close ${rotation.exitSymbol}:`, err)
+          }
+        } else {
+          console.log(`[ROTATION] ${symbol}: ${rotation.reason} — skipping`)
+        }
+      }
 
       // Pre-filter: LEARN mode — collect flags but always proceed to Claude
       // Auto-entry symbols bypass the pre-filter — conditions already met
