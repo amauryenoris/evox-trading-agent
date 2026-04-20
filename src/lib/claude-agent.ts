@@ -774,7 +774,21 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     console.log(`[WATCHLIST] Auto-entry candidates: ${autoEntrySymbols.join(', ')}`)
   }
 
-  // 4d. Enforce deterministic exit rules (z-score reversion, profit target, time stop)
+  // 4d. Ensure all open positions have indicators even if not selected in watchlist this cycle
+  for (const position of positions) {
+    if (!indicatorsCache.has(position.symbol)) {
+      try {
+        const bars = await getBars(position.symbol, '1Day', 260, 250)
+        const indicators = calculateAllIndicators(bars)
+        indicatorsCache.set(position.symbol, indicators)
+        console.log(`[EXIT-RULES] Computed indicators for open position ${position.symbol} (not in watchlist this cycle)`)
+      } catch (err) {
+        console.error(`[EXIT-RULES] Failed to compute indicators for ${position.symbol}:`, err)
+      }
+    }
+  }
+
+  // 4e. Enforce deterministic exit rules (z-score reversion, profit target, time stop)
   // Runs after indicators cache is built — needs z-scores to evaluate exits
   const exitRuleEntries = await (async () => {
     try {
