@@ -77,6 +77,7 @@ interface HoldsBreakdown {
   confidenceBelow065: number
   zscoreOutOfRange: number
   noKalmanSignal: number
+  noPullbackSetup: number
   gate1Liquidity: number
   gate2Hours: number
   gate3Overtrading: number
@@ -189,6 +190,7 @@ function calculateDiagnostics(
   let confidenceBelow065 = 0
   let zscoreOutOfRange = 0
   let noKalmanSignal = 0
+  let noPullbackSetup = 0
   let gate1Liquidity = 0
   let gate2Hours = 0
   let gate3Overtrading = 0
@@ -210,6 +212,8 @@ function calculateDiagnostics(
       gate4Portfolio++
     } else if (e.decision.action === 'HOLD' && e.indicators.kalman === null) {
       noKalmanSignal++
+    } else if (e.decision.action === 'HOLD' && (e.decision.reasoning?.includes('not near EMA50') || e.decision.reasoning?.includes('PULLBACK_EMA50') && e.decision.reasoning?.includes('no setup'))) {
+      noPullbackSetup++
     } else if (e.decision.action === 'HOLD' && e.indicators.kalman?.signal === 'NEUTRAL') {
       zscoreOutOfRange++
     } else if (e.decision.action === 'HOLD' && e.decision.confidence < 0.65) {
@@ -258,6 +262,7 @@ function calculateDiagnostics(
       confidenceBelow065,
       zscoreOutOfRange,
       noKalmanSignal,
+      noPullbackSetup,
       gate1Liquidity,
       gate2Hours,
       gate3Overtrading,
@@ -572,6 +577,7 @@ function generatePDF(
       [`Confidence < threshold`,    hb.confidenceBelow065,  hb.total],
       [`Z-score out of range`,      hb.zscoreOutOfRange,    hb.total],
       [`No Kalman signal`,          hb.noKalmanSignal,      hb.total],
+      [`No pullback setup (EMA50)`, hb.noPullbackSetup,     hb.total],
       [`Gate 1 — Low liquidity`,    hb.gate1Liquidity,      hb.total],
       [`Gate 2 — Outside hours`,    hb.gate2Hours,          hb.total],
       [`Gate 3 — Overtrading`,      hb.gate3Overtrading,    hb.total],

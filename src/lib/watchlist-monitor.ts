@@ -19,7 +19,7 @@ export async function detectNearMisses(
   const { kalman, marketRegime } = indicators
   if (!kalman || !marketRegime) return
 
-  const threshold = thresholdMap[symbol] ?? -1.5
+  const threshold = thresholdMap[symbol] ?? -1.3
   const zscore = kalman.zScore
 
   // Near-miss zone: between -1.0 and threshold, only in RANGING regime
@@ -65,8 +65,8 @@ export async function updateWatchlist(
 
     const zscore = current.kalman.zScore
     const regime = current.marketRegime ?? entry.latest_regime ?? entry.initial_regime
-    const threshold = thresholdMap[entry.symbol] ?? -1.5
-    const newsBoost = threshold - (-1.5) // deviation from base threshold
+    const threshold = thresholdMap[entry.symbol] ?? -1.3
+    const newsBoost = threshold - (-1.3) // deviation from base threshold
 
     const updates: Partial<Omit<NearMissEntry, 'id' | 'created_at'>> = {
       latest_zscore: zscore,
@@ -107,7 +107,7 @@ export async function checkAutoEntry(
 
     const zscore = current.kalman.zScore
     const regime = current.marketRegime
-    const threshold = thresholdMap[entry.symbol] ?? -1.5
+    const threshold = thresholdMap[entry.symbol] ?? -1.3
 
     // Auto-entry conditions: z-score crossed threshold, still RANGING, portfolio has room
     if (zscore <= threshold && regime === 'RANGING' && openPositionsCount < maxPositions) {

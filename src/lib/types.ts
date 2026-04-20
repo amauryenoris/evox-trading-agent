@@ -102,6 +102,9 @@ export interface TechnicalIndicators {
   } | null
   sma50: number | null
   sma200: number | null
+  ema50: number | null
+  ema200: number | null
+  distanceToEma50Pct: number | null
   kalman: {
     stateEstimate: number   // Kalman-estimated fair price (E.P. Chan)
     forecastError: number   // e(t) = current price - state estimate
@@ -123,7 +126,7 @@ export interface TechnicalIndicators {
 // ============================================================
 
 export type AgentAction = 'BUY' | 'SELL' | 'HOLD'
-export type SignalType = 'MEAN_REVERSION' | 'TREND_FOLLOWING' | 'OTHER'
+export type SignalType = 'MEAN_REVERSION' | 'TREND_FOLLOWING' | 'PULLBACK_EMA50' | 'OTHER'
 
 export interface PreFilterFlag {
   rule: 'zscore' | 'regime' | 'drawdown' | 'volatility'

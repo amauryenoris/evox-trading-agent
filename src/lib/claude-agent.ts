@@ -57,7 +57,7 @@ Your methodology is based on the Market Wizards framework (Kovner, Seykota, E.P.
 
 ### Primary Signal: Kalman Filter (E.P. Chan)
 The Kalman filter is your PRIMARY indicator for mean reversion entries and exits.
-- MEAN_REVERSION_LONG signal (zScore < -1.5): price is significantly below its estimated fair value — potential bounce
+- MEAN_REVERSION_LONG signal (zScore < -1.3): price is significantly below its estimated fair value — potential bounce
 - EXIT_LONG signal (zScore >= -0.5): price has reverted to fair value — time to exit
 - NEUTRAL: no statistical edge detected from the filter alone
 
@@ -74,7 +74,7 @@ Only commit capital when at least 9 of 10 conditions align:
 - No contradicting macro or learning history signal
 - Position count does not exceed maximum (5)
 - Sufficient buying power available
-- Confidence from learning history >= 0.65
+- Confidence from learning history >= 0.50
 - Pattern library shows positive win rate for similar conditions (if data available)
 - Risk/reward ratio is favorable (potential gain > potential loss)
 If fewer than 9 conditions align, return HOLD regardless of individual signal strength.
@@ -108,16 +108,16 @@ Return quantity = 0 in your JSON — the system will calculate the correct size.
 ## REGIME RESTRICTIONS (mandatory — override 9/10 rule if violated)
 - Mean reversion trades (Kalman z-score based) are ONLY valid when market_regime == RANGING.
   If regime is TRANSITION: return HOLD. Price is moving, not oscillating — mean reversion fails.
-- If regime is HIGH_VOLATILITY: return HOLD unless confidence >= 0.82.
-- If regime is TRENDING: only consider trend-following setups, not mean reversion.
-- Set signal_type to MEAN_REVERSION if using Kalman z-score, TREND_FOLLOWING if using breakout, OTHER otherwise.
+- If regime is HIGH_VOLATILITY: return HOLD unless confidence >= 0.70.
+- If regime is TRENDING: only consider trend-following setups (breakout or EMA50 pullback), not mean reversion.
+- Set signal_type to MEAN_REVERSION if using Kalman z-score, TREND_FOLLOWING if using breakout, PULLBACK_EMA50 if price is pulling back to EMA50 in an uptrend, OTHER otherwise.
 - Set regime_compatible: false if the above rules block your entry, and return HOLD.
 
 ## STRICT OUTPUT RULES
 - Respond ONLY with valid JSON matching the schema below. No markdown, no text outside JSON.
 - Never recommend BUY if: maximum positions (5) are already open, or insufficient buying power.
 - Never recommend SELL if: no position currently exists in that symbol.
-- Only recommend BUY or SELL if confidence meets the regime threshold (RANGING: 0.65, TRENDING: 0.70, TRANSITION: 0.78, HIGH_VOLATILITY: 0.82). Otherwise return HOLD.
+- Only recommend BUY or SELL if confidence meets the regime threshold (RANGING: 0.50, TRENDING: 0.55, TRANSITION: 0.65, HIGH_VOLATILITY: 0.70). Otherwise return HOLD.
 - Reasoning must explicitly reference the Kalman signal and at least one secondary indicator.
 - Consider learning history seriously — past losses in similar conditions must lower confidence.
 - Consider macro and symbol-specific news: if recent headlines contradict your technical thesis (e.g., bearish earnings, geopolitical shock affecting the sector), reduce confidence or return HOLD. News context is provided in the prompt under MACRO & MARKET CONTEXT and RECENT NEWS FOR [SYMBOL].
@@ -129,7 +129,7 @@ RESPONSE SCHEMA (strict JSON):
   "quantity": 0,
   "reasoning": "3-5 sentences: cite Kalman signal, secondary indicators, 9/10 rule assessment, and learning history",
   "confidence": 0.0,
-  "signal_type": "MEAN_REVERSION | TREND_FOLLOWING | OTHER",
+  "signal_type": "MEAN_REVERSION | TREND_FOLLOWING | PULLBACK_EMA50 | OTHER",
   "regime_compatible": true
 }`
 
@@ -138,10 +138,10 @@ RESPONSE SCHEMA (strict JSON):
 // ============================================================
 
 const CONFIDENCE_THRESHOLDS: Record<string, number> = {
-  RANGING: 0.65,
-  TRENDING: 0.70,
-  TRANSITION: 0.78,
-  HIGH_VOLATILITY: 0.82,
+  RANGING: 0.50,        // was 0.65
+  TRENDING: 0.55,       // was 0.70
+  TRANSITION: 0.65,     // was 0.78
+  HIGH_VOLATILITY: 0.70, // was 0.82
 }
 
 // ============================================================
@@ -181,6 +181,14 @@ async function enforceExitRules(
       exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
     } else if (daysOpen >= 20) {
       exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
+    } else if (
+      ind.marketRegime === 'TRENDING' &&
+      ind.ema50 !== null &&
+      ind.currentPrice < ind.ema50 * 0.99
+    ) {
+      exitReason = `Exit rule: EMA50 stop — price $${ind.currentPrice.toFixed(2)} broke below EMA50 $${ind.ema50.toFixed(2)} by >1% (PULLBACK_EMA50 invalidated)`
+    } else if (ind.marketRegime === 'TRENDING' && pnlPct >= 0.05) {
+      exitReason = `Exit rule: trend profit target reached (${(pnlPct * 100).toFixed(1)}% >= 5%) in TRENDING regime`
     }
 
     if (!exitReason) continue
@@ -219,10 +227,10 @@ function preClaudeFilter(
   portfolioDrawdownPct?: number,
 ): { blocked: false; learnContext: LearnContext | null } {
   const { kalman, marketRegime } = indicators
-  const threshold = thresholdMap[symbol] ?? -1.5
+  const threshold = thresholdMap[symbol] ?? -1.3
   const flags: PreFilterFlag[] = []
 
-  // Check if EITHER signal is present before flagging
+  // Check if ANY signal is present before flagging
   const hasMeanReversionSignal = kalman && kalman.zScore <= threshold && marketRegime === 'RANGING'
   const hasTrendFollowingSignal = (
     marketRegime === 'TRENDING' &&
@@ -231,9 +239,18 @@ function preClaudeFilter(
     indicators.currentPrice > (indicators.sma50 ?? 0) &&
     (indicators.rsi ?? 0) > 50 && (indicators.rsi ?? 0) < 75
   )
+  // EMA50 Pullback: price pulling back to EMA50 in a confirmed uptrend
+  const hasPullbackEMA50Signal = (
+    marketRegime === 'TRENDING' &&
+    indicators.ema50 !== null && indicators.ema200 !== null &&
+    indicators.currentPrice > indicators.ema50 &&
+    indicators.ema50 > indicators.ema200 &&
+    Math.abs(indicators.distanceToEma50Pct ?? 100) <= 2.0 &&
+    (indicators.rsi ?? 100) < 70
+  )
 
-  // Rule 1: flag only if NEITHER signal is active
-  if (!hasMeanReversionSignal && !hasTrendFollowingSignal) {
+  // Rule 1: flag only if NO signal is active
+  if (!hasMeanReversionSignal && !hasTrendFollowingSignal && !hasPullbackEMA50Signal) {
     const zscore = kalman?.zScore ?? 0
     flags.push({
       rule: 'zscore',
@@ -242,8 +259,8 @@ function preClaudeFilter(
     })
   }
 
-  // Rule 2: mean reversion only valid in RANGING — only flag if MR signal but wrong regime, and no TF signal
-  if (!hasTrendFollowingSignal && marketRegime !== 'RANGING' && kalman && kalman.zScore <= threshold) {
+  // Rule 2: mean reversion only valid in RANGING — only flag if MR signal but wrong regime, and no trending signal
+  if (!hasTrendFollowingSignal && !hasPullbackEMA50Signal && marketRegime !== 'RANGING' && kalman && kalman.zScore <= threshold) {
     flags.push({
       rule: 'regime',
       detail: `mean reversion in ${marketRegime ?? 'null'} — not ideal, no trend following signal either`,
@@ -443,7 +460,7 @@ function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
     `Fair Value Estimate: $${kalman.stateEstimate.toFixed(2)}`,
     `Forecast Error e(t): ${kalman.forecastError >= 0 ? '+' : ''}${kalman.forecastError.toFixed(4)} (price is ${dir} fair value)`,
     `Error Std Dev Q(t): ${kalman.errorStdDev.toFixed(4)}`,
-    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < -1.5 | exit threshold: >= -0.5)`,
+    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < -1.3 | exit threshold: >= -0.5)`,
     `Signal: ${signalMap[kalman.signal]}`,
   ].join('\n')
 }
@@ -498,6 +515,8 @@ MACD: line=${indicators.macd?.macdLine.toFixed(4) ?? 'N/A'}, signal=${indicators
 Bollinger Bands: upper=$${indicators.bollingerBands?.upper.toFixed(2) ?? 'N/A'}, middle=$${indicators.bollingerBands?.middle.toFixed(2) ?? 'N/A'}, lower=$${indicators.bollingerBands?.lower.toFixed(2) ?? 'N/A'}, %B=${indicators.bollingerBands?.percentB.toFixed(3) ?? 'N/A'} ${bbLabel(indicators.bollingerBands)}
 SMA50: ${smaLabel(indicators.currentPrice, indicators.sma50, 50)}
 SMA200: ${smaLabel(indicators.currentPrice, indicators.sma200, 200)}
+EMA50: ${indicators.ema50 !== null ? `$${indicators.ema50.toFixed(2)} (price ${indicators.distanceToEma50Pct !== null ? (indicators.distanceToEma50Pct >= 0 ? '+' : '') + indicators.distanceToEma50Pct.toFixed(2) + '% from EMA50' : 'N/A'})` : 'N/A'}
+EMA200: ${indicators.ema200 !== null ? `$${indicators.ema200.toFixed(2)}${indicators.ema50 !== null && indicators.ema200 !== null ? (indicators.ema50 > indicators.ema200 ? ' — EMA50 > EMA200 (uptrend)' : ' — EMA50 < EMA200 (downtrend)') : ''}` : 'N/A'}
 
 --- PORTFOLIO STATE ---
 Total Equity: $${equity.toFixed(2)}
@@ -523,9 +542,9 @@ ${learningContext}
 ${watchlistContext ? `
 --- NEAR-MISS WATCHLIST CONTEXT ---
 ${watchlistContext}
-` : ''}${effectiveThreshold !== undefined && effectiveThreshold !== -1.5 ? `
+` : ''}${effectiveThreshold !== undefined && effectiveThreshold !== -1.3 ? `
 --- NEWS-ADJUSTED THRESHOLD ---
-Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: -1.5, news adjustment: ${(effectiveThreshold - (-1.5)).toFixed(3)})
+Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: -1.3, news adjustment: ${(effectiveThreshold - (-1.3)).toFixed(3)})
 ` : ''}
 Analyze ${symbol} and provide your trading decision as JSON.${learnContext ? `
 
@@ -752,7 +771,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   // 4b. News Intelligence Layer — classify news and build dynamic threshold map
   const defaultThresholds: ThresholdMap = { __MACRO__: 0 }
-  for (const s of watchlist) defaultThresholds[s] = -1.5
+  for (const s of watchlist) defaultThresholds[s] = -1.3
 
   const thresholdMap = await newsIntelligenceLayer(watchlist).catch((err) => {
     console.error('[NEWS] Layer failed, using defaults:', err)
@@ -836,7 +855,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           timestamp,
           symbol,
           decision: { action: 'HOLD', symbol, quantity: 0, reasoning: '', confidence: 0 },
-          indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
+          indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, ema50: null, ema200: null, distanceToEma50Pct: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
           error: 'Skipped: no indicators available in cache',
@@ -904,7 +923,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // Build watchlist context if this is an auto-entry
       let watchlistContext: string | undefined
-      const effectiveThreshold = thresholdMap[symbol] ?? -1.5
+      const effectiveThreshold = thresholdMap[symbol] ?? -1.3
       if (isAutoEntry) {
         const watchlistEntry = await getActiveNearMissForSymbol(symbol).catch(() => null)
         if (watchlistEntry) {
@@ -1101,7 +1120,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         timestamp,
         symbol,
         decision: { action: 'HOLD', symbol, quantity: 0, reasoning: 'Analysis failed', confidence: 0 },
-        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
+        indicators: { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, ema50: null, ema200: null, distanceToEma50Pct: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
         portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
         error: String(err),

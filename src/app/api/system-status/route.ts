@@ -39,7 +39,7 @@ export async function GET() {
     return NextResponse.json({
       mode: 'LEARN',
       marketRegime,
-      zScoreThreshold: -1.5,
+      zScoreThreshold: -1.3,
       positionCount,
       maxPositions: 5,
       lastRun,

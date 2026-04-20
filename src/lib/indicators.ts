@@ -141,7 +141,7 @@ export function calculateSMA(bars: AlpacaBar[], period: number): number | null {
 
 export function calculateKalman(
   bars: AlpacaBar[],
-  entryStd = 1.5,
+  entryStd = 1.3,
   exitStd = 0.5
 ): TechnicalIndicators['kalman'] {
   if (bars.length < 30) return null
@@ -326,14 +326,25 @@ export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
   const atrPercentile = atr !== null ? getATRPercentile(atr, atrHistory) : null
   const marketRegime = detectMarketRegime(adx, atrPercentile)
 
+  const closes = bars.map((b) => b.c)
+  const ema50Arr = calculateEMA(closes, 50)
+  const ema200Arr = calculateEMA(closes, 200)
+  const ema50 = ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1] : null
+  const ema200 = ema200Arr.length > 0 ? ema200Arr[ema200Arr.length - 1] : null
+  const currentPrice = bars[bars.length - 1].c
+  const distanceToEma50Pct = ema50 !== null ? ((currentPrice - ema50) / ema50) * 100 : null
+
   return {
     rsi: calculateRSI(bars),
     macd: calculateMACD(bars),
     bollingerBands: calculateBollingerBands(bars),
     sma50: calculateSMA(bars, 50),
     sma200: calculateSMA(bars, 200),
+    ema50,
+    ema200,
+    distanceToEma50Pct,
     kalman: calculateKalman(bars),
-    currentPrice: bars[bars.length - 1].c,
+    currentPrice,
     volume: bars[bars.length - 1].v,
     prevDayVolume: bars.length >= 2 ? bars[bars.length - 2].v : bars[bars.length - 1].v,
     adx,
