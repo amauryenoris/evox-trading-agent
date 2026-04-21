@@ -183,6 +183,7 @@ export interface OpenPositionContext {
   claudeReasoning: string
   patternIdsUsed: string[]
   stopOrderId?: string
+  signalType?: 'MEAN_REVERSION' | 'TREND' | null
 }
 
 export interface TradeEvaluation {

@@ -109,6 +109,7 @@ export async function saveOpenPositionContext(ctx: OpenPositionContext): Promise
     reasoning: ctx.claudeReasoning,
     pattern_ids: ctx.patternIdsUsed,
     stop_order_id: ctx.stopOrderId ?? null,
+    signal_type: ctx.signalType ?? null,
   }, { onConflict: 'symbol' })
   if (error) throw new Error(`Failed to save position context: ${error.message}`)
 }
@@ -123,6 +124,7 @@ function mapRowToOpenPositionContext(row: Record<string, unknown>): OpenPosition
     claudeReasoning: (row.reasoning as string) ?? '',
     patternIdsUsed: (row.pattern_ids as string[]) ?? [],
     stopOrderId: (row.stop_order_id as string | null) ?? undefined,
+    signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | null) ?? null,
   }
 }
 

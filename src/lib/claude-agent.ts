@@ -39,6 +39,7 @@ import type {
   AgentLogEntry,
   AlpacaAccount,
   AlpacaPosition,
+  OpenPositionContext,
   TechnicalIndicators,
   TradeEvaluation,
   ThresholdMap,
@@ -147,7 +148,7 @@ function getTradingDaysOpen(buyTimestamp: string): number {
 async function enforceExitRules(
   positions: AlpacaPosition[],
   indicatorsCache: Map<string, TechnicalIndicators>,
-  openContexts: { symbol: string; buyTimestamp: string }[],
+  openContexts: OpenPositionContext[],
 ): Promise<AgentLogEntry[]> {
   const exitEntries: AgentLogEntry[] = []
   const timestamp = new Date().toISOString()
@@ -160,28 +161,38 @@ async function enforceExitRules(
     const pnlPct = parseFloat(position.unrealized_plpc)
     const ctx = openContexts.find((c) => c.symbol === position.symbol)
     const daysOpen = ctx ? getTradingDaysOpen(ctx.buyTimestamp) : 0
+    const signalType = ctx?.signalType ?? null
 
     let exitReason: string | null = null
 
-    if (zScore >= -0.5) {
-      exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.5 — price reverted to fair value`
-    } else if (pnlPct >= 0.10) {
-      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
-    } else if (daysOpen >= 20) {
-      exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
-    } else if (
-      ind.marketRegime === 'TRENDING' &&
-      ind.ema50 !== null &&
-      ind.currentPrice < ind.ema50 * 0.99
-    ) {
-      exitReason = `Exit rule: EMA50 stop — price $${ind.currentPrice.toFixed(2)} broke below EMA50 $${ind.ema50.toFixed(2)} by >1% (PULLBACK_EMA50 invalidated)`
-    } else if (ind.marketRegime === 'TRENDING' && pnlPct >= 0.05) {
-      exitReason = `Exit rule: trend profit target reached (${(pnlPct * 100).toFixed(1)}% >= 5%) in TRENDING regime`
+    // Mean Reversion exits
+    if (signalType === 'MEAN_REVERSION') {
+      if (zScore >= -0.5) {
+        exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.5 — price reverted to fair value`
+      }
     }
+
+    // Trend exits
+    if (!exitReason && signalType === 'TREND') {
+      if (ind.ema50 !== null && ind.currentPrice < ind.ema50) {
+        exitReason = `Exit rule: price $${ind.currentPrice.toFixed(2)} fell below EMA50 $${ind.ema50.toFixed(2)}`
+      }
+    }
+
+    // Universal exits — apply to both signal types
+    if (!exitReason && pnlPct >= 0.10) {
+      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
+    }
+    if (!exitReason && daysOpen >= 20) {
+      exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
+    }
+
+    // Legacy positions (signal_type === null): profit target + time stop only
+    // z-score exit NOT applied to unknown entries
 
     if (!exitReason) continue
 
-    console.log(`[EXIT-RULES] Closing ${position.symbol}: ${exitReason}`)
+    console.log(`[EXIT-RULES] Closing ${position.symbol} [${signalType ?? 'legacy'}]: ${exitReason}`)
     try {
       await closePosition(position.symbol)
       exitEntries.push({
@@ -947,6 +958,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   claudeReasoning: decision.reasoning,
                   patternIdsUsed: [],
                   stopOrderId,
+                  signalType: meanReversionSetup ? 'MEAN_REVERSION' : 'TREND',
                 })
 
                 // If this BUY came from the Near-Miss Watchlist, link the log entry
