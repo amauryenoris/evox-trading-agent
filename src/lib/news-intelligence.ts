@@ -7,10 +7,10 @@ const BASE_THRESHOLD = -1.3
 const MAX_NEWS_PER_CYCLE = 10
 
 // Hard caps — prevent excessive threshold relaxation or tightening
-const MAX_MACRO_ADJUSTMENT    = -0.300  // floor: max bullish relaxation per cycle
-const MAX_BEARISH_MACRO       =  0.300  // ceiling: max bearish tightening per cycle
-const MAX_SYMBOL_ADJUSTMENT   = -0.300  // floor: max bullish relaxation per symbol
-const MAX_BEARISH_SYMBOL      =  0.300  // ceiling: max bearish tightening per symbol
+const MAX_MACRO_ADJUSTMENT    = -0.150  // floor: max bullish relaxation per cycle
+const MAX_BEARISH_MACRO       =  0.150  // ceiling: max bearish tightening per cycle
+const MAX_SYMBOL_ADJUSTMENT   = -0.150  // floor: max bullish relaxation per symbol
+const MAX_BEARISH_SYMBOL      =  0.150  // ceiling: max bearish tightening per symbol
 
 interface NewsClassification {
   scope: 'MACRO' | 'SYMBOL'
