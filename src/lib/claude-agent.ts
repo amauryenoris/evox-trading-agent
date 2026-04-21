@@ -830,6 +830,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             const hasOpenPosition = positions.some(p => p.symbol === symbol)
             if (!hasOpenPosition) {
               // Gate 1: liquidity
+              console.log(`[LIQUIDITY] ${symbol} feed: delayed_sip, prevDayVolume: ${indicators.prevDayVolume.toLocaleString()}`)
               if (!checkLiquidity(indicators.prevDayVolume)) {
                 error = `Liquidity gate: prev day volume ${indicators.prevDayVolume.toLocaleString()} < 1,000,000`
                 decision.action = 'HOLD'

@@ -79,7 +79,7 @@ export async function getBars(
   url.searchParams.set('timeframe', timeframe)
   url.searchParams.set('start', startStr)
   url.searchParams.set('limit', String(limit))
-  url.searchParams.set('feed', 'iex')
+  url.searchParams.set('feed', 'sip')
   url.searchParams.set('sort', 'asc')
 
   const response = await alpacaFetch<{ bars: AlpacaBar[]; symbol: string; next_page_token: string | null }>(
