@@ -43,7 +43,6 @@ import type {
   TradeEvaluation,
   ThresholdMap,
   LearnContext,
-  PreFilterFlag,
 } from './types'
 
 // ============================================================
@@ -134,17 +133,6 @@ RESPONSE SCHEMA (strict JSON):
 }`
 
 // ============================================================
-// CONFIDENCE THRESHOLDS BY REGIME (Gate 0 + Pre-filter)
-// ============================================================
-
-const CONFIDENCE_THRESHOLDS: Record<string, number> = {
-  RANGING: 0.50,        // was 0.65
-  TRENDING: 0.55,       // was 0.70
-  TRANSITION: 0.65,     // was 0.78
-  HIGH_VOLATILITY: 0.70, // was 0.82
-}
-
-// ============================================================
 // EXIT RULES — deterministic exits run before Claude analysis
 // ============================================================
 
@@ -212,97 +200,6 @@ async function enforceExitRules(
   }
 
   return exitEntries
-}
-
-// ============================================================
-// PRE-CLAUDE FILTER — runs before enriched prompt (Fix #1)
-// ============================================================
-
-function preClaudeFilter(
-  symbol: string,
-  indicators: TechnicalIndicators,
-  positions: AlpacaPosition[],
-  thresholdMap: ThresholdMap,
-  portfolioEquity?: number,
-  portfolioDrawdownPct?: number,
-): { blocked: false; learnContext: LearnContext | null } {
-  const { kalman, marketRegime } = indicators
-  const threshold = thresholdMap[symbol] ?? -1.3
-  const flags: PreFilterFlag[] = []
-
-  // Check if ANY signal is present before flagging
-  const hasMeanReversionSignal = kalman && kalman.zScore <= threshold && marketRegime === 'RANGING'
-  const hasTrendFollowingSignal = (
-    marketRegime === 'TRENDING' &&
-    (indicators.adx ?? 0) > 25 &&
-    indicators.macd !== null && indicators.macd.histogram > 0 && indicators.macd.macdLine > indicators.macd.signalLine &&
-    indicators.currentPrice > (indicators.sma50 ?? 0) &&
-    (indicators.rsi ?? 0) > 50 && (indicators.rsi ?? 0) < 75
-  )
-  // EMA50 Pullback: price pulling back to EMA50 in a confirmed uptrend
-  const hasPullbackEMA50Signal = (
-    marketRegime === 'TRENDING' &&
-    indicators.ema50 !== null && indicators.ema200 !== null &&
-    indicators.currentPrice > indicators.ema50 &&
-    indicators.ema50 > indicators.ema200 &&
-    Math.abs(indicators.distanceToEma50Pct ?? 100) <= 2.0 &&
-    (indicators.rsi ?? 100) < 70
-  )
-
-  // Rule 1: flag only if NO signal is active
-  if (!hasMeanReversionSignal && !hasTrendFollowingSignal && !hasPullbackEMA50Signal) {
-    const zscore = kalman?.zScore ?? 0
-    flags.push({
-      rule: 'zscore',
-      detail: `no signal: z-score ${zscore.toFixed(3)} (MR threshold: ${threshold.toFixed(3)}), trend: ${hasTrendFollowingSignal ? 'yes' : 'no'}`,
-      gap: kalman ? parseFloat(Math.abs(zscore - threshold).toFixed(3)) : 0,
-    })
-  }
-
-  // Rule 2: mean reversion only valid in RANGING — only flag if MR signal but wrong regime, and no trending signal
-  if (!hasTrendFollowingSignal && !hasPullbackEMA50Signal && marketRegime !== 'RANGING' && kalman && kalman.zScore <= threshold) {
-    flags.push({
-      rule: 'regime',
-      detail: `mean reversion in ${marketRegime ?? 'null'} — not ideal, no trend following signal either`,
-      gap: 0,
-    })
-  }
-
-  // Rule 3: portfolio drawdown > 10%
-  if (portfolioDrawdownPct !== undefined && portfolioDrawdownPct < -0.10) {
-    flags.push({
-      rule: 'drawdown',
-      detail: `drawdown ${(portfolioDrawdownPct * 100).toFixed(1)}%`,
-      gap: 0,
-    })
-  }
-
-  // Rule 4: HIGH_VOLATILITY with too many open positions
-  if (marketRegime === 'HIGH_VOLATILITY' && positions.length >= 3) {
-    flags.push({
-      rule: 'volatility',
-      detail: 'HIGH_VOLATILITY + positions >= 3',
-      gap: 0,
-    })
-  }
-
-  // LEARN mode: always proceed to Claude — never block
-  if (flags.length > 0) {
-    const nearest_flag = flags.reduce((prev, curr) =>
-      curr.gap > 0 && (prev.gap === 0 || curr.gap < prev.gap) ? curr : prev
-    , flags[0])
-    return {
-      blocked: false,
-      learnContext: {
-        pre_filter_triggered: true,
-        flags,
-        nearest_flag,
-        mode: 'LEARN',
-      },
-    }
-  }
-
-  return { blocked: false, learnContext: null }
 }
 
 // ============================================================
@@ -392,24 +289,6 @@ async function evaluateRotation(
 
   const toExit = exitCandidates.sort((a, b) => a.priority - b.priority)[0]
   return { rotate: true, exitSymbol: toExit.symbol, reason: toExit.reason }
-}
-
-// ============================================================
-// GATE 0 — Regime-adjusted confidence threshold (Fix #3)
-// ============================================================
-
-function passesConfidenceGate(
-  confidence: number,
-  regime: string | null,
-): { passes: boolean; reason?: string } {
-  const threshold = CONFIDENCE_THRESHOLDS[regime ?? ''] ?? 0.80
-  if (confidence < threshold) {
-    return {
-      passes: false,
-      reason: `Gate 0: confidence ${confidence.toFixed(2)} < ${threshold} required for ${regime ?? 'unknown'} regime`,
-    }
-  }
-  return { passes: true }
 }
 
 // ============================================================
@@ -897,16 +776,28 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         }
       }
 
-      // Pre-filter: LEARN mode — collect flags but always proceed to Claude
-      // Auto-entry symbols bypass the pre-filter — conditions already met
-      const portfolioDrawdownPct = (parseFloat(account.equity) - 100000) / 100000
-      const { learnContext } = isAutoEntry
-        ? { learnContext: null }
-        : preClaudeFilter(symbol, indicators, positions, thresholdMap, parseFloat(account.equity), portfolioDrawdownPct)
+      // Step 1: Setup Detection — hard gate before calling Claude
+      const zScore = indicators.kalman?.zScore ?? 0
+      const ema50Value = indicators.ema50 ?? 0
 
-      if (learnContext) {
-        const flagSummary = learnContext.flags.map(f => f.detail).join('; ')
-        console.log(`[LEARN-MODE] ${symbol}: flags detected (${flagSummary}) — proceeding to Claude`)
+      const meanReversionSetup = zScore <= -1.5
+      const trendSetup = ema50Value > 0 && indicators.currentPrice > ema50Value
+
+      const setup_detected = meanReversionSetup || trendSetup
+
+      if (!setup_detected) {
+        console.log(`[SETUP-GATE] ${symbol}: no setup (z-score=${zScore.toFixed(3)}, price=${indicators.currentPrice.toFixed(2)}, ema50=${ema50Value > 0 ? ema50Value.toFixed(2) : 'N/A'}) — HOLD`)
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Setup gate: no mean reversion setup (z-score ${zScore.toFixed(3)} > -1.5) and no trend setup (price not above EMA50)`, confidence: 0 },
+          indicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: undefined,
+        })
+        continue
       }
 
       // Detect near-misses for z-scores in the near-miss zone (-1.0 to threshold)
@@ -946,7 +837,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         symbolNews,
         watchlistContext,
         effectiveThreshold,
-        learnContext ?? undefined,
       )
 
       // Call Claude (with retry on 429/529)
@@ -971,13 +861,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Regime gate: override if Claude returned regime_compatible=false (Fix #2)
       if (decision.action !== 'HOLD' && decision.regime_compatible === false) {
         error = `Regime gate: Claude set regime_compatible=false — ${decision.reasoning.slice(0, 80)}`
-        decision.action = 'HOLD'
-      }
-
-      // Gate 0: regime-adjusted confidence threshold (Fix #3)
-      const confidenceCheck = passesConfidenceGate(decision.confidence, indicators.marketRegime)
-      if (decision.action !== 'HOLD' && !confidenceCheck.passes) {
-        error = confidenceCheck.reason
         decision.action = 'HOLD'
       }
 
@@ -1020,14 +903,22 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
               }
 
               if (decision.action === 'BUY') {
-              const qty = calculateBuyQuantity(
+              const baseShares = calculateBuyQuantity(
                 indicators.currentPrice,
                 parseFloat(account.equity),
                 parseFloat(account.buying_power),
                 indicators.kalman?.signal,
                 indicators.marketRegime
               )
-              console.log(`[BUY SIZING] ${symbol}: qty=${qty} | price=$${indicators.currentPrice} | equity=$${account.equity} | regime=${indicators.marketRegime}`)
+              // Confidence-based position sizing with 50% floor
+              const confidenceMultiplier = Math.max(0.50, Math.min(decision.confidence, 1.0))
+              let adjustedShares = Math.round(baseShares * confidenceMultiplier)
+              // Edge override: extreme z-score gets full size (applied last, never overwritten)
+              if (zScore <= -2.0) {
+                adjustedShares = baseShares
+              }
+              const qty = adjustedShares
+              console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
               if (qty > 0) {
                 const order = await submitOrder(symbol, qty, 'buy')
                 orderId = order.id
@@ -1091,11 +982,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ...(decision.what_would_trigger !== undefined && { what_would_trigger: decision.what_would_trigger }),
       }
 
-      // If pre-filter flags were raised, store them in error field for display
-      const preFilterError = learnContext
-        ? `Pre-filter flags: ${JSON.stringify(learnContext.flags)}`
-        : undefined
-
       const entry: AgentLogEntry = {
         id: randomUUID(),
         timestamp,
@@ -1109,7 +995,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         },
         orderExecuted,
         orderId,
-        error: error ?? preFilterError,
+        error,
       }
 
       decisions.push(entry)
