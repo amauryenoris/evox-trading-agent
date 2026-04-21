@@ -83,11 +83,20 @@ export function calculateCurrentDrawdown(
 export async function isNewPositionAllowed(
   symbol: string,
   account: AlpacaAccount,
-  _positions: AlpacaPosition[],
+  positions: AlpacaPosition[],
   openContexts: OpenPositionContext[],
   agentLog: AgentLogEntry[]
 ): Promise<{ allowed: boolean; reason?: string }> {
   const equity = parseFloat(account.equity)
+
+  // Gate 0: max positions check
+  const maxPositions = parseInt(process.env.MAX_POSITIONS ?? '5', 10)
+  if (positions.length >= maxPositions) {
+    return {
+      allowed: false,
+      reason: `Max positions reached (${positions.length}/${maxPositions})`,
+    }
+  }
 
   // Gate 1: drawdown check
   const drawdown = calculateCurrentDrawdown(equity, agentLog)

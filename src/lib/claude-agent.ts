@@ -882,6 +882,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                     orderId = order.id
                     orderExecuted = true
                     decision.quantity = qty
+                    // Update local positions array so subsequent symbols in this cycle see the new count
+                    positions.push({ symbol } as AlpacaPosition)
 
                     // Submit GTC stop order immediately (Capa A protection)
                     const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
