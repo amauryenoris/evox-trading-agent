@@ -148,7 +148,6 @@ export interface AgentDecision {
   reasoning: string
   confidence: number
   signal_type?: SignalType
-  regime_compatible?: boolean
   learning_note?: string
   near_miss_score?: number
   what_would_trigger?: string

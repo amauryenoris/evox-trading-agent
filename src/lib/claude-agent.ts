@@ -50,87 +50,37 @@ import type {
 // SYSTEM PROMPT (static — defines Claude's role)
 // ============================================================
 
-const SYSTEM_PROMPT = `You are a quantitative trader AI operating a paper trading simulation for US stocks.
-Your methodology is based on the Market Wizards framework (Kovner, Seykota, E.P. Chan).
+const SYSTEM_PROMPT = `You are a trading analyst. Your role is to:
+1. EXPLAIN what the indicators show
+2. IDENTIFY the market context
+3. ADD learning notes for future reference
 
-## CORE FRAMEWORK
+IMPORTANT:
+- You do NOT decide whether to trade
+- You do NOT validate or invalidate setups
+- You do NOT apply rules or filters
+- The system has ALREADY determined if a setup exists
 
-### Primary Signal: Kalman Filter (E.P. Chan)
-The Kalman filter is your PRIMARY indicator for mean reversion entries and exits.
-- MEAN_REVERSION_LONG signal (zScore < -1.3): price is significantly below its estimated fair value — potential bounce
-- EXIT_LONG signal (zScore >= -0.5): price has reverted to fair value — time to exit
-- NEUTRAL: no statistical edge detected from the filter alone
+Your analysis is for logging and learning only.
 
-### Secondary Context: RSI, MACD, Bollinger Bands, SMA
-These are secondary — use them as a "market thermometer" (Kovner) to confirm price action, NOT as primary entry signals.
-RSI/MACD/BB alone are insufficient justification for BUY or SELL. They must confirm the Kalman signal or a clear trend breakout.
+IMPORTANT — Do NOT:
+- say BUY, SELL, or HOLD
+- reference the 9/10 rule
+- reference confidence thresholds by regime
+- use language like "prohibits trading"
+- use language like "blocks entry"
+- use RSI or %B as entry conditions
+- reject or approve trades
 
-### Entry Criteria — 9/10 Rule (Kovner)
-Only commit capital when at least 9 of 10 conditions align:
-- Kalman signal confirms mean reversion OR clear technical breakout above consolidation / new highs
-- Volume supports the move (not a low-liquidity drift)
-- RSI not in overbought territory for longs (RSI < 70)
-- Price not in a "falling knife" pattern (downtrend with no consolidation)
-- No contradicting macro or learning history signal
-- Position count does not exceed maximum (5)
-- Sufficient buying power available
-- Confidence from learning history >= 0.50
-- Pattern library shows positive win rate for similar conditions (if data available)
-- Risk/reward ratio is favorable (potential gain > potential loss)
-If fewer than 9 conditions align, return HOLD regardless of individual signal strength.
-
-### Exit Criteria
-- Kalman EXIT_LONG signal (zScore reverted to -0.5 or above)
-- Technical stop invalidated (pattern that justified entry no longer holds)
-- Pre-defined stop loss hit (5% below entry)
-Exit is pre-defined and non-negotiable — do not move stops hoping for recovery.
-
-### Risk Management (Kovner 1-2% Rule)
-- Maximum capital at risk per trade: 1% of total equity
-- Undertrade mandate: if pattern uncertainty or learning history is mixed, use HALF the calculated position size
-- Express undertrade recommendation in your reasoning field when applicable
-- Never recommend a size larger than available buying power allows
-- Position size is adjusted by market regime multiplier BEFORE the Kovner formula is applied: TRENDING=1.0, TRANSITION=0.75, RANGING=0.5, HIGH_VOLATILITY=0.25
-
-### Position Sizing Note
-Quantity will be calculated externally using the Kovner formula:
-  capital_at_risk = equity × 0.01
-  risk_per_share = entry_price × stop_loss_pct
-  quantity = capital_at_risk / risk_per_share
-Return quantity = 0 in your JSON — the system will calculate the correct size.
-
-### Trading Psychology Rules (Seykota / Kovner)
-- Losses are operational costs, not failures — cut them fast
-- "Let winners run" — do not exit profitable positions at first sign of weakness unless Kalman says EXIT
-- If a pattern has caused losses historically, reduce confidence accordingly
-- The market is a thermometer, not a crystal ball — trade probabilities, not predictions
-
-## REGIME RESTRICTIONS (mandatory — override 9/10 rule if violated)
-- Mean reversion trades (Kalman z-score based) are ONLY valid when market_regime == RANGING.
-  If regime is TRANSITION: return HOLD. Price is moving, not oscillating — mean reversion fails.
-- If regime is HIGH_VOLATILITY: return HOLD unless confidence >= 0.70.
-- If regime is TRENDING: only consider trend-following setups (breakout or EMA50 pullback), not mean reversion.
-- Set signal_type to MEAN_REVERSION if using Kalman z-score, TREND_FOLLOWING if using breakout, PULLBACK_EMA50 if price is pulling back to EMA50 in an uptrend, OTHER otherwise.
-- Set regime_compatible: false if the above rules block your entry, and return HOLD.
-
-## STRICT OUTPUT RULES
-- Respond ONLY with valid JSON matching the schema below. No markdown, no text outside JSON.
-- Never recommend BUY if: maximum positions (5) are already open, or insufficient buying power.
-- Never recommend SELL if: no position currently exists in that symbol.
-- Only recommend BUY or SELL if confidence meets the regime threshold (RANGING: 0.50, TRENDING: 0.55, TRANSITION: 0.65, HIGH_VOLATILITY: 0.70). Otherwise return HOLD.
-- Reasoning must explicitly reference the Kalman signal and at least one secondary indicator.
-- Consider learning history seriously — past losses in similar conditions must lower confidence.
-- Consider macro and symbol-specific news: if recent headlines contradict your technical thesis (e.g., bearish earnings, geopolitical shock affecting the sector), reduce confidence or return HOLD. News context is provided in the prompt under MACRO & MARKET CONTEXT and RECENT NEWS FOR [SYMBOL].
+Respond ONLY with valid JSON. No markdown, no text outside JSON.
 
 RESPONSE SCHEMA (strict JSON):
 {
-  "action": "BUY" | "SELL" | "HOLD",
-  "symbol": "string",
-  "quantity": 0,
-  "reasoning": "3-5 sentences: cite Kalman signal, secondary indicators, 9/10 rule assessment, and learning history",
+  "reasoning": "2-4 sentences: what the indicators show and what the market context is",
   "confidence": 0.0,
-  "signal_type": "MEAN_REVERSION | TREND_FOLLOWING | PULLBACK_EMA50 | OTHER",
-  "regime_compatible": true
+  "learning_note": "what this case teaches about the setup",
+  "near_miss_score": 0,
+  "what_would_trigger": "what specific condition would strengthen the signal"
 }`
 
 // ============================================================
@@ -863,25 +813,22 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       const jsonText = content.text.replace(/```json\n?|\n?```/g, '').trim()
       const decision = JSON.parse(jsonText) as AgentDecision
-      decision.symbol = symbol // ensure symbol matches
+      decision.symbol = symbol
+      decision.action = 'HOLD'   // Claude no longer decides action — system decides via setup_detected + gates
+      decision.quantity = decision.quantity ?? 0
 
       let orderExecuted = false
       let orderId: string | undefined
       let error: string | undefined
 
-      // Regime gate: override if Claude returned regime_compatible=false (Fix #2)
-      if (decision.action !== 'HOLD' && decision.regime_compatible === false) {
-        error = `Regime gate: Claude set regime_compatible=false — ${decision.reasoning.slice(0, 80)}`
-        decision.action = 'HOLD'
-      }
-
-      // Execute order if market is open and decision is actionable
-      if (decision.action !== 'HOLD') {
+      // Execute order if market is open and setup was detected
+      if (setup_detected) {
         if (!marketOpen) {
           error = 'Market closed — order queued but not executed'
         } else {
           try {
-            if (decision.action === 'BUY') {
+            const hasOpenPosition = positions.some(p => p.symbol === symbol)
+            if (!hasOpenPosition) {
               // Gate 1: liquidity
               if (!checkLiquidity(indicators.prevDayVolume)) {
                 error = `Liquidity gate: prev day volume ${indicators.prevDayVolume.toLocaleString()} < 1,000,000`
@@ -910,74 +857,65 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                 if (!riskCheck.allowed) {
                   error = riskCheck.reason ?? 'Portfolio risk gate: position not allowed'
                   decision.action = 'HOLD'
+                } else {
+                  // All gates passed — execute BUY
+                  decision.action = 'BUY'
+                  const baseShares = calculateBuyQuantity(
+                    indicators.currentPrice,
+                    parseFloat(account.equity),
+                    parseFloat(account.buying_power),
+                    indicators.kalman?.signal,
+                    indicators.marketRegime
+                  )
+                  // Confidence-based position sizing with 50% floor
+                  const confidenceMultiplier = Math.max(0.50, Math.min(decision.confidence, 1.0))
+                  let adjustedShares = Math.round(baseShares * confidenceMultiplier)
+                  // Edge override: extreme z-score gets full size (applied last, never overwritten)
+                  if (zScore <= -2.0) {
+                    adjustedShares = baseShares
+                  }
+                  const qty = adjustedShares
+                  console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
+                  if (qty > 0) {
+                    const order = await submitOrder(symbol, qty, 'buy')
+                    orderId = order.id
+                    orderExecuted = true
+                    decision.quantity = qty
+
+                    // Submit GTC stop order immediately (Capa A protection)
+                    const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+                    const stopPrice = indicators.currentPrice * (1 - stopLossPct)
+                    let stopOrderId: string | undefined
+                    try {
+                      const stopOrder = await submitStopOrder(symbol, qty, stopPrice)
+                      stopOrderId = stopOrder.id
+                    } catch (stopErr) {
+                      console.warn(`Failed to submit stop order for ${symbol}:`, stopErr)
+                    }
+
+                    // Save buy context for future learning
+                    const entryLogId = randomUUID()
+                    await saveOpenPositionContext({
+                      symbol,
+                      buyTimestamp: timestamp,
+                      buyPrice: indicators.currentPrice,
+                      quantity: qty,
+                      indicators,
+                      claudeReasoning: decision.reasoning,
+                      patternIdsUsed: [],
+                      stopOrderId,
+                      signalType: meanReversionSetup ? 'MEAN_REVERSION' : 'TREND',
+                    })
+
+                    // If this BUY came from the Near-Miss Watchlist, link the log entry
+                    if (isAutoEntry) {
+                      await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
+                    }
+                  } else {
+                    error = 'Insufficient buying power for position'
+                    decision.action = 'HOLD'
+                  }
                 }
-              }
-
-              if (decision.action === 'BUY') {
-              const baseShares = calculateBuyQuantity(
-                indicators.currentPrice,
-                parseFloat(account.equity),
-                parseFloat(account.buying_power),
-                indicators.kalman?.signal,
-                indicators.marketRegime
-              )
-              // Confidence-based position sizing with 50% floor
-              const confidenceMultiplier = Math.max(0.50, Math.min(decision.confidence, 1.0))
-              let adjustedShares = Math.round(baseShares * confidenceMultiplier)
-              // Edge override: extreme z-score gets full size (applied last, never overwritten)
-              if (zScore <= -2.0) {
-                adjustedShares = baseShares
-              }
-              const qty = adjustedShares
-              console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
-              if (qty > 0) {
-                const order = await submitOrder(symbol, qty, 'buy')
-                orderId = order.id
-                orderExecuted = true
-                decision.quantity = qty
-
-                // Submit GTC stop order immediately (Capa A protection)
-                const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
-                const stopPrice = indicators.currentPrice * (1 - stopLossPct)
-                let stopOrderId: string | undefined
-                try {
-                  const stopOrder = await submitStopOrder(symbol, qty, stopPrice)
-                  stopOrderId = stopOrder.id
-                } catch (stopErr) {
-                  console.warn(`Failed to submit stop order for ${symbol}:`, stopErr)
-                }
-
-                // Save buy context for future learning
-                const entryLogId = randomUUID()
-                await saveOpenPositionContext({
-                  symbol,
-                  buyTimestamp: timestamp,
-                  buyPrice: indicators.currentPrice,
-                  quantity: qty,
-                  indicators,
-                  claudeReasoning: decision.reasoning,
-                  patternIdsUsed: [],
-                  stopOrderId,
-                  signalType: meanReversionSetup ? 'MEAN_REVERSION' : 'TREND',
-                })
-
-                // If this BUY came from the Near-Miss Watchlist, link the log entry
-                if (isAutoEntry) {
-                  await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
-                }
-              } else {
-                error = 'Insufficient buying power for position'
-              }
-              } // end inner if (decision.action === 'BUY') after gates
-            } else if (decision.action === 'SELL') {
-              const hasPosition = positions.some((p) => p.symbol === symbol)
-              if (hasPosition) {
-                const order = await closePosition(symbol)
-                orderId = order.id
-                orderExecuted = true
-              } else {
-                error = 'No position to sell'
-                decision.action = 'HOLD'
               }
             }
           } catch (execErr) {
