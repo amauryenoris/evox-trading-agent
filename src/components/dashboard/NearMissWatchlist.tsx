@@ -14,6 +14,11 @@ const regimeBadge: Record<string, string> = {
   TRENDING: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
 }
 
+const signalTypeBadge: Record<string, string> = {
+  MEAN_REVERSION: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+  TREND: 'text-green-400 bg-green-500/10 border-green-500/20',
+}
+
 export function NearMissWatchlist({ initialEntries = [] }: Props) {
   const [entries, setEntries] = useState<NearMissEntry[]>(initialEntries)
 
@@ -34,34 +39,34 @@ export function NearMissWatchlist({ initialEntries = [] }: Props) {
     return () => clearInterval(interval)
   }, [])
 
-  if (entries.length === 0) return null
-
   return (
     <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
       <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-        Near-Miss Watchlist ({entries.length})
+        Near-Miss Watchlist ({entries.length} active)
       </h2>
 
+      {entries.length === 0 ? (
+        <p className="text-slate-600 text-sm py-4 text-center">No near-miss signals</p>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-600 border-b border-[#1e1e2e]">
               <th className="text-left pb-2 pr-3 font-medium">Symbol</th>
-              <th className="text-left pb-2 pr-3 font-medium w-32">Z progress</th>
-              <th className="text-right pb-2 pr-3 font-medium">Z-score</th>
+              <th className="text-left pb-2 pr-3 font-medium">Type</th>
+              <th className="text-left pb-2 pr-3 font-medium w-32">Progress</th>
+              <th className="text-right pb-2 pr-3 font-medium">Z-Score</th>
               <th className="text-left pb-2 pr-3 font-medium">Regime</th>
               <th className="text-right pb-2 pr-3 font-medium">Cycles</th>
-              <th className="text-right pb-2 pr-3 font-medium">News boost</th>
-              <th className="text-right pb-2 font-medium">Eff. threshold</th>
+              <th className="text-right pb-2 font-medium">News Boost</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1e1e2e]">
             {entries.map((entry) => {
               const zscore = entry.latest_zscore ?? entry.initial_zscore
-              const threshold = entry.effective_threshold
-              const fillPct = Math.min(Math.max((zscore / threshold) * 100, 0), 100)
-              const isReady = zscore <= threshold
-              const isClose = entry.gap_to_threshold < 0.05
+              const fillPct = Math.min(Math.max((zscore / -1.5) * 100, 0), 100)
+              const isReady = zscore <= entry.effective_threshold
+              const isClose = entry.gap_to_threshold < 0.10
 
               const rowClass = isReady
                 ? 'bg-green-400/5'
@@ -81,7 +86,18 @@ export function NearMissWatchlist({ initialEntries = [] }: Props) {
                 <tr key={entry.id} className={`${rowClass} transition-colors`}>
                   <td className="py-2 pr-3 font-semibold text-slate-200">{entry.symbol}</td>
 
-                  {/* Z progress bar */}
+                  {/* Type badge */}
+                  <td className="py-2 pr-3">
+                    {entry.signal_type && entry.signal_type in signalTypeBadge ? (
+                      <span className={`px-1.5 py-0.5 rounded-full border text-xs ${signalTypeBadge[entry.signal_type]}`}>
+                        {entry.signal_type === 'MEAN_REVERSION' ? 'MR' : 'TREND'}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
+                  </td>
+
+                  {/* Progress bar */}
                   <td className="py-2 pr-3">
                     <div className="flex items-center gap-1.5">
                       <div className="flex-1 bg-[#0a0a0f] rounded-full h-1.5 w-24">
@@ -108,16 +124,12 @@ export function NearMissWatchlist({ initialEntries = [] }: Props) {
                     {entry.monitoring_cycles}
                   </td>
 
-                  <td className="py-2 pr-3 text-right">
+                  <td className="py-2 text-right">
                     {entry.news_boost_applied !== 0 ? (
                       <span className="text-green-400">+{entry.news_boost_applied.toFixed(2)}</span>
                     ) : (
                       <span className="text-slate-600">—</span>
                     )}
-                  </td>
-
-                  <td className="py-2 text-right font-mono text-slate-400">
-                    {threshold.toFixed(3)}
                   </td>
                 </tr>
               )
@@ -125,6 +137,7 @@ export function NearMissWatchlist({ initialEntries = [] }: Props) {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   )
 }

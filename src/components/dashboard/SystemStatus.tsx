@@ -19,6 +19,7 @@ interface SystemStatusData {
     overtrading: GateStatus
     positions: GateStatus
   }
+  setupsDetected?: { meanReversion: number; trend: number }
 }
 
 const regimeColors: Record<string, string> = {
@@ -159,6 +160,23 @@ export function SystemStatus() {
           </span>
         )}
       </div>
+
+      {/* Row 3 — Setups detected in last cycle */}
+      {data.setupsDetected && (data.setupsDetected.meanReversion > 0 || data.setupsDetected.trend > 0) && (
+        <div className="flex items-center gap-4 bg-[#0d0d14] border border-[#1e1e2e] rounded-lg px-4 py-2.5">
+          <span className="text-xs text-slate-500 font-medium w-16">Setups</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">MR</span>
+              <span className="text-xs text-slate-400">{data.setupsDetected.meanReversion}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">TREND</span>
+              <span className="text-xs text-slate-400">{data.setupsDetected.trend}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

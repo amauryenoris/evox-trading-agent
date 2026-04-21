@@ -196,6 +196,7 @@ export interface TradeEvaluation {
   pnlUSD: number
   pnlPct: number
   holdingDays: number
+  signal_type?: 'MEAN_REVERSION' | 'TREND' | null
   buyIndicators: TechnicalIndicators
   claudePostMortem: string
   lessonsLearned: string[]
@@ -300,6 +301,7 @@ export interface NearMissEntry {
   initial_regime: string
   indicators_snapshot: Record<string, unknown>
   status: 'ACTIVE' | 'TRIGGERED' | 'EXPIRED' | 'CANCELLED'
+  signal_type?: 'MEAN_REVERSION' | 'TREND' | null
   latest_zscore?: number
   latest_regime?: string
   news_boost_applied: number

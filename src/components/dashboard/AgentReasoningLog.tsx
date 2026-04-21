@@ -11,6 +11,21 @@ const actionColors = {
   HOLD: 'bg-slate-700/50 text-slate-400 border-slate-600/20',
 }
 
+const signalTypeBadge: Record<string, string> = {
+  MEAN_REVERSION: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  TREND_FOLLOWING: 'bg-green-500/10 text-green-400 border-green-500/20',
+  PULLBACK_EMA50: 'bg-green-500/10 text-green-400 border-green-500/20',
+  OTHER: 'bg-slate-700/50 text-slate-500 border-slate-600/20',
+  NO_SETUP: 'bg-slate-700/30 text-slate-600 border-slate-700/20',
+}
+
+const signalTypeLabel: Record<string, string> = {
+  MEAN_REVERSION: 'MR',
+  TREND_FOLLOWING: 'TREND',
+  PULLBACK_EMA50: 'TREND',
+  OTHER: 'OTHER',
+}
+
 function parsePreFilterFlags(error?: string): PreFilterFlag[] | null {
   if (!error) return null
   const match = error.match(/^Pre-filter flags: (.+)$/)
@@ -59,8 +74,16 @@ export function AgentReasoningLog({ entries }: Props) {
                       className={`text-xs px-2 py-0.5 rounded-full font-medium border ${actionColors[entry.decision.action]}`}
                     >
                       {entry.decision.action}
-                      {preFilterFlags && preFilterFlags.length > 0 && entry.decision.action === 'HOLD' ? ' 🚩' : ''}
                     </span>
+                    {entry.decision.signal_type && entry.decision.signal_type in signalTypeBadge ? (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${signalTypeBadge[entry.decision.signal_type]}`}>
+                        {signalTypeLabel[entry.decision.signal_type] ?? entry.decision.signal_type}
+                      </span>
+                    ) : entry.decision.action === 'HOLD' && !entry.orderExecuted ? (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${signalTypeBadge['NO_SETUP']}`}>
+                        NO_SETUP
+                      </span>
+                    ) : null}
                     {entry.orderExecuted && (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/20">
                         EXECUTED
@@ -89,6 +112,9 @@ export function AgentReasoningLog({ entries }: Props) {
                   <span>RSI {entry.indicators.rsi?.toFixed(1) ?? '—'}</span>
                   <span>MACD {entry.indicators.macd?.histogram.toFixed(3) ?? '—'}</span>
                   <span>%B {entry.indicators.bollingerBands?.percentB.toFixed(2) ?? '—'}</span>
+                  {(entry.decision.signal_type === 'TREND_FOLLOWING' || entry.decision.signal_type === 'PULLBACK_EMA50') && entry.indicators.ema50 && (
+                    <span>EMA50 ${entry.indicators.ema50.toFixed(2)}</span>
+                  )}
                   <span>P${entry.indicators.currentPrice.toFixed(2)}</span>
                 </div>
 
@@ -104,10 +130,10 @@ export function AgentReasoningLog({ entries }: Props) {
                   </p>
                 )}
 
-                {/* Pre-filter flags section (LEARN mode — secondary, muted) */}
+                {/* Setup context (secondary info — muted) */}
                 {preFilterFlags && preFilterFlags.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-dashed border-slate-700/50">
-                    <p className="text-xs text-slate-600 font-medium mb-1">Pre-filter flags</p>
+                    <p className="text-xs text-slate-600 font-medium mb-1">Setup context</p>
                     <div className="space-y-0.5">
                       {preFilterFlags.map((flag, i) => (
                         <p key={i} className="text-xs text-slate-600">

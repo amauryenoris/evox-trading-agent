@@ -73,17 +73,27 @@ function toDateString(d: Date): string {
 
 interface HoldsBreakdown {
   total: number
-  preFilterBlock: number
-  confidenceBelow065: number
-  zscoreOutOfRange: number
-  noKalmanSignal: number
-  noPullbackSetup: number
+  noSetupDetected: number
   gate1Liquidity: number
   gate2Hours: number
   gate3Overtrading: number
   gate4Portfolio: number
   otherHold: number
   avgConfidenceOnHolds: number
+}
+
+interface SignalTypeStats {
+  count: number
+  wins: number
+  winRate: number
+  avgPnlPct: number
+  avgWinUSD: number
+  avgLossUSD: number
+}
+
+interface SignalTypeBreakdown {
+  meanReversion: SignalTypeStats
+  trend: SignalTypeStats
 }
 
 interface RegimeDistribution {
@@ -111,6 +121,7 @@ interface EnhancedDiagnostics {
   regimeDistribution: RegimeDistribution
   confidenceSummary: ConfidenceSummary
   kalmanSummary: KalmanSummary
+  signalTypeBreakdown: SignalTypeBreakdown
 }
 
 // ============================================================
@@ -187,37 +198,25 @@ function calculateDiagnostics(
 
   // ── HOLDs Breakdown ─────────────────────────────────────────
   const nonExecuted = weekEntries.filter((e) => !e.orderExecuted)
-  let confidenceBelow065 = 0
-  let zscoreOutOfRange = 0
-  let noKalmanSignal = 0
-  let noPullbackSetup = 0
+  let noSetupDetected = 0
   let gate1Liquidity = 0
   let gate2Hours = 0
   let gate3Overtrading = 0
   let gate4Portfolio = 0
-  let preFilterBlock = 0
   let otherHold = 0
 
   for (const e of nonExecuted) {
     const err = e.error ?? ''
-    if (err.startsWith('Pre-filter:')) {
-      preFilterBlock++
+    if (err.includes('Setup gate:') || e.decision.reasoning?.includes('Setup gate:')) {
+      noSetupDetected++
     } else if (err.includes('Liquidity gate')) {
       gate1Liquidity++
     } else if (err.includes('Trading hours gate')) {
       gate2Hours++
     } else if (err.includes('Overtrading gate')) {
       gate3Overtrading++
-    } else if (err.includes('gate') || err.includes('Gate')) {
+    } else if (err.includes('gate') || err.includes('Gate') || err.includes('Market closed')) {
       gate4Portfolio++
-    } else if (e.decision.action === 'HOLD' && e.indicators.kalman === null) {
-      noKalmanSignal++
-    } else if (e.decision.action === 'HOLD' && (e.decision.reasoning?.includes('not near EMA50') || e.decision.reasoning?.includes('PULLBACK_EMA50') && e.decision.reasoning?.includes('no setup'))) {
-      noPullbackSetup++
-    } else if (e.decision.action === 'HOLD' && e.indicators.kalman?.signal === 'NEUTRAL') {
-      zscoreOutOfRange++
-    } else if (e.decision.action === 'HOLD' && e.decision.confidence < 0.65) {
-      confidenceBelow065++
     } else {
       otherHold++
     }
@@ -255,14 +254,24 @@ function calculateDiagnostics(
   const pctEntriesBelowMinus1_5 = tradesWithKalman.length > 0
     ? (belowMinus1_5 / tradesWithKalman.length) * 100 : 0
 
+  // ── Signal Type Breakdown ────────────────────────────────────
+  function buildSignalStats(trades: TradeEvaluation[]): SignalTypeStats {
+    const wins = trades.filter((e) => e.outcome === 'profit')
+    const losses = trades.filter((e) => e.outcome === 'loss')
+    const winRate = trades.length > 0 ? (wins.length / trades.length) * 100 : 0
+    const avgPnlPct = trades.length > 0 ? trades.reduce((s, e) => s + e.pnlPct, 0) / trades.length : 0
+    const avgWinUSD = wins.length > 0 ? wins.reduce((s, e) => s + e.pnlUSD, 0) / wins.length : 0
+    const avgLossUSD = losses.length > 0 ? losses.reduce((s, e) => s + e.pnlUSD, 0) / losses.length : 0
+    return { count: trades.length, wins: wins.length, winRate, avgPnlPct, avgWinUSD, avgLossUSD }
+  }
+
+  const mrTrades = weekEvals.filter((e) => e.signal_type === 'MEAN_REVERSION')
+  const trendTrades = weekEvals.filter((e) => e.signal_type === 'TREND')
+
   return {
     holdsBreakdown: {
       total: nonExecuted.length,
-      preFilterBlock,
-      confidenceBelow065,
-      zscoreOutOfRange,
-      noKalmanSignal,
-      noPullbackSetup,
+      noSetupDetected,
       gate1Liquidity,
       gate2Hours,
       gate3Overtrading,
@@ -286,6 +295,10 @@ function calculateDiagnostics(
     kalmanSummary: {
       avgZscoreAtEntry,
       pctEntriesBelowMinus1_5,
+    },
+    signalTypeBreakdown: {
+      meanReversion: buildSignalStats(mrTrades),
+      trend: buildSignalStats(trendTrades),
     },
   }
 }
@@ -568,26 +581,50 @@ function generatePDF(
     doc.text(`Avg loss:                 ${summary.avgLossPct.toFixed(2)}%`, MARGIN)
     doc.text(`Profit factor:            ${summary.profitFactor.toFixed(2)}`, MARGIN)
 
+    // ---- Signal Type Breakdown ----
+    const stb = diagnostics.signalTypeBreakdown
+    if (stb.meanReversion.count > 0 || stb.trend.count > 0) {
+      drawSectionTitle(doc, 'Signal Type Breakdown')
+      doc.fontSize(10).fillColor(C_BLACK)
+      doc.text(`Mean Reversion trades:    ${stb.meanReversion.count}`, MARGIN)
+      doc.text(`Trend trades:             ${stb.trend.count}`, MARGIN)
+
+      if (stb.meanReversion.count > 0) {
+        doc.moveDown(0.3)
+        doc.font('Helvetica-Bold').text('  Mean Reversion performance:', MARGIN)
+        doc.font('Helvetica')
+        doc.text(`    Win rate:   ${stb.meanReversion.winRate.toFixed(1)}%`, MARGIN)
+        doc.text(`    Avg P&L:    ${stb.meanReversion.avgPnlPct >= 0 ? '+' : ''}${stb.meanReversion.avgPnlPct.toFixed(2)}%`, MARGIN)
+        doc.text(`    Avg win:    +$${stb.meanReversion.avgWinUSD.toFixed(2)}`, MARGIN)
+        doc.text(`    Avg loss:   -$${Math.abs(stb.meanReversion.avgLossUSD).toFixed(2)}`, MARGIN)
+      }
+
+      if (stb.trend.count > 0) {
+        doc.moveDown(0.3)
+        doc.font('Helvetica-Bold').text('  Trend performance:', MARGIN)
+        doc.font('Helvetica')
+        doc.text(`    Win rate:   ${stb.trend.winRate.toFixed(1)}%`, MARGIN)
+        doc.text(`    Avg P&L:    ${stb.trend.avgPnlPct >= 0 ? '+' : ''}${stb.trend.avgPnlPct.toFixed(2)}%`, MARGIN)
+        doc.text(`    Avg win:    +$${stb.trend.avgWinUSD.toFixed(2)}`, MARGIN)
+        doc.text(`    Avg loss:   -$${Math.abs(stb.trend.avgLossUSD).toFixed(2)}`, MARGIN)
+      }
+    }
+
     // ---- HOLDs Breakdown ----
     const hb = diagnostics.holdsBreakdown
     drawSectionTitle(doc, `HOLDs Breakdown  (${hb.total} non-executed cycles)`)
     doc.fontSize(10).fillColor(C_BLACK)
-    const holdRows = [
-      [`Pre-filter block`,          hb.preFilterBlock,      hb.total],
-      [`Confidence < threshold`,    hb.confidenceBelow065,  hb.total],
-      [`Z-score out of range`,      hb.zscoreOutOfRange,    hb.total],
-      [`No Kalman signal`,          hb.noKalmanSignal,      hb.total],
-      [`No pullback setup (EMA50)`, hb.noPullbackSetup,     hb.total],
+    const holdRows: [string, number, number][] = [
+      [`No setup detected`,         hb.noSetupDetected,     hb.total],
       [`Gate 1 — Low liquidity`,    hb.gate1Liquidity,      hb.total],
       [`Gate 2 — Outside hours`,    hb.gate2Hours,          hb.total],
-      [`Gate 3 — Overtrading`,      hb.gate3Overtrading,    hb.total],
-      [`Gate 4 — Portfolio risk`,   hb.gate4Portfolio,      hb.total],
+      [`Gate 3 — Max positions`,    hb.gate3Overtrading,    hb.total],
+      [`Gate 4 — Risk limit`,       hb.gate4Portfolio,      hb.total],
       [`Other (Claude HOLD)`,       hb.otherHold,           hb.total],
     ]
     for (const [label, n, tot] of holdRows) {
-      doc.text(`  ${String(label).padEnd(30)}  ${String(n).padStart(4)}  (${pct(Number(n), Number(tot))})`, MARGIN)
+      doc.text(`  ${String(label).padEnd(30)}  ${String(n).padStart(4)}  (${pct(n, tot)})`, MARGIN)
     }
-    doc.text(`  Avg confidence on HOLDs:          ${hb.avgConfidenceOnHolds.toFixed(3)}`, MARGIN)
 
     // ---- Market Regime Distribution ----
     const rd = diagnostics.regimeDistribution
@@ -698,14 +735,20 @@ function generatePDF(
       }
     }
 
-    // ---- Confidence Summary ----
+    // ---- Confidence (informational only) ----
     const cs = diagnostics.confidenceSummary
-    drawSectionTitle(doc, 'Confidence Summary')
+    drawSectionTitle(doc, 'Confidence (informational only)')
     doc.fontSize(10).fillColor(C_BLACK)
-    doc.text(`  Avg confidence — BUYs:   ${cs.avgBuys.toFixed(3)}`, MARGIN)
-    doc.text(`  Avg confidence — HOLDs:  ${cs.avgHolds.toFixed(3)}`, MARGIN)
-    doc.text(`  Avg confidence — SELLs:  ${cs.avgSells.toFixed(3)}`, MARGIN)
-    doc.text(`  Analyses above 0.65:     ${cs.pctAboveThreshold.toFixed(1)}%`, MARGIN)
+    const weekEntriesForConf = agentLog.filter((e) => {
+      const t = new Date(e.timestamp)
+      return t >= weekStart && t <= weekEnd
+    })
+    const avgConfAll = weekEntriesForConf.length > 0
+      ? weekEntriesForConf.reduce((s, e) => s + e.decision.confidence, 0) / weekEntriesForConf.length
+      : 0
+    doc.text(`  Avg confidence all cycles: ${avgConfAll.toFixed(3)}`, MARGIN)
+    doc.text(`  Avg confidence — BUYs:     ${cs.avgBuys.toFixed(3)}`, MARGIN)
+    doc.text(`  Avg confidence — HOLDs:    ${cs.avgHolds.toFixed(3)}`, MARGIN)
 
     // ---- Trade Log ----
     const weekEvals = evaluations.filter((e) => {

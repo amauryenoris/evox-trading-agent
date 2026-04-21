@@ -209,6 +209,7 @@ export async function getTradeEvaluations(limit = 200): Promise<TradeEvaluation[
         kalman: raw.indicators_at_buy?.kalman ?? raw.kalman ?? null,
       }
     })(),
+    signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | null) ?? null,
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],
     outcome: row.outcome ?? 'breakeven',

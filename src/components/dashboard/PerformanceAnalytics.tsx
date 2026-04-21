@@ -10,6 +10,12 @@ interface TradeSummary {
   symbol: string
 }
 
+interface SignalTypeStat {
+  count: number
+  winRate: number
+  avgPnlPct: number
+}
+
 interface PerformanceData {
   total: number
   winCount: number
@@ -23,6 +29,7 @@ interface PerformanceData {
   last10Trades: TradeSummary[]
   evoxYtdPct: number
   spyYtdPct: number | null
+  signalTypeBreakdown?: { meanReversion: SignalTypeStat; trend: SignalTypeStat }
 }
 
 function formatPct(v: number): string {
@@ -162,6 +169,51 @@ export function PerformanceAnalytics() {
           </div>
         </div>
       </div>
+
+      {/* Signal Type Breakdown */}
+      {data.signalTypeBreakdown && (data.signalTypeBreakdown.meanReversion.count > 0 || data.signalTypeBreakdown.trend.count > 0) && (
+        <div className="grid grid-cols-2 gap-3">
+          {/* Mean Reversion */}
+          <div className="bg-[#0d0d14] border border-blue-500/10 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Mean Reversion</span>
+              <span className="text-xs text-slate-500">{data.signalTypeBreakdown.meanReversion.count} trades</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Win rate</span>
+              <span className={data.signalTypeBreakdown.meanReversion.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
+                {data.signalTypeBreakdown.meanReversion.winRate.toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex justify-between text-xs mt-1">
+              <span className="text-slate-500">Avg P&L</span>
+              <span className={data.signalTypeBreakdown.meanReversion.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                {formatPct(data.signalTypeBreakdown.meanReversion.avgPnlPct)}
+              </span>
+            </div>
+          </div>
+
+          {/* Trend */}
+          <div className="bg-[#0d0d14] border border-green-500/10 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">Trend</span>
+              <span className="text-xs text-slate-500">{data.signalTypeBreakdown.trend.count} trades</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Win rate</span>
+              <span className={data.signalTypeBreakdown.trend.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
+                {data.signalTypeBreakdown.trend.winRate.toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex justify-between text-xs mt-1">
+              <span className="text-slate-500">Avg P&L</span>
+              <span className={data.signalTypeBreakdown.trend.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                {formatPct(data.signalTypeBreakdown.trend.avgPnlPct)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <p className="text-xs text-slate-600">

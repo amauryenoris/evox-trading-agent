@@ -30,6 +30,23 @@ export async function GET() {
     const avgLossUSD = losses.length > 0 ? losses.reduce((s, t) => s + t.pnlUSD, 0) / losses.length : 0
     const avgLossPct = losses.length > 0 ? losses.reduce((s, t) => s + t.pnlPct, 0) / losses.length : 0
 
+    // Signal type breakdown
+    function signalStats(trades: typeof closedTrades) {
+      const w = trades.filter((t) => t.outcome === 'profit')
+      const l = trades.filter((t) => t.outcome === 'loss')
+      return {
+        count: trades.length,
+        winRate: trades.length > 0 ? (w.length / trades.length) * 100 : 0,
+        avgPnlPct: trades.length > 0 ? trades.reduce((s, t) => s + t.pnlPct, 0) / trades.length : 0,
+      }
+    }
+    const mrTrades = closedTrades.filter((t) => t.signal_type === 'MEAN_REVERSION')
+    const trendTrades = closedTrades.filter((t) => t.signal_type === 'TREND')
+    const signalTypeBreakdown = {
+      meanReversion: signalStats(mrTrades),
+      trend: signalStats(trendTrades),
+    }
+
     // Last 10 trades for bar chart
     const last10 = [...closedTrades]
       .sort((a, b) => new Date(b.sellTimestamp).getTime() - new Date(a.sellTimestamp).getTime())
@@ -68,6 +85,7 @@ export async function GET() {
       evoxYtdPct,
       spyYtdPct,
       currentEquity,
+      signalTypeBreakdown,
     })
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 })
