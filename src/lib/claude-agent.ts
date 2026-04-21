@@ -684,7 +684,20 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // Seed decisions with any deterministic exits that already fired this cycle
   const decisions: AgentLogEntry[] = [...exitRuleEntries]
 
+  const maxPositions = parseInt(process.env.MAX_POSITIONS ?? '5', 10)
+  const maxBuysPerDay = 5
+  let openPositionsCount = positions.length
+  let buysToday = await getTodayBuyExecutions()
+
   for (const symbol of watchlist) {
+    if (openPositionsCount >= maxPositions) {
+      console.log(`[GATE] Max positions reached (${openPositionsCount}/${maxPositions}) — stopping cycle`)
+      break
+    }
+    if (buysToday >= maxBuysPerDay) {
+      console.log(`[GATE] Max buys per day reached (${buysToday}/${maxBuysPerDay}) — stopping cycle`)
+      break
+    }
     try {
       // Use pre-computed indicators from pre-pass (avoids double bar fetch)
       const indicators = indicatorsCache.get(symbol)
@@ -740,11 +753,18 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Step 1: Setup Detection — hard gate before calling Claude
       const zScore = indicators.kalman?.zScore ?? 0
       const ema50Value = indicators.ema50 ?? 0
+      const ema200Value = indicators.ema200 ?? 0
 
       const meanReversionSetup = zScore <= -1.5
-      const trendSetup = ema50Value > 0 && indicators.currentPrice > ema50Value && zScore < 2.0
+      const trendSetup = ema50Value > 0
+                      && ema200Value > 0
+                      && indicators.currentPrice > ema50Value
+                      && ema50Value > ema200Value
+                      && zScore < 2.0
 
       const setup_detected = meanReversionSetup || trendSetup
+
+      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup })
 
       if (!setup_detected) {
         console.log(`[SETUP-GATE] ${symbol}: no setup (z-score=${zScore.toFixed(3)}, price=${indicators.currentPrice.toFixed(2)}, ema50=${ema50Value > 0 ? ema50Value.toFixed(2) : 'N/A'}) — HOLD`)
@@ -840,9 +860,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                 error = 'Trading hours gate: outside 9:45am–3:30pm ET window'
                 decision.action = 'HOLD'
               }
-              // Gate 3: overtrading limit
-              else if (!(await checkOvertradingLimit())) {
-                error = 'Overtrading gate: 5 BUYs already executed today'
+              // Gate 3: overtrading limit (uses in-cycle counter — already checked at loop top)
+              else if (buysToday >= maxBuysPerDay) {
+                error = `Overtrading gate: ${buysToday} BUYs already executed today`
                 decision.action = 'HOLD'
               }
               // Gate 4: portfolio risk / drawdown / correlation
@@ -882,8 +902,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                     orderId = order.id
                     orderExecuted = true
                     decision.quantity = qty
-                    // Update local positions array so subsequent symbols in this cycle see the new count
-                    positions.push({ symbol } as AlpacaPosition)
+                    openPositionsCount++
+                    buysToday++
 
                     // Submit GTC stop order immediately (Capa A protection)
                     const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
