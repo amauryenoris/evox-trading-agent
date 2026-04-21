@@ -457,7 +457,7 @@ function checkTradingHours(): boolean {
 
 async function checkOvertradingLimit(): Promise<boolean> {
   const count = await getTodayBuyExecutions()
-  return count < 3
+  return count < 5
 }
 
 function regimeMultiplier(regime: string | null): number {
@@ -841,7 +841,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
               }
               // Gate 3: overtrading limit
               else if (!(await checkOvertradingLimit())) {
-                error = 'Overtrading gate: 3 BUYs already executed today'
+                error = 'Overtrading gate: 5 BUYs already executed today'
                 decision.action = 'HOLD'
               }
               // Gate 4: portfolio risk / drawdown / correlation
