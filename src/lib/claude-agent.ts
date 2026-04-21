@@ -742,7 +742,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const ema50Value = indicators.ema50 ?? 0
 
       const meanReversionSetup = zScore <= -1.5
-      const trendSetup = ema50Value > 0 && indicators.currentPrice > ema50Value
+      const trendSetup = ema50Value > 0 && indicators.currentPrice > ema50Value && zScore < 2.0
 
       const setup_detected = meanReversionSetup || trendSetup
 
