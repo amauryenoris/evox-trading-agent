@@ -691,12 +691,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   for (const symbol of watchlist) {
     if (openPositionsCount >= maxPositions) {
-      console.log(`[GATE] Max positions reached (${openPositionsCount}/${maxPositions}) — stopping cycle`)
-      break
+      console.log(`[GATE] Max positions reached (${openPositionsCount}/${maxPositions}) — skipping BUY for ${symbol}`)
+      continue
     }
     if (buysToday >= maxBuysPerDay) {
-      console.log(`[GATE] Max buys per day reached (${buysToday}/${maxBuysPerDay}) — stopping cycle`)
-      break
+      console.log(`[GATE] Max buys per day reached (${buysToday}/${maxBuysPerDay}) — skipping BUY for ${symbol}`)
+      continue
     }
     try {
       // Use pre-computed indicators from pre-pass (avoids double bar fetch)
