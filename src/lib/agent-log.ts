@@ -1,8 +1,8 @@
 import type { AgentLogEntry } from './types'
-import { insertAgentLogEntry, getAgentLog } from './db'
+import { insertAgentLogEntry, getAgentLogPrioritized } from './db'
 
 export async function readAgentLog(): Promise<AgentLogEntry[]> {
-  return getAgentLog(500)
+  return getAgentLogPrioritized()
 }
 
 export async function appendAgentLogEntries(entries: AgentLogEntry[]): Promise<void> {

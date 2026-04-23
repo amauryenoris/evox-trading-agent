@@ -94,6 +94,61 @@ export async function getAgentLog(limit = 500): Promise<AgentLogEntry[]> {
   }))
 }
 
+export async function getAgentLogPrioritized(): Promise<AgentLogEntry[]> {
+  const db = getClient()
+  const [sellsResult, nonSellsResult] = await Promise.all([
+    db.from('agent_log').select('*').eq('action', 'SELL').order('created_at', { ascending: false }).limit(10),
+    db.from('agent_log').select('*').neq('action', 'SELL').order('created_at', { ascending: false }).limit(40),
+  ])
+  if (sellsResult.error) throw new Error(`Failed to fetch sells: ${sellsResult.error.message}`)
+  if (nonSellsResult.error) throw new Error(`Failed to fetch non-sells: ${nonSellsResult.error.message}`)
+
+  const mapRow = (row: Record<string, unknown>) => ({
+    id: row.id as string,
+    timestamp: row.timestamp as string,
+    symbol: row.symbol as string,
+    decision: {
+      action: row.action as AgentLogEntry['decision']['action'],
+      symbol: row.symbol as string,
+      quantity: (row.quantity as number) ?? 0,
+      reasoning: (row.reasoning as string) ?? '',
+      confidence: (row.confidence as number) ?? 0,
+    },
+    indicators: (() => {
+      const raw = (row.indicators as Record<string, unknown>) ?? {}
+      return {
+        rsi: raw.rsi as number | null ?? null,
+        macd: raw.macd as AgentLogEntry['indicators']['macd'] ?? null,
+        bollingerBands: raw.bollingerBands as AgentLogEntry['indicators']['bollingerBands'] ?? null,
+        sma50: raw.sma50 as number | null ?? null,
+        sma200: raw.sma200 as number | null ?? null,
+        ema50: raw.ema50 as number | null ?? null,
+        ema200: raw.ema200 as number | null ?? null,
+        distanceToEma50Pct: raw.distanceToEma50Pct as number | null ?? null,
+        currentPrice: (raw.currentPrice as number) ?? 0,
+        volume: (raw.volume as number) ?? 0,
+        prevDayVolume: (raw.prevDayVolume as number) ?? 0,
+        adx: raw.adx as number | null ?? null,
+        atr: raw.atr as number | null ?? null,
+        atrPercentile: raw.atrPercentile as number | null ?? null,
+        marketRegime: raw.marketRegime as string | null ?? null,
+        kalman: raw.kalman as AgentLogEntry['indicators']['kalman'] ?? null,
+      }
+    })(),
+    portfolioSnapshot: (row.portfolio_snapshot as AgentLogEntry['portfolioSnapshot']) ?? { equity: '0', cash: '0', positionCount: 0 },
+    orderExecuted: (row.order_executed as boolean) ?? false,
+    orderId: (row.order_id as string | null) ?? undefined,
+    error: (row.error as string | null) ?? undefined,
+  })
+
+  const combined = [
+    ...(sellsResult.data ?? []).map(mapRow),
+    ...(nonSellsResult.data ?? []).map(mapRow),
+  ]
+  combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  return combined
+}
+
 // ============================================================
 // OPEN POSITION CONTEXTS
 // ============================================================
