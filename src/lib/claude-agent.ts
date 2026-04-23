@@ -690,14 +690,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   let buysToday = await getTodayBuyExecutions()
 
   for (const symbol of watchlist) {
-    if (openPositionsCount >= maxPositions) {
-      console.log(`[GATE] Max positions reached (${openPositionsCount}/${maxPositions}) — skipping BUY for ${symbol}`)
-      continue
-    }
-    if (buysToday >= maxBuysPerDay) {
-      console.log(`[GATE] Max buys per day reached (${buysToday}/${maxBuysPerDay}) — skipping BUY for ${symbol}`)
-      continue
-    }
     try {
       // Use pre-computed indicators from pre-pass (avoids double bar fetch)
       const indicators = indicatorsCache.get(symbol)
@@ -837,6 +829,35 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       decision.action = 'HOLD'   // Claude no longer decides action — system decides via setup_detected + gates
       decision.quantity = decision.quantity ?? 0
 
+      // Execution gates — checked AFTER Claude analysis so every symbol gets indicators +
+      // learning_note + near-miss detection regardless of portfolio state
+      if (openPositionsCount >= maxPositions) {
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision,
+          indicators: { ...indicators, would_execute: false, errors: ['max_positions'] } as unknown as TechnicalIndicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: `Gate: max positions (${openPositionsCount}/${maxPositions})`,
+        })
+        continue
+      }
+      if (buysToday >= maxBuysPerDay) {
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision,
+          indicators: { ...indicators, would_execute: false, errors: ['max_buys'] } as unknown as TechnicalIndicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: `Gate: max buys per day (${buysToday}/${maxBuysPerDay})`,
+        })
+        continue
+      }
+
       let orderExecuted = false
       let orderId: string | undefined
       let error: string | undefined
@@ -896,6 +917,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                     adjustedShares = baseShares
                   }
                   const qty = adjustedShares
+                  const allGatesPassed = true  // reached this point — all gates cleared
+                  const wouldExecute = setup_detected && allGatesPassed
                   console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
                   if (qty > 0) {
                     const order = await submitOrder(symbol, qty, 'buy')
@@ -940,6 +963,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   }
                 }
               }
+            } else {
+              error = 'Already in position'
             }
           } catch (execErr) {
             error = String(execErr)
@@ -987,6 +1012,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     }
   }
 
+  // KNOWN RISK: decisions are only persisted here, after the full loop completes.
+  // If the process dies mid-cycle (OOM, timeout, unhandled rejection), all entries
+  // for that cycle are lost — nothing is written to agent_log. Fix requires
+  // per-symbol persistence inside the loop, which changes the existing structure.
   await appendAgentLogEntries(decisions)
 
   return { decisions, evaluations, marketOpen, timestamp }

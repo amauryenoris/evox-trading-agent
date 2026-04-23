@@ -78,6 +78,7 @@ interface HoldsBreakdown {
   gate2Hours: number
   gate3Overtrading: number
   gate4Portfolio: number
+  alreadyInPosition: number
   otherHold: number
   avgConfidenceOnHolds: number
 }
@@ -203,6 +204,7 @@ function calculateDiagnostics(
   let gate2Hours = 0
   let gate3Overtrading = 0
   let gate4Portfolio = 0
+  let alreadyInPosition = 0
   let otherHold = 0
 
   for (const e of nonExecuted) {
@@ -217,6 +219,8 @@ function calculateDiagnostics(
       gate3Overtrading++
     } else if (err.includes('gate') || err.includes('Gate') || err.includes('Market closed')) {
       gate4Portfolio++
+    } else if (err.includes('Already in position')) {
+      alreadyInPosition++
     } else {
       otherHold++
     }
@@ -276,6 +280,7 @@ function calculateDiagnostics(
       gate2Hours,
       gate3Overtrading,
       gate4Portfolio,
+      alreadyInPosition,
       otherHold,
       avgConfidenceOnHolds,
     },
@@ -620,6 +625,7 @@ function generatePDF(
       [`Gate 2 — Outside hours`,    hb.gate2Hours,          hb.total],
       [`Gate 3 — Max positions`,    hb.gate3Overtrading,    hb.total],
       [`Gate 4 — Risk limit`,       hb.gate4Portfolio,      hb.total],
+      [`Already in position`,       hb.alreadyInPosition,   hb.total],
       [`Other (Claude HOLD)`,       hb.otherHold,           hb.total],
     ]
     for (const [label, n, tot] of holdRows) {
