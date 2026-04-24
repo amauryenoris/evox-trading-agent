@@ -105,7 +105,10 @@ async function enforceExitRules(
 
   for (const position of positions) {
     const ind = indicatorsCache.get(position.symbol)
-    if (!ind?.kalman) continue
+    if (!ind?.kalman) {
+      console.log(`[EXIT-RULES] Skipping ${position.symbol}: no kalman indicators in cache`)
+      continue
+    }
 
     const zScore = ind.kalman.zScore
     const pnlPct = parseFloat(position.unrealized_plpc)
@@ -115,8 +118,16 @@ async function enforceExitRules(
 
     let exitReason: string | null = null
 
+    // Universal exits — checked first, always take priority over signal-type rules
+    if (pnlPct >= 0.10) {
+      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
+    }
+    if (!exitReason && daysOpen >= 20) {
+      exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
+    }
+
     // Mean Reversion exits
-    if (signalType === 'MEAN_REVERSION') {
+    if (!exitReason && signalType === 'MEAN_REVERSION') {
       if (zScore >= -0.5) {
         exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.5 — price reverted to fair value`
       }
@@ -129,18 +140,13 @@ async function enforceExitRules(
       }
     }
 
-    // Universal exits — apply to both signal types
-    if (!exitReason && pnlPct >= 0.10) {
-      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
-    }
-    if (!exitReason && daysOpen >= 20) {
-      exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
-    }
-
     // Legacy positions (signal_type === null): profit target + time stop only
     // z-score exit NOT applied to unknown entries
 
-    if (!exitReason) continue
+    if (!exitReason) {
+      console.log(`[EXIT-RULES] No exit for ${position.symbol}: pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}`)
+      continue
+    }
 
     console.log(`[EXIT-RULES] Closing ${position.symbol} [${signalType ?? 'legacy'}]: ${exitReason}`)
     try {
