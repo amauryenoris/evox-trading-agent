@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server'
 import { getTradeEvaluations } from '@/lib/db'
-import { getAccount } from '@/lib/alpaca'
+import { getAccount, getBars } from '@/lib/alpaca'
 
 export const dynamic = 'force-dynamic'
 
-const SPY_JAN1_2026 = 588.44 // SPY close Jan 2, 2026 (first trading day of 2026)
+const SPY_BASE_2026 = 585.50 // SPY close Jan 2, 2026 (first trading day of 2026)
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const since = searchParams.get('since') ?? undefined
+
     const [evaluations, account] = await Promise.all([
-      getTradeEvaluations(200),
+      getTradeEvaluations(200, since),
       getAccount(),
     ])
 
@@ -20,6 +23,7 @@ export async function GET() {
     const total = closedTrades.length
 
     const winRate = total > 0 ? (wins.length / total) * 100 : 0
+    const lossRate = 100 - winRate
 
     const totalWinPnL = wins.reduce((sum, t) => sum + t.pnlUSD, 0)
     const totalLossPnL = Math.abs(losses.reduce((sum, t) => sum + t.pnlUSD, 0))
@@ -29,6 +33,9 @@ export async function GET() {
     const avgWinPct = wins.length > 0 ? wins.reduce((s, t) => s + t.pnlPct, 0) / wins.length : 0
     const avgLossUSD = losses.length > 0 ? losses.reduce((s, t) => s + t.pnlUSD, 0) / losses.length : 0
     const avgLossPct = losses.length > 0 ? losses.reduce((s, t) => s + t.pnlPct, 0) / losses.length : 0
+
+    // Expectancy: expected % return per trade
+    const expectancy = (winRate / 100 * avgWinPct) - (lossRate / 100 * Math.abs(avgLossPct))
 
     // Signal type breakdown
     function signalStats(trades: typeof closedTrades) {
@@ -47,25 +54,27 @@ export async function GET() {
       trend: signalStats(trendTrades),
     }
 
-    // Last 10 trades for bar chart
-    const last10 = [...closedTrades]
-      .sort((a, b) => new Date(b.sellTimestamp).getTime() - new Date(a.sellTimestamp).getTime())
+    // Last 10 trades for bar chart — already ordered by sell_timestamp DESC from db
+    const last10 = closedTrades
       .slice(0, 10)
       .reverse()
       .map((t, i) => ({ index: i + 1, pnlUSD: t.pnlUSD, outcome: t.outcome, symbol: t.symbol }))
 
-    // EVOX vs S&P 500 YTD
+    // EVOX YTD — always all-time, not filtered
     const currentEquity = parseFloat(account.equity)
     const evoxYtdPct = ((currentEquity - 100000) / 100000) * 100
 
-    // Fetch SPY current price from Alpaca (best effort)
+    // S&P 500 YTD — use previous day close to avoid partial-day distortion
     let spyYtdPct: number | null = null
     try {
-      const { getBars } = await import('@/lib/alpaca')
       const spyBars = await getBars('SPY', '1Day', 2)
-      const latestBar = spyBars[spyBars.length - 1]
-      if (latestBar) {
-        spyYtdPct = ((latestBar.c - SPY_JAN1_2026) / SPY_JAN1_2026) * 100
+      const spyClose = spyBars.length >= 2
+        ? spyBars[spyBars.length - 2].c
+        : spyBars[spyBars.length - 1]?.c ?? null
+      if (spyClose !== null) {
+        spyYtdPct = ((spyClose - SPY_BASE_2026) / SPY_BASE_2026) * 100
+        console.log('[YTD] SPY close:', spyClose)
+        console.log('[YTD] SPY YTD:', spyYtdPct.toFixed(2) + '%')
       }
     } catch {
       // SPY price unavailable — leave null
@@ -81,11 +90,13 @@ export async function GET() {
       avgWinPct,
       avgLossUSD,
       avgLossPct,
+      expectancy,
       last10Trades: last10,
       evoxYtdPct,
       spyYtdPct,
       currentEquity,
       signalTypeBreakdown,
+      since: since ?? null,
     })
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 })

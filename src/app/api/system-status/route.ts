@@ -42,8 +42,8 @@ export async function GET() {
         label: marketOpen ? 'Market open' : 'Market closed',
       },
       overtrading: {
-        status: todayBuys >= 3 ? 'closed' : todayBuys === 2 ? 'warning' : 'open',
-        label: `${todayBuys}/3 buys today`,
+        status: todayBuys >= 5 ? 'closed' : todayBuys >= 4 ? 'warning' : 'open',
+        label: `${todayBuys}/5 buys today`,
       },
       positions: {
         status: positionCount >= 5 ? 'closed' : positionCount >= 4 ? 'warning' : 'open',

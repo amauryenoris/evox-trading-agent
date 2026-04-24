@@ -224,13 +224,17 @@ export async function insertTradeEvaluation(evaluation: TradeEvaluation): Promis
   if (error) throw new Error(`Failed to insert trade evaluation: ${error.message}`)
 }
 
-export async function getTradeEvaluations(limit = 200): Promise<TradeEvaluation[]> {
+export async function getTradeEvaluations(limit = 200, startDate?: string): Promise<TradeEvaluation[]> {
   const db = getClient()
-  const { data, error } = await db
+  let query = db
     .from('trade_evaluations')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('sell_timestamp', { ascending: false })
     .limit(limit)
+  if (startDate) {
+    query = query.gte('sell_timestamp', `${startDate}T00:00:00Z`)
+  }
+  const { data, error } = await query
   if (error) throw new Error(`Failed to fetch trade evaluations: ${error.message}`)
   return (data ?? []).map((row) => ({
     id: row.id,

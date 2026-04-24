@@ -26,11 +26,17 @@ interface PerformanceData {
   avgWinPct: number
   avgLossUSD: number
   avgLossPct: number
+  expectancy: number
   last10Trades: TradeSummary[]
   evoxYtdPct: number
   spyYtdPct: number | null
   signalTypeBreakdown?: { meanReversion: SignalTypeStat; trend: SignalTypeStat }
+  since: string | null
 }
+
+type ViewMode = 'new_system' | 'all_time'
+
+const NEW_SYSTEM_DATE = '2026-04-20'
 
 function formatPct(v: number): string {
   const sign = v >= 0 ? '+' : ''
@@ -45,13 +51,20 @@ function formatUSD(v: number): string {
 export function PerformanceAnalytics() {
   const [data, setData] = useState<PerformanceData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState<ViewMode>('new_system')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/performance')
+    setLoading(true)
+    setData(null)
+    const url = view === 'new_system'
+      ? `/api/performance?since=${NEW_SYSTEM_DATE}`
+      : '/api/performance'
+    fetch(url)
       .then((r) => r.json())
-      .then((d: PerformanceData) => setData(d))
-      .catch((e) => setError(String(e)))
-  }, [])
+      .then((d: PerformanceData) => { setData(d); setLoading(false) })
+      .catch((e) => { setError(String(e)); setLoading(false) })
+  }, [view])
 
   if (error) {
     return (
@@ -61,12 +74,12 @@ export function PerformanceAnalytics() {
     )
   }
 
-  if (!data) {
+  if (loading || !data) {
     return (
       <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
         <div className="animate-pulse space-y-3">
-          <div className="grid grid-cols-4 gap-3">
-            {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-slate-800 rounded-lg" />)}
+          <div className="grid grid-cols-5 gap-3">
+            {[...Array(5)].map((_, i) => <div key={i} className="h-16 bg-slate-800 rounded-lg" />)}
           </div>
           <div className="h-24 bg-slate-800 rounded-lg" />
         </div>
@@ -76,15 +89,41 @@ export function PerformanceAnalytics() {
 
   const winRateColor = data.winRate >= 50 ? 'text-green-400' : 'text-red-400'
   const pfColor = data.profitFactor >= 1.5 ? 'text-green-400' : 'text-red-400'
+  const expectancyColor = data.expectancy >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
     <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4 space-y-4">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-        Performance Analytics
-      </h2>
+      {/* Header + toggle */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          Performance Analytics
+        </h2>
+        <div className="flex items-center bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-0.5 gap-0.5">
+          <button
+            onClick={() => setView('new_system')}
+            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+              view === 'new_system'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            New System (Apr 20+)
+          </button>
+          <button
+            onClick={() => setView('all_time')}
+            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+              view === 'all_time'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            All Time
+          </button>
+        </div>
+      </div>
 
-      {/* Row 1 — 4 metric cards */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* Row 1 — 5 metric cards */}
+      <div className="grid grid-cols-5 gap-3">
         {/* Win Rate */}
         <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
           <p className="text-xs text-slate-500 mb-1">Win Rate</p>
@@ -118,15 +157,22 @@ export function PerformanceAnalytics() {
           <p className="text-lg font-bold text-red-400">{formatUSD(data.avgLossUSD)}</p>
           <p className="text-xs text-red-400">{formatPct(data.avgLossPct)}</p>
         </div>
+
+        {/* Expectancy */}
+        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
+          <p className="text-xs text-slate-500 mb-1">Expectancy</p>
+          <p className={`text-lg font-bold ${expectancyColor}`}>{formatPct(data.expectancy)}</p>
+          <p className={`text-xs ${expectancyColor}`}>per trade</p>
+        </div>
       </div>
 
       {/* Row 2 — Charts */}
       <div className="grid grid-cols-2 gap-3">
-        {/* P&L per trade bar chart */}
+        {/* P&L per trade bar chart — last 10 */}
         <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
           <p className="text-xs text-slate-500 mb-2">P&L per Trade (last {data.last10Trades.length})</p>
           {data.last10Trades.length > 0 ? (
-            <ResponsiveContainer width="100%" height={60}>
+            <ResponsiveContainer width="100%" height={80}>
               <BarChart data={data.last10Trades} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                 <Bar dataKey="pnlUSD" radius={[2, 2, 0, 0]}>
                   {data.last10Trades.map((entry, i) => (
@@ -173,7 +219,6 @@ export function PerformanceAnalytics() {
       {/* Signal Type Breakdown */}
       {data.signalTypeBreakdown && (data.signalTypeBreakdown.meanReversion.count > 0 || data.signalTypeBreakdown.trend.count > 0) && (
         <div className="grid grid-cols-2 gap-3">
-          {/* Mean Reversion */}
           <div className="bg-[#0d0d14] border border-blue-500/10 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Mean Reversion</span>
@@ -193,7 +238,6 @@ export function PerformanceAnalytics() {
             </div>
           </div>
 
-          {/* Trend */}
           <div className="bg-[#0d0d14] border border-green-500/10 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">Trend</span>
@@ -217,7 +261,10 @@ export function PerformanceAnalytics() {
 
       {/* Footer */}
       <p className="text-xs text-slate-600">
-        Based on {data.total} closed trade{data.total !== 1 ? 's' : ''} since Mar 26
+        {view === 'new_system'
+          ? `New system (Apr 20+) — ${data.total} closed trade${data.total !== 1 ? 's' : ''}`
+          : `All time — ${data.total} closed trade${data.total !== 1 ? 's' : ''}`
+        }
       </p>
     </div>
   )
