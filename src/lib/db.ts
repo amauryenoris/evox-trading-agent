@@ -131,7 +131,7 @@ export async function getAgentLogPrioritized(): Promise<AgentLogEntry[]> {
         adx: raw.adx as number | null ?? null,
         atr: raw.atr as number | null ?? null,
         atrPercentile: raw.atrPercentile as number | null ?? null,
-        marketRegime: raw.marketRegime as string | null ?? null,
+        marketRegime: raw.marketRegime as import('./types').MarketRegime | null ?? null,
         kalman: raw.kalman as AgentLogEntry['indicators']['kalman'] ?? null,
       }
     })(),
