@@ -102,7 +102,7 @@ export async function submitOrder(
 }
 
 export async function closePosition(symbol: string): Promise<AlpacaOrder> {
-  return alpacaFetch<AlpacaOrder>(`${baseUrl()}/v2/positions/${symbol}`, {
+  return alpacaFetch<AlpacaOrder>(`${baseUrl()}/v2/positions/${symbol}?cancel_orders=true`, {
     method: 'DELETE',
   })
 }
