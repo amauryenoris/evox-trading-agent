@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getNewsForSymbols, getMacroNews } from './alpaca'
 import { saveNewsEvent } from './db'
 import type { ThresholdMap, NewsEvent } from './types'
-import { ZSCORE_ENTRY_THRESHOLD } from './config.js'
+import { ZSCORE_ENTRY_THRESHOLD } from './config'
 
 const BASE_THRESHOLD = ZSCORE_ENTRY_THRESHOLD
 const MAX_NEWS_PER_CYCLE = 10

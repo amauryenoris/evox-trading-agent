@@ -27,7 +27,7 @@ import { getAllOpenPositionContexts, getTodayBuyExecutions } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
-import { ZSCORE_ENTRY_THRESHOLD } from './config.js'
+import { ZSCORE_ENTRY_THRESHOLD } from './config'
 import {
   detectNearMisses,
   updateWatchlist,

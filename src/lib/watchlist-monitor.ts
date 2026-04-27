@@ -5,7 +5,7 @@ import {
   getActiveNearMissForSymbol,
 } from './db'
 import type { TechnicalIndicators, ThresholdMap, NearMissEntry } from './types'
-import { ZSCORE_ENTRY_THRESHOLD } from './config.js'
+import { ZSCORE_ENTRY_THRESHOLD } from './config'
 
 // Near-miss zone: z-score between -1.0 and threshold (e.g. -1.293 when threshold is -1.3)
 const NEAR_MISS_UPPER = -1.0
