@@ -2,8 +2,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getNewsForSymbols, getMacroNews } from './alpaca'
 import { saveNewsEvent } from './db'
 import type { ThresholdMap, NewsEvent } from './types'
+import { ZSCORE_ENTRY_THRESHOLD } from './config.js'
 
-const BASE_THRESHOLD = -1.3
+const BASE_THRESHOLD = ZSCORE_ENTRY_THRESHOLD
 const MAX_NEWS_PER_CYCLE = 10
 
 // Hard caps — prevent excessive threshold relaxation or tightening

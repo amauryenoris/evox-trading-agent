@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAgentLog, getTodayBuyExecutions } from '@/lib/db'
 import { getClock, getPositions } from '@/lib/alpaca'
+import { ZSCORE_ENTRY_THRESHOLD } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,7 +55,7 @@ export async function GET() {
     return NextResponse.json({
       mode: 'LEARN',
       marketRegime,
-      zScoreThreshold: -1.3,
+      zScoreThreshold: ZSCORE_ENTRY_THRESHOLD,
       positionCount,
       maxPositions: 5,
       lastRun,

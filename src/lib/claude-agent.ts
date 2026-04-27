@@ -27,6 +27,7 @@ import { getAllOpenPositionContexts, getTodayBuyExecutions } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
+import { ZSCORE_ENTRY_THRESHOLD } from './config.js'
 import {
   detectNearMisses,
   updateWatchlist,
@@ -184,7 +185,7 @@ function generateSignalType(indicators: TechnicalIndicators): SignalResult {
   // Mean Reversion: price significantly below fair value in a ranging market
   if (
     marketRegime === 'RANGING' &&
-    kalman && kalman.zScore < -1.5 &&
+    kalman && kalman.zScore < ZSCORE_ENTRY_THRESHOLD &&
     (rsi ?? 50) < 45 &&
     bollingerBands && bollingerBands.percentB < 0.2
   ) {
@@ -306,7 +307,7 @@ function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
     `Fair Value Estimate: $${kalman.stateEstimate.toFixed(2)}`,
     `Forecast Error e(t): ${kalman.forecastError >= 0 ? '+' : ''}${kalman.forecastError.toFixed(4)} (price is ${dir} fair value)`,
     `Error Std Dev Q(t): ${kalman.errorStdDev.toFixed(4)}`,
-    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < -1.3 | exit threshold: >= -0.5)`,
+    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < ${ZSCORE_ENTRY_THRESHOLD} | exit threshold: >= -0.5)`,
     `Signal: ${signalMap[kalman.signal]}`,
   ].join('\n')
 }
@@ -388,9 +389,9 @@ ${learningContext}
 ${watchlistContext ? `
 --- NEAR-MISS WATCHLIST CONTEXT ---
 ${watchlistContext}
-` : ''}${effectiveThreshold !== undefined && effectiveThreshold !== -1.3 ? `
+` : ''}${effectiveThreshold !== undefined && effectiveThreshold !== ZSCORE_ENTRY_THRESHOLD ? `
 --- NEWS-ADJUSTED THRESHOLD ---
-Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: -1.3, news adjustment: ${(effectiveThreshold - (-1.3)).toFixed(3)})
+Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: ${ZSCORE_ENTRY_THRESHOLD}, news adjustment: ${(effectiveThreshold - ZSCORE_ENTRY_THRESHOLD).toFixed(3)})
 ` : ''}
 Analyze ${symbol} and provide your trading decision as JSON.${learnContext ? `
 
@@ -617,7 +618,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   // 4b. News Intelligence Layer — classify news and build dynamic threshold map
   const defaultThresholds: ThresholdMap = { __MACRO__: 0 }
-  for (const s of watchlist) defaultThresholds[s] = -1.3
+  for (const s of watchlist) defaultThresholds[s] = ZSCORE_ENTRY_THRESHOLD
 
   const thresholdMap = await newsIntelligenceLayer(watchlist).catch((err) => {
     console.error('[NEWS] Layer failed, using defaults:', err)
@@ -753,7 +754,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const ema50Value = indicators.ema50 ?? 0
       const ema200Value = indicators.ema200 ?? 0
 
-      const meanReversionSetup = zScore <= -1.5
+      const meanReversionSetup = zScore <= ZSCORE_ENTRY_THRESHOLD
       const trendSetup = ema50Value > 0
                       && ema200Value > 0
                       && indicators.currentPrice > ema50Value
@@ -770,7 +771,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           id: randomUUID(),
           timestamp,
           symbol,
-          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Setup gate: no mean reversion setup (z-score ${zScore.toFixed(3)} > -1.5) and no trend setup (price not above EMA50)`, confidence: 0 },
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Setup gate: no mean reversion setup (z-score ${zScore.toFixed(3)} > ${ZSCORE_ENTRY_THRESHOLD}) and no trend setup (price not above EMA50)`, confidence: 0 },
           indicators,
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
@@ -793,7 +794,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // Build watchlist context if this is an auto-entry
       let watchlistContext: string | undefined
-      const effectiveThreshold = thresholdMap[symbol] ?? -1.3
+      const effectiveThreshold = thresholdMap[symbol] ?? ZSCORE_ENTRY_THRESHOLD
       if (isAutoEntry) {
         const watchlistEntry = await getActiveNearMissForSymbol(symbol).catch(() => null)
         if (watchlistEntry) {

@@ -5,8 +5,9 @@ import {
   getActiveNearMissForSymbol,
 } from './db'
 import type { TechnicalIndicators, ThresholdMap, NearMissEntry } from './types'
+import { ZSCORE_ENTRY_THRESHOLD } from './config.js'
 
-// Near-miss zone: z-score between -1.0 and threshold (e.g. -1.493 when threshold is -1.5)
+// Near-miss zone: z-score between -1.0 and threshold (e.g. -1.293 when threshold is -1.3)
 const NEAR_MISS_UPPER = -1.0
 // Cancel watchlist entry if z-score reverts above this level
 const CANCEL_REVERT_THRESHOLD = -0.5
@@ -19,7 +20,7 @@ export async function detectNearMisses(
   const { kalman, marketRegime } = indicators
   if (!kalman || !marketRegime) return
 
-  const threshold = thresholdMap[symbol] ?? -1.3
+  const threshold = thresholdMap[symbol] ?? ZSCORE_ENTRY_THRESHOLD
   const zscore = kalman.zScore
 
   // Near-miss zone: between -1.0 and threshold, only in RANGING regime
@@ -65,8 +66,8 @@ export async function updateWatchlist(
 
     const zscore = current.kalman.zScore
     const regime = current.marketRegime ?? entry.latest_regime ?? entry.initial_regime
-    const threshold = thresholdMap[entry.symbol] ?? -1.3
-    const newsBoost = threshold - (-1.3) // deviation from base threshold
+    const threshold = thresholdMap[entry.symbol] ?? ZSCORE_ENTRY_THRESHOLD
+    const newsBoost = threshold - ZSCORE_ENTRY_THRESHOLD // deviation from base threshold
 
     const updates: Partial<Omit<NearMissEntry, 'id' | 'created_at'>> = {
       latest_zscore: zscore,
@@ -107,7 +108,7 @@ export async function checkAutoEntry(
 
     const zscore = current.kalman.zScore
     const regime = current.marketRegime
-    const threshold = thresholdMap[entry.symbol] ?? -1.3
+    const threshold = thresholdMap[entry.symbol] ?? ZSCORE_ENTRY_THRESHOLD
 
     // Auto-entry conditions: z-score crossed threshold, still RANGING, portfolio has room
     if (zscore <= threshold && regime === 'RANGING' && openPositionsCount < maxPositions) {
