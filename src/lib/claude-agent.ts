@@ -144,8 +144,8 @@ async function enforceExitRules(
       }
     }
 
-    // Trend exits
-    if (!exitReason && signalType === 'TREND') {
+    // Trend exits (covers legacy TREND + new TREND_PULLBACK + TREND_ZLE05)
+    if (!exitReason && (signalType === 'TREND' || signalType === 'TREND_PULLBACK' || signalType === 'TREND_ZLE05')) {
       if (ind.ema50 !== null && ind.currentPrice < ind.ema50) {
         exitReason = `Exit rule: price $${ind.currentPrice.toFixed(2)} fell below EMA50 $${ind.ema50.toFixed(2)}`
       }
@@ -779,11 +779,33 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       && ema200Value > 0
                       && indicators.currentPrice > ema50Value
                       && ema50Value > ema200Value
-                      && zScore < 2.0
+                      && zScore <= 0.5
 
       const setup_detected = meanReversionSetup || trendSetup
 
-      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup })
+      // Track rejected trend candidates: trend-aligned but zScore > 0.5 (price above fair value)
+      const trendSetupRejected = ema50Value > 0
+                              && ema200Value > 0
+                              && indicators.currentPrice > ema50Value
+                              && ema50Value > ema200Value
+                              && zScore > 0.5
+
+      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendSetupRejected })
+
+      if (trendSetupRejected) {
+        console.log(`[SETUP-GATE] ${symbol}: TREND_ZGT05 — trend aligned but zScore ${zScore.toFixed(3)} > 0.5, excluded (price above fair value)`)
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `TREND_ZGT05: trend setup detected but excluded — zScore ${zScore.toFixed(3)} > 0.5 (price above fair value)`, confidence: 0 },
+          indicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: 'TREND_ZGT05: excluded — zScore > 0.5',
+        })
+        continue
+      }
 
       if (!setup_detected) {
         console.log(`[SETUP-GATE] ${symbol}: no setup (z-score=${zScore.toFixed(3)}, price=${indicators.currentPrice.toFixed(2)}, ema50=${ema50Value > 0 ? ema50Value.toFixed(2) : 'N/A'}) — HOLD`)
@@ -977,7 +999,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       claudeReasoning: decision.reasoning,
                       patternIdsUsed: [],
                       stopOrderId,
-                      signalType: meanReversionSetup ? 'MEAN_REVERSION' : 'TREND',
+                      signalType: meanReversionSetup
+                        ? 'MEAN_REVERSION'
+                        : zScore <= 0
+                          ? 'TREND_PULLBACK'   // price at or below fair value — full alignment
+                          : 'TREND_ZLE05',     // price slightly above fair value (0 < z <= 0.5)
                     })
 
                     // If this BUY came from the Near-Miss Watchlist, link the log entry

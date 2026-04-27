@@ -179,7 +179,7 @@ function mapRowToOpenPositionContext(row: Record<string, unknown>): OpenPosition
     claudeReasoning: (row.reasoning as string) ?? '',
     patternIdsUsed: (row.pattern_ids as string[]) ?? [],
     stopOrderId: (row.stop_order_id as string | null) ?? undefined,
-    signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | null) ?? null,
+    signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
   }
 }
 
