@@ -23,7 +23,7 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
-import { getAllOpenPositionContexts, getTodayBuyExecutions } from './db'
+import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
@@ -108,6 +108,16 @@ async function enforceExitRules(
     const ind = indicatorsCache.get(position.symbol)
     if (!ind?.kalman) {
       console.log(`[EXIT-RULES] Skipping ${position.symbol}: no kalman indicators in cache`)
+      await insertAgentLogEntry({
+        id: randomUUID(),
+        timestamp,
+        symbol: position.symbol,
+        decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: 'EXIT-RULES: skipped — no kalman indicators in cache', confidence: 0 },
+        indicators: ind ?? { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, ema50: null, ema200: null, distanceToEma50Pct: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
+        portfolioSnapshot: { equity: '0', cash: '0', positionCount: 0 },
+        orderExecuted: false,
+        error: 'exit_rules_skip',
+      }).catch((err) => console.error(`[EXIT-RULES] Failed to log skip for ${position.symbol}:`, err))
       continue
     }
 
@@ -146,6 +156,16 @@ async function enforceExitRules(
 
     if (!exitReason) {
       console.log(`[EXIT-RULES] No exit for ${position.symbol}: pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}`)
+      await insertAgentLogEntry({
+        id: randomUUID(),
+        timestamp,
+        symbol: position.symbol,
+        decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: `EXIT-RULES: no exit triggered — pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}`, confidence: 0 },
+        indicators: ind,
+        portfolioSnapshot: { equity: position.market_value, cash: '0', positionCount: 0 },
+        orderExecuted: false,
+        error: 'exit_rules_check',
+      }).catch((err) => console.error(`[EXIT-RULES] Failed to log check for ${position.symbol}:`, err))
       continue
     }
 
