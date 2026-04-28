@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { NewsEvent } from '@/lib/types'
+import { ZSCORE_ENTRY_THRESHOLD } from '@/lib/config'
 
 interface Props {
   initialEvents?: NewsEvent[]
@@ -91,9 +92,9 @@ export function NewsIntelligence({ initialEvents = [] }: Props) {
 
       <div className="space-y-2">
         {events.map((event, i) => {
-          const adjColor = event.threshold_adjustment < 0
+          const adjColor = event.threshold_adjustment > 0
             ? 'text-green-400'
-            : event.threshold_adjustment > 0
+            : event.threshold_adjustment < 0
               ? 'text-red-400'
               : null
 
@@ -122,7 +123,7 @@ export function NewsIntelligence({ initialEvents = [] }: Props) {
                   <span className="text-xs text-slate-500">{event.sentiment} {event.impact}</span>
                   {event.threshold_adjustment !== 0 && adjColor && (
                     <span className={`text-xs ${adjColor}`}>
-                      threshold -1.5 → {(-1.5 + event.threshold_adjustment).toFixed(2)}
+                      threshold {ZSCORE_ENTRY_THRESHOLD} → {(ZSCORE_ENTRY_THRESHOLD + event.threshold_adjustment).toFixed(2)}
                     </span>
                   )}
                   {event.expires_at && (
