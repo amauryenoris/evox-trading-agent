@@ -7,11 +7,9 @@ import { ZSCORE_ENTRY_THRESHOLD } from './config'
 const BASE_THRESHOLD = ZSCORE_ENTRY_THRESHOLD
 const MAX_NEWS_PER_CYCLE = 10
 
-// Hard caps — prevent excessive threshold relaxation or tightening
-const MAX_MACRO_ADJUSTMENT    = -0.150  // floor: max bullish relaxation per cycle
-const MAX_BEARISH_MACRO       =  0.150  // ceiling: max bearish tightening per cycle
-const MAX_SYMBOL_ADJUSTMENT   = -0.150  // floor: max bullish relaxation per symbol
-const MAX_BEARISH_SYMBOL      =  0.150  // ceiling: max bearish tightening per symbol
+// Hard caps — symmetric ±0.15 around base threshold
+const MAX_BULLISH_ADJUSTMENT  =  0.150  // ceiling: max bullish relaxation per cycle/symbol
+const MAX_BEARISH_ADJUSTMENT  = -0.150  // floor: max bearish tightening per cycle/symbol
 
 interface NewsClassification {
   scope: 'MACRO' | 'SYMBOL'
@@ -24,14 +22,14 @@ interface NewsClassification {
 
 function getThresholdAdjustment(sentiment: string, impact: string): number {
   if (sentiment === 'BULLISH') {
-    if (impact === 'HIGH') return -0.15
-    if (impact === 'MEDIUM') return -0.08
-    return -0.03
+    if (impact === 'HIGH') return 0.15
+    if (impact === 'MEDIUM') return 0.08
+    return 0.03
   }
   if (sentiment === 'BEARISH') {
-    if (impact === 'HIGH') return 0.25
-    if (impact === 'MEDIUM') return 0.15
-    return 0.05
+    if (impact === 'HIGH') return -0.15
+    if (impact === 'MEDIUM') return -0.10
+    return -0.05
   }
   return 0.0
 }
@@ -190,10 +188,10 @@ function buildThresholdMap(symbols: string[], classified: NewsClassification[]):
   let macroAdjustment = classified
     .filter((c) => c.scope === 'MACRO')
     .reduce((sum, c) => sum + c.threshold_adjustment, 0)
-  macroAdjustment = Math.max(macroAdjustment, MAX_MACRO_ADJUSTMENT)  // floor at -0.300
-  macroAdjustment = Math.min(macroAdjustment, MAX_BEARISH_MACRO)     // ceiling at +0.300
+  macroAdjustment = Math.min(macroAdjustment, MAX_BULLISH_ADJUSTMENT)  // ceiling +0.15
+  macroAdjustment = Math.max(macroAdjustment, MAX_BEARISH_ADJUSTMENT)  // floor -0.15
   map['__MACRO__'] = macroAdjustment
-  console.log(`[NEWS] Macro adjustment: ${macroAdjustment.toFixed(3)} (capped at ±${Math.abs(MAX_MACRO_ADJUSTMENT)})`)
+  console.log(`[NEWS] Macro adjustment: ${macroAdjustment.toFixed(3)} (capped at ±${MAX_BULLISH_ADJUSTMENT})`)
 
   // Fix #2: Group symbol news and apply STRONGEST adjustment per symbol
   const symbolNewsMap = new Map<string, NewsClassification[]>()
@@ -207,8 +205,8 @@ function buildThresholdMap(symbols: string[], classified: NewsClassification[]):
   const symbolsWithOwnNews = new Set<string>()
   for (const [symbol, newsItems] of symbolNewsMap) {
     let symbolAdj = getSymbolAdjustment(newsItems)
-    symbolAdj = Math.max(symbolAdj, MAX_SYMBOL_ADJUSTMENT)  // floor at -0.300
-    symbolAdj = Math.min(symbolAdj, MAX_BEARISH_SYMBOL)     // ceiling at +0.300
+    symbolAdj = Math.min(symbolAdj, MAX_BULLISH_ADJUSTMENT)  // ceiling +0.15
+    symbolAdj = Math.max(symbolAdj, MAX_BEARISH_ADJUSTMENT)  // floor -0.15
 
     const adjusted = BASE_THRESHOLD + macroAdjustment + symbolAdj
     map[symbol] = Math.max(-1.8, Math.min(-1.2, adjusted))
