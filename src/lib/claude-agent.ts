@@ -775,7 +775,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const ema50Value = indicators.ema50 ?? 0
       const ema200Value = indicators.ema200 ?? 0
 
-      const meanReversionSetup = zScore <= ZSCORE_ENTRY_THRESHOLD
+      // Effective threshold — news-adjusted, must be calculated before setup gate
+      const effectiveThreshold = thresholdMap[symbol] ?? ZSCORE_ENTRY_THRESHOLD
+      const newsAdjustment = parseFloat((effectiveThreshold - ZSCORE_ENTRY_THRESHOLD).toFixed(3))
+
+      const meanReversionSetup = zScore <= effectiveThreshold
       const trendSetup = ema50Value > 0
                       && ema200Value > 0
                       && indicators.currentPrice > ema50Value
@@ -837,7 +841,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // Build watchlist context if this is an auto-entry
       let watchlistContext: string | undefined
-      const effectiveThreshold = thresholdMap[symbol] ?? ZSCORE_ENTRY_THRESHOLD
       if (isAutoEntry) {
         const watchlistEntry = await getActiveNearMissForSymbol(symbol).catch(() => null)
         if (watchlistEntry) {
@@ -1026,9 +1029,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         }
       }
 
-      // Merge learning fields into indicators jsonb so dashboard can read them
+      // Merge learning fields + news threshold into indicators jsonb so dashboard can read them
       const indicatorsWithLearning = {
         ...indicators,
+        effectiveThreshold,
+        newsAdjustment,
         ...(decision.learning_note !== undefined && { learning_note: decision.learning_note }),
         ...(decision.near_miss_score !== undefined && { near_miss_score: decision.near_miss_score }),
         ...(decision.what_would_trigger !== undefined && { what_would_trigger: decision.what_would_trigger }),
