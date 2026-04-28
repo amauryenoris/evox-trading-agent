@@ -100,6 +100,7 @@ async function enforceExitRules(
   positions: AlpacaPosition[],
   indicatorsCache: Map<string, TechnicalIndicators>,
   openContexts: OpenPositionContext[],
+  account: AlpacaAccount,
 ): Promise<AgentLogEntry[]> {
   const exitEntries: AgentLogEntry[] = []
   const timestamp = new Date().toISOString()
@@ -114,7 +115,7 @@ async function enforceExitRules(
         symbol: position.symbol,
         decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: 'EXIT-RULES: skipped — no kalman indicators in cache', confidence: 0 },
         indicators: ind ?? { rsi: null, macd: null, bollingerBands: null, sma50: null, sma200: null, ema50: null, ema200: null, distanceToEma50Pct: null, kalman: null, currentPrice: 0, volume: 0, prevDayVolume: 0, adx: null, atr: null, atrPercentile: null, marketRegime: null },
-        portfolioSnapshot: { equity: '0', cash: '0', positionCount: 0 },
+        portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
         error: 'exit_rules_skip',
       }).catch((err) => console.error(`[EXIT-RULES] Failed to log skip for ${position.symbol}:`, err))
@@ -162,7 +163,7 @@ async function enforceExitRules(
         symbol: position.symbol,
         decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: `EXIT-RULES: no exit triggered — pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}`, confidence: 0 },
         indicators: ind,
-        portfolioSnapshot: { equity: position.market_value, cash: '0', positionCount: 0 },
+        portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
         error: 'exit_rules_check',
       }).catch((err) => console.error(`[EXIT-RULES] Failed to log check for ${position.symbol}:`, err))
@@ -679,7 +680,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const exitRuleEntries = await (async () => {
     try {
       const openCtxs = await getAllOpenPositionContexts()
-      return await enforceExitRules(positions, indicatorsCache, openCtxs)
+      return await enforceExitRules(positions, indicatorsCache, openCtxs, account)
     } catch (err) {
       console.error('[EXIT-RULES] enforceExitRules failed:', err)
       return [] as AgentLogEntry[]
