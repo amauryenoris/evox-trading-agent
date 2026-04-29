@@ -53,9 +53,37 @@ Return exactly this JSON structure:
   "reasoning": "one sentence"
 }
 
-Rules:
-- scope=MACRO if it affects broad market (Fed, inflation, war, recession, rates)
-- scope=SYMBOL if it affects one specific stock
+Rules for scope:
+
+scope=SYMBOL when:
+- ONE specific company is the clear protagonist
+- The news is primarily ABOUT that company
+- Examples: earnings, CEO change, product launch, analyst rating, acquisition, guidance
+
+scope=MACRO when:
+- No single company is the main subject
+- Two or more companies are equally central
+- The company is mentioned only as context for a sector or market move
+- The subject is an ETF, index, or benchmark (SPY, QQQ, VIX, S&P 500, Nasdaq, Dow)
+- Affects economy or market broadly
+- Examples: Fed decisions, inflation, rates, geopolitical events, sector-wide moves
+
+When in doubt → scope=MACRO is safer
+
+Rules for symbol:
+- scope=SYMBOL → return the ONE protagonist ticker
+- scope=MACRO → symbol MUST be null, never a ticker
+- ETFs and indexes → always null
+
+Verification examples:
+  "Microsoft earnings beat estimates" → SYMBOL, MSFT
+  "Microsoft and Nvidia expand AI partnership" → MACRO, null (two equal protagonists)
+  "Chip stocks rally as Nvidia boosts sentiment" → MACRO, null (Nvidia is context, not protagonist)
+  "SPY rises after CPI data" → MACRO, null (ETF/index)
+  "Intel reports strong AI chip demand" → SYMBOL, INTC
+  "S&P 500 drops amid tech sell-off" → MACRO, null
+
+Rules for sentiment and impact:
 - sentiment=BULLISH if positive for stock prices, BEARISH if negative, NEUTRAL otherwise
 - impact=HIGH for major surprises, MEDIUM for notable news, LOW for minor updates`
 
