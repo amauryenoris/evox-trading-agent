@@ -884,6 +884,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // Execution gates — checked AFTER Claude analysis so every symbol gets indicators +
       // learning_note + near-miss detection regardless of portfolio state
+      const blockedSignalType = meanReversionSetup
+        ? 'MEAN_REVERSION'
+        : zScore <= 0
+          ? 'TREND_PULLBACK'
+          : 'TREND_ZLE05'
+
       if (openPositionsCount >= maxPositions) {
         decisions.push({
           id: randomUUID(),
@@ -895,6 +901,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           orderExecuted: false,
           error: `Gate: max positions (${openPositionsCount}/${maxPositions})`,
         })
+        await detectNearMisses(symbol, indicators, thresholdMap, {
+          wouldExecute: true,
+          reason: 'max_positions',
+          signalType: blockedSignalType,
+        }).catch(() => {})
         continue
       }
       if (buysToday >= maxBuysPerDay) {
@@ -908,6 +919,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           orderExecuted: false,
           error: `Gate: max buys per day (${buysToday}/${maxBuysPerDay})`,
         })
+        await detectNearMisses(symbol, indicators, thresholdMap, {
+          wouldExecute: true,
+          reason: 'max_buys',
+          signalType: blockedSignalType,
+        }).catch(() => {})
         continue
       }
 

@@ -15,7 +15,8 @@ const CANCEL_REVERT_THRESHOLD = -0.5
 export async function detectNearMisses(
   symbol: string,
   indicators: TechnicalIndicators,
-  thresholdMap: ThresholdMap
+  thresholdMap: ThresholdMap,
+  blockedByGate?: { wouldExecute: boolean; reason: 'max_positions' | 'max_buys'; signalType: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null }
 ): Promise<void> {
   const { kalman, marketRegime } = indicators
   if (!kalman || !marketRegime) return
@@ -23,7 +24,37 @@ export async function detectNearMisses(
   const threshold = thresholdMap[symbol] ?? ZSCORE_ENTRY_THRESHOLD
   const zscore = kalman.zScore
 
-  // Near-miss zone: between -1.0 and threshold, only in RANGING regime
+  if (blockedByGate?.wouldExecute) {
+    // Symbol passed the setup gate and effectiveThreshold but was blocked by portfolio gate
+    // Check if there's already an ACTIVE entry for this symbol
+    const existing = await getActiveNearMissForSymbol(symbol)
+    if (existing) return
+
+    const gap = 0  // already crossed threshold
+    console.log(`[WATCHLIST] Blocked-by-gate: ${symbol} z=${zscore.toFixed(3)} threshold=${threshold.toFixed(3)} reason=${blockedByGate.reason}`)
+
+    await insertNearMiss({
+      symbol,
+      detected_at: new Date().toISOString(),
+      initial_zscore: zscore,
+      gap_to_threshold: gap,
+      initial_regime: marketRegime,
+      indicators_snapshot: indicators as unknown as Record<string, unknown>,
+      status: 'ACTIVE',
+      latest_zscore: zscore,
+      latest_regime: marketRegime,
+      news_boost_applied: 0,
+      effective_threshold: threshold,
+      monitoring_cycles: 0,
+      expires_at: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
+      signal_type: blockedByGate.signalType,
+      near_miss_type: 'BLOCKED_BY_GATE',
+      blocked_reason: blockedByGate.reason,
+    })
+    return
+  }
+
+  // Standard near-miss: z-score between -1.0 and threshold, only in RANGING regime
   if (zscore > NEAR_MISS_UPPER || zscore <= threshold || marketRegime !== 'RANGING') return
 
   // Check if there's already an ACTIVE entry for this symbol
@@ -47,6 +78,9 @@ export async function detectNearMisses(
     effective_threshold: threshold,
     monitoring_cycles: 0,
     expires_at: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
+    signal_type: null,
+    near_miss_type: 'NEAR_MISS',
+    blocked_reason: null,
   })
 }
 

@@ -301,7 +301,9 @@ export interface NearMissEntry {
   initial_regime: string
   indicators_snapshot: Record<string, unknown>
   status: 'ACTIVE' | 'TRIGGERED' | 'EXPIRED' | 'CANCELLED'
-  signal_type?: 'MEAN_REVERSION' | 'TREND' | null
+  signal_type?: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+  near_miss_type?: 'NEAR_MISS' | 'BLOCKED_BY_GATE'
+  blocked_reason?: 'max_positions' | 'max_buys' | null
   latest_zscore?: number
   latest_regime?: string
   news_boost_applied: number
