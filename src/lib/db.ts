@@ -241,6 +241,7 @@ export async function insertTradeEvaluation(evaluation: TradeEvaluation): Promis
     buy_reasoning: evaluation.claudePostMortem,
     outcome: evaluation.outcome,
     lessons: evaluation.lessonsLearned,
+    signal_type: evaluation.signal_type ?? null,
   })
   if (error) throw new Error(`Failed to insert trade evaluation: ${error.message}`)
 }
@@ -289,7 +290,7 @@ export async function getTradeEvaluations(limit = 200, startDate?: string): Prom
         kalman: raw.indicators_at_buy?.kalman ?? raw.kalman ?? null,
       }
     })(),
-    signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | null) ?? null,
+    signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],
     outcome: row.outcome ?? 'breakeven',

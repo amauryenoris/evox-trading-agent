@@ -141,6 +141,7 @@ TASK: Analyze this trade and respond ONLY with valid JSON (no markdown):
     claudePostMortem: parsed.postMortem,
     lessonsLearned: parsed.lessonsLearned,
     outcome,
+    signal_type: closedCtx.signalType ?? null,
   }
 
   await insertTradeEvaluation(evaluation)

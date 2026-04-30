@@ -270,7 +270,9 @@ function calculateDiagnostics(
   }
 
   const mrTrades = weekEvals.filter((e) => e.signal_type === 'MEAN_REVERSION')
-  const trendTrades = weekEvals.filter((e) => e.signal_type === 'TREND')
+  const trendTrades = weekEvals.filter((e) =>
+    ['TREND', 'TREND_PULLBACK', 'TREND_ZLE05'].includes(e.signal_type ?? '')
+  )
 
   return {
     holdsBreakdown: {

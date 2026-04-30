@@ -152,6 +152,13 @@ async function enforceExitRules(
       }
     }
 
+    // EMA Reclaim exit — reclaim failed if price falls back below EMA50
+    if (!exitReason && signalType === 'EMA_RECLAIM') {
+      if (ind.ema50 !== null && ind.currentPrice < ind.ema50) {
+        exitReason = `Exit rule: EMA Reclaim failed — price $${ind.currentPrice.toFixed(2)} fell below EMA50 $${ind.ema50.toFixed(2)}`
+      }
+    }
+
     // Legacy positions (signal_type === null): profit target + time stop only
     // z-score exit NOT applied to unknown entries
 
@@ -867,7 +874,26 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       && ema50Value > ema200Value
                       && zScore <= 0.5
 
-      const setup_detected = meanReversionSetup || trendSetup
+      // ── EMA RECLAIM setup ──
+      // Price crosses above EMA50 from below, below fair value, with momentum confirmation
+      const hasEmaSlope = indicators.ema50Prev != null
+      const hasPrevClose = indicators.prevClose != null
+
+      const momentumOk = hasEmaSlope
+        ? (indicators.ema50 ?? 0) > (indicators.ema50Prev ?? 0)
+        : (hasPrevClose &&
+           indicators.currentPrice > (indicators.prevClose ?? 0) * 0.999)
+
+      const emaReclaimSetup =
+        indicators.currentPrice > (indicators.ema50 ?? 0) &&
+        (indicators.prevClose ?? indicators.currentPrice) <=
+          (indicators.ema50Prev ?? indicators.ema50 ?? 0) &&
+        zScore < 0 &&
+        ((indicators.currentPrice - (indicators.ema50 ?? 0)) /
+          (indicators.ema50 ?? 1)) > 0.002 &&
+        momentumOk
+
+      const setup_detected = meanReversionSetup || trendSetup || emaReclaimSetup
 
       // Track rejected trend candidates: trend-aligned but zScore > 0.5 (price above fair value)
       const trendSetupRejected = ema50Value > 0
@@ -876,7 +902,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                               && ema50Value > ema200Value
                               && zScore > 0.5
 
-      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendSetupRejected })
+      // Computed signal type — used for sizing, context save, and near-miss tagging
+      const signalType = meanReversionSetup
+        ? 'MEAN_REVERSION'
+        : trendSetup
+        ? (zScore <= 0 ? 'TREND_PULLBACK' : 'TREND_ZLE05')
+        : emaReclaimSetup
+        ? 'EMA_RECLAIM'
+        : null
+
+      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendSetupRejected, emaReclaimSetup })
 
       if (trendSetupRejected) {
         console.log(`[SETUP-GATE] ${symbol}: TREND_ZGT05 — trend aligned but zScore ${zScore.toFixed(3)} > 0.5, excluded (price above fair value)`)
@@ -889,6 +924,29 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
           error: 'TREND_ZGT05: excluded — zScore > 0.5',
+        })
+        continue
+      }
+
+      // Track near-miss EMA Reclaim: cross detected but distance or momentum conditions not met
+      const emaReclaimNearMiss =
+        indicators.currentPrice > (indicators.ema50 ?? 0) &&
+        (indicators.prevClose ?? indicators.currentPrice) <=
+          (indicators.ema50Prev ?? indicators.ema50 ?? 0) &&
+        zScore < 0 &&
+        !emaReclaimSetup
+
+      if (emaReclaimNearMiss && !setup_detected) {
+        console.log(`[SETUP-GATE] ${symbol}: EMA_RECLAIM_NEAR — cross detected but conditions not fully met (distance or momentum)`)
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `EMA_RECLAIM_NEAR: EMA50 cross detected but conditions not met — distance or momentum insufficient, zScore=${zScore.toFixed(3)}`, confidence: 0 },
+          indicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: 'EMA_RECLAIM_NEAR: conditions not met',
         })
         continue
       }
@@ -965,11 +1023,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // Execution gates — checked AFTER Claude analysis so every symbol gets indicators +
       // learning_note + near-miss detection regardless of portfolio state
-      const blockedSignalType = meanReversionSetup
-        ? 'MEAN_REVERSION'
-        : zScore <= 0
-          ? 'TREND_PULLBACK'
-          : 'TREND_ZLE05'
+      const blockedSignalType = signalType ?? 'TREND_PULLBACK'
 
       if (openPositionsCount >= maxPositions) {
         decisions.push({
@@ -1066,7 +1120,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   if (zScore <= -2.0) {
                     adjustedShares = baseShares
                   }
-                  const qty = adjustedShares
+                  const emaReclaimMultiplier = 0.75
+                  let finalShares = adjustedShares
+                  if (signalType === 'EMA_RECLAIM') {
+                    finalShares = Math.round(adjustedShares * emaReclaimMultiplier)
+                  }
+                  const qty = finalShares
                   const allGatesPassed = true  // reached this point — all gates cleared
                   const wouldExecute = setup_detected && allGatesPassed
                   console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
@@ -1100,11 +1159,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       claudeReasoning: decision.reasoning,
                       patternIdsUsed: [],
                       stopOrderId,
-                      signalType: meanReversionSetup
-                        ? 'MEAN_REVERSION'
-                        : zScore <= 0
-                          ? 'TREND_PULLBACK'   // price at or below fair value — full alignment
-                          : 'TREND_ZLE05',     // price slightly above fair value (0 < z <= 0.5)
+                      signalType,
                     })
 
                     // If this BUY came from the Near-Miss Watchlist, link the log entry

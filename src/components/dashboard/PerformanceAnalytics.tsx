@@ -30,7 +30,7 @@ interface PerformanceData {
   last10Trades: TradeSummary[]
   evoxYtdPct: number
   spyYtdPct: number | null
-  signalTypeBreakdown?: { meanReversion: SignalTypeStat; trend: SignalTypeStat }
+  signalTypeBreakdown?: { meanReversion: SignalTypeStat; trend: SignalTypeStat; emaReclaim: SignalTypeStat }
   since: string | null
 }
 
@@ -217,8 +217,8 @@ export function PerformanceAnalytics() {
       </div>
 
       {/* Signal Type Breakdown */}
-      {data.signalTypeBreakdown && (data.signalTypeBreakdown.meanReversion.count > 0 || data.signalTypeBreakdown.trend.count > 0) && (
-        <div className="grid grid-cols-2 gap-3">
+      {data.signalTypeBreakdown && (data.signalTypeBreakdown.meanReversion.count > 0 || data.signalTypeBreakdown.trend.count > 0 || data.signalTypeBreakdown.emaReclaim.count > 0) && (
+        <div className={`grid gap-3 ${data.signalTypeBreakdown.emaReclaim.count > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <div className="bg-[#0d0d14] border border-blue-500/10 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Mean Reversion</span>
@@ -256,6 +256,27 @@ export function PerformanceAnalytics() {
               </span>
             </div>
           </div>
+
+          {data.signalTypeBreakdown.emaReclaim.count > 0 && (
+            <div className="bg-[#0d0d14] border border-violet-500/10 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 font-medium">EMA Reclaim</span>
+                <span className="text-xs text-slate-500">{data.signalTypeBreakdown.emaReclaim.count} trades</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Win rate</span>
+                <span className={data.signalTypeBreakdown.emaReclaim.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
+                  {data.signalTypeBreakdown.emaReclaim.winRate.toFixed(0)}%
+                </span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-slate-500">Avg P&L</span>
+                <span className={data.signalTypeBreakdown.emaReclaim.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                  {formatPct(data.signalTypeBreakdown.emaReclaim.avgPnlPct)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

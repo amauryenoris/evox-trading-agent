@@ -48,10 +48,14 @@ export async function GET(request: Request) {
       }
     }
     const mrTrades = closedTrades.filter((t) => t.signal_type === 'MEAN_REVERSION')
-    const trendTrades = closedTrades.filter((t) => t.signal_type === 'TREND')
+    const trendTrades = closedTrades.filter((t) =>
+      ['TREND', 'TREND_PULLBACK', 'TREND_ZLE05'].includes(t.signal_type ?? '')
+    )
+    const emaReclaimTrades = closedTrades.filter((t) => t.signal_type === 'EMA_RECLAIM')
     const signalTypeBreakdown = {
       meanReversion: signalStats(mrTrades),
       trend: signalStats(trendTrades),
+      emaReclaim: signalStats(emaReclaimTrades),
     }
 
     // Last 10 trades for bar chart — already ordered by sell_timestamp DESC from db

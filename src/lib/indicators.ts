@@ -330,6 +330,7 @@ export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
   const ema50Arr = calculateEMA(closes, 50)
   const ema200Arr = calculateEMA(closes, 200)
   const ema50 = ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1] : null
+  const ema50Prev = ema50Arr.length >= 2 ? ema50Arr[ema50Arr.length - 2] : null
   const ema200 = ema200Arr.length > 0 ? ema200Arr[ema200Arr.length - 1] : null
   const currentPrice = bars[bars.length - 1].c
   const distanceToEma50Pct = ema50 !== null ? ((currentPrice - ema50) / ema50) * 100 : null
@@ -341,8 +342,10 @@ export function calculateAllIndicators(bars: AlpacaBar[]): TechnicalIndicators {
     sma50: calculateSMA(bars, 50),
     sma200: calculateSMA(bars, 200),
     ema50,
+    ema50Prev,
     ema200,
     distanceToEma50Pct,
+    prevClose: bars.length >= 2 ? bars[bars.length - 2].c : null,
     kalman: calculateKalman(bars),
     currentPrice,
     volume: bars[bars.length - 1].v,

@@ -119,6 +119,8 @@ export interface TechnicalIndicators {
   atr: number | null
   atrPercentile: number | null
   marketRegime: MarketRegime | null
+  prevClose?: number | null
+  ema50Prev?: number | null
 }
 
 // ============================================================
@@ -182,7 +184,7 @@ export interface OpenPositionContext {
   claudeReasoning: string
   patternIdsUsed: string[]
   stopOrderId?: string
-  signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null
+  signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
   highSinceEntry?: number | null
   trailingStop?: number | null
   trailingActivated?: boolean
@@ -199,7 +201,7 @@ export interface TradeEvaluation {
   pnlUSD: number
   pnlPct: number
   holdingDays: number
-  signal_type?: 'MEAN_REVERSION' | 'TREND' | null
+  signal_type?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
   buyIndicators: TechnicalIndicators
   claudePostMortem: string
   lessonsLearned: string[]

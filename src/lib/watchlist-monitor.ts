@@ -16,7 +16,7 @@ export async function detectNearMisses(
   symbol: string,
   indicators: TechnicalIndicators,
   thresholdMap: ThresholdMap,
-  blockedByGate?: { wouldExecute: boolean; reason: 'max_positions' | 'max_buys'; signalType: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null }
+  blockedByGate?: { wouldExecute: boolean; reason: 'max_positions' | 'max_buys'; signalType: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null }
 ): Promise<void> {
   const { kalman, marketRegime } = indicators
   if (!kalman || !marketRegime) return
