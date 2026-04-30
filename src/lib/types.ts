@@ -183,6 +183,9 @@ export interface OpenPositionContext {
   patternIdsUsed: string[]
   stopOrderId?: string
   signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null
+  highSinceEntry?: number | null
+  trailingStop?: number | null
+  trailingActivated?: boolean
 }
 
 export interface TradeEvaluation {

@@ -23,7 +23,7 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
-import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry } from './db'
+import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
@@ -140,8 +140,8 @@ async function enforceExitRules(
 
     // Mean Reversion exits
     if (!exitReason && signalType === 'MEAN_REVERSION') {
-      if (zScore >= -0.5) {
-        exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.5 — price reverted to fair value`
+      if (zScore >= -0.8) {
+        exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.8 — price reverted to fair value`
       }
     }
 
@@ -155,13 +155,94 @@ async function enforceExitRules(
     // Legacy positions (signal_type === null): profit target + time stop only
     // z-score exit NOT applied to unknown entries
 
+    // ── TRAILING STOP ──────────────────────────────────────────
+    const ACTIVATION_PCT: Record<string, number> = {
+      MEAN_REVERSION: 0.05,
+      TREND_PULLBACK: 0.06,
+      TREND_ZLE05:    0.06,
+      EMA_RECLAIM:    0.04,
+      default:        0.05,
+    }
+    const ATR_MULT: Record<string, number> = {
+      MEAN_REVERSION: 1.2,
+      TREND_PULLBACK: 1.5,
+      TREND_ZLE05:    1.5,
+      EMA_RECLAIM:    1.0,
+      default:        1.2,
+    }
+    const MIN_DISTANCE_PCT = 0.015
+    const currentPrice = parseFloat(position.current_price)
+    const atr = ind.atr ?? null
+
+    // PASO 1 — Update high_since_entry first
+    let highSinceEntry = ctx?.highSinceEntry ?? currentPrice
+    const madeNewHigh = currentPrice > highSinceEntry
+    if (madeNewHigh) highSinceEntry = currentPrice
+
+    // PASO 2 — Skip if ATR invalid
+    if (!atr || atr <= 0) {
+      await updatePositionContext(position.symbol, { highSinceEntry }).catch(
+        (err: unknown) => console.error(`[EXIT-RULES] Failed to update trailing context for ${position.symbol}:`, err)
+      )
+    } else {
+      // PASO 3 — Activate trailing (once only)
+      const activationPct = ACTIVATION_PCT[signalType ?? 'default']
+      let trailingActivated = ctx?.trailingActivated ?? false
+      let justActivated = false
+
+      if (!trailingActivated && pnlPct >= activationPct) {
+        trailingActivated = true
+        justActivated = true
+      }
+
+      // PASO 4 — Calculate trailing stop (only rises)
+      let trailingStop = ctx?.trailingStop ?? null
+
+      if (trailingActivated && !justActivated) {
+        const mult = ATR_MULT[signalType ?? 'default']
+        const distance = Math.max(mult * atr, highSinceEntry * MIN_DISTANCE_PCT)
+        const newStop = highSinceEntry - distance
+
+        // Guardrail: ignore if stop is corrupt
+        if (trailingStop !== null && trailingStop >= highSinceEntry) {
+          trailingStop = newStop
+        } else {
+          trailingStop = Math.max(trailingStop ?? 0, newStop)
+        }
+      }
+
+      // Save updated context
+      await updatePositionContext(position.symbol, {
+        highSinceEntry,
+        trailingStop,
+        trailingActivated,
+      }).catch(
+        (err: unknown) => console.error(`[EXIT-RULES] Failed to update trailing context for ${position.symbol}:`, err)
+      )
+
+      // PASO 5 — Evaluate exit
+      if (
+        trailingActivated &&
+        !justActivated &&
+        !madeNewHigh &&
+        trailingStop !== null &&
+        currentPrice <= trailingStop
+      ) {
+        exitReason = `Trailing stop triggered: ` +
+          `price $${currentPrice.toFixed(2)} ` +
+          `<= stop $${trailingStop.toFixed(2)} ` +
+          `(high: $${highSinceEntry.toFixed(2)})`
+      }
+    }
+    // ──────────────────────────────────────────────────────────
+
     if (!exitReason) {
       console.log(`[EXIT-RULES] No exit for ${position.symbol}: pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}`)
       await insertAgentLogEntry({
         id: randomUUID(),
         timestamp,
         symbol: position.symbol,
-        decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: `EXIT-RULES: no exit triggered — pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}`, confidence: 0 },
+        decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: `EXIT-RULES: no exit triggered — pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}, highSinceEntry=$${highSinceEntry.toFixed(2)}`, confidence: 0 },
         indicators: ind,
         portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,

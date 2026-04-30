@@ -165,6 +165,9 @@ export async function saveOpenPositionContext(ctx: OpenPositionContext): Promise
     pattern_ids: ctx.patternIdsUsed,
     stop_order_id: ctx.stopOrderId ?? null,
     signal_type: ctx.signalType ?? null,
+    high_since_entry: ctx.highSinceEntry ?? null,
+    trailing_stop: ctx.trailingStop ?? null,
+    trailing_activated: ctx.trailingActivated ?? false,
   }, { onConflict: 'symbol' })
   if (error) throw new Error(`Failed to save position context: ${error.message}`)
 }
@@ -180,6 +183,9 @@ function mapRowToOpenPositionContext(row: Record<string, unknown>): OpenPosition
     patternIdsUsed: (row.pattern_ids as string[]) ?? [],
     stopOrderId: (row.stop_order_id as string | null) ?? undefined,
     signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
+    highSinceEntry: (row.high_since_entry as number | null) ?? null,
+    trailingStop: (row.trailing_stop as number | null) ?? null,
+    trailingActivated: (row.trailing_activated as boolean) ?? false,
   }
 }
 
@@ -192,6 +198,21 @@ export async function getOpenPositionContexts(): Promise<OpenPositionContext[]> 
 
 export async function getAllOpenPositionContexts(): Promise<OpenPositionContext[]> {
   return getOpenPositionContexts()
+}
+
+export async function updatePositionContext(
+  symbol: string,
+  updates: Partial<OpenPositionContext>
+): Promise<void> {
+  const db = getClient()
+  const { error } = await db.from('open_position_contexts')
+    .update({
+      high_since_entry:   updates.highSinceEntry,
+      trailing_stop:      updates.trailingStop,
+      trailing_activated: updates.trailingActivated,
+    })
+    .eq('symbol', symbol)
+  if (error) throw new Error(`Failed to update position context for ${symbol}: ${error.message}`)
 }
 
 export async function deleteOpenPositionContext(symbol: string): Promise<void> {
