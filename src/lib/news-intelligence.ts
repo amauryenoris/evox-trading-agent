@@ -68,7 +68,7 @@ scope=MACRO when:
 - Affects economy or market broadly
 - Examples: Fed decisions, inflation, rates, geopolitical events, sector-wide moves
 
-When in doubt → scope=MACRO is safer
+When in doubt → scope=SYMBOL is safer
 
 Rules for symbol:
 - scope=SYMBOL → return the ONE protagonist ticker
@@ -82,6 +82,9 @@ Verification examples:
   "SPY rises after CPI data" → MACRO, null (ETF/index)
   "Intel reports strong AI chip demand" → SYMBOL, INTC
   "S&P 500 drops amid tech sell-off" → MACRO, null
+  "This Roblox Analyst Is No Longer Bullish" → SYMBOL, RBLX (company name without ticker = still SYMBOL)
+  "Intel's Best Month Ever Powers ETF Wins" → SYMBOL, INTC (Intel is protagonist, ETF is secondary beneficiary)
+  "SOXX ETF hits all-time high" → MACRO, null (ETF is the protagonist here)
 
 Rules for sentiment and impact:
 - sentiment=BULLISH if positive for stock prices, BEARISH if negative, NEUTRAL otherwise
@@ -135,8 +138,13 @@ export async function newsIntelligenceLayer(symbols: string[]): Promise<Threshol
     // Deduplicate by headline
     const seen = new Set<string>()
     const unique = allArticles.filter((a) => {
-      if (seen.has(a.headline)) return false
-      seen.add(a.headline)
+      const normalized = a.headline
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9 ]/g, '')
+        .replace(/\s+/g, ' ')
+      if (seen.has(normalized)) return false
+      seen.add(normalized)
       return true
     })
 
