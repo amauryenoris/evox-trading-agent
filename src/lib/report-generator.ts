@@ -79,6 +79,7 @@ interface HoldsBreakdown {
   gate3Overtrading: number
   gate4Portfolio: number
   alreadyInPosition: number
+  positionHeld: number
   otherHold: number
   avgConfidenceOnHolds: number
 }
@@ -205,6 +206,7 @@ function calculateDiagnostics(
   let gate3Overtrading = 0
   let gate4Portfolio = 0
   let alreadyInPosition = 0
+  let positionHeld = 0
   let otherHold = 0
 
   for (const e of nonExecuted) {
@@ -221,6 +223,17 @@ function calculateDiagnostics(
       gate4Portfolio++
     } else if (err.includes('Already in position')) {
       alreadyInPosition++
+    } else if (err === 'exit_rules_check' || err === 'exit_rules_skip') {
+      positionHeld++
+    } else if (err === '') {
+      const reasoning = e.decision.reasoning ?? ''
+      if (reasoning.includes('Setup gate:') ||
+          reasoning.includes('no setup') ||
+          reasoning.includes('NO_SETUP')) {
+        noSetupDetected++
+      } else {
+        otherHold++
+      }
     } else {
       otherHold++
     }
@@ -283,6 +296,7 @@ function calculateDiagnostics(
       gate3Overtrading,
       gate4Portfolio,
       alreadyInPosition,
+      positionHeld,
       otherHold,
       avgConfidenceOnHolds,
     },
@@ -628,6 +642,7 @@ function generatePDF(
       [`Gate 3 — Max positions`,    hb.gate3Overtrading,    hb.total],
       [`Gate 4 — Risk limit`,       hb.gate4Portfolio,      hb.total],
       [`Already in position`,       hb.alreadyInPosition,   hb.total],
+      [`Position held — exit rules passed`, hb.positionHeld, hb.total],
       [`Other (Claude HOLD)`,       hb.otherHold,           hb.total],
     ]
     for (const [label, n, tot] of holdRows) {
