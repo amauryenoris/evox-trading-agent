@@ -823,6 +823,19 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   let openPositionsCount = positions.length
   let buysToday = await getTodayBuyExecutions()
 
+  const buyQueue: Array<{
+    symbol: string
+    zScore: number
+    confidence: number
+    signalType: string | null
+    indicators: TechnicalIndicators
+    decision: AgentDecision
+    entry: AgentLogEntry
+    qty: number
+    isAutoEntry: boolean
+  }> = []
+  const slotsAvailable = maxPositions - openPositionsCount
+
   for (const symbol of watchlist) {
     try {
       // Use pre-computed indicators from pre-pass (avoids double bar fetch)
@@ -1086,6 +1099,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       let orderExecuted = false
       let orderId: string | undefined
       let error: string | undefined
+      let queuedForRanking = false
+      let buyQueueQty = 0
 
       // Execute order if market is open and setup was detected
       if (setup_detected) {
@@ -1125,8 +1140,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   error = riskCheck.reason ?? 'Portfolio risk gate: position not allowed'
                   decision.action = 'HOLD'
                 } else {
-                  // All gates passed — execute BUY
-                  decision.action = 'BUY'
+                  // All gates passed — size position
                   const baseShares = calculateBuyQuantity(
                     indicators.currentPrice,
                     parseFloat(account.equity),
@@ -1151,41 +1165,51 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   const wouldExecute = setup_detected && allGatesPassed
                   console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
                   if (qty > 0) {
-                    const order = await submitOrder(symbol, qty, 'buy')
-                    orderId = order.id
-                    orderExecuted = true
-                    decision.quantity = qty
-                    openPositionsCount++
-                    buysToday++
+                    if (slotsAvailable <= 1) {
+                      // Ranking mode — collect all candidates, execute best after loop
+                      console.log(`[RANKING] ${symbol}: queued (z=${zScore.toFixed(3)}, confidence=${decision.confidence.toFixed(2)})`)
+                      queuedForRanking = true
+                      buyQueueQty = qty
+                      error = 'Queued for ranking'
+                    } else {
+                      // Normal mode — execute immediately
+                      decision.action = 'BUY'
+                      const order = await submitOrder(symbol, qty, 'buy')
+                      orderId = order.id
+                      orderExecuted = true
+                      decision.quantity = qty
+                      openPositionsCount++
+                      buysToday++
 
-                    // Submit GTC stop order immediately (Capa A protection)
-                    const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
-                    const stopPrice = indicators.currentPrice * (1 - stopLossPct)
-                    let stopOrderId: string | undefined
-                    try {
-                      const stopOrder = await submitStopOrder(symbol, qty, stopPrice)
-                      stopOrderId = stopOrder.id
-                    } catch (stopErr) {
-                      console.warn(`Failed to submit stop order for ${symbol}:`, stopErr)
-                    }
+                      // Submit GTC stop order immediately (Capa A protection)
+                      const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+                      const stopPrice = indicators.currentPrice * (1 - stopLossPct)
+                      let stopOrderId: string | undefined
+                      try {
+                        const stopOrder = await submitStopOrder(symbol, qty, stopPrice)
+                        stopOrderId = stopOrder.id
+                      } catch (stopErr) {
+                        console.warn(`Failed to submit stop order for ${symbol}:`, stopErr)
+                      }
 
-                    // Save buy context for future learning
-                    const entryLogId = randomUUID()
-                    await saveOpenPositionContext({
-                      symbol,
-                      buyTimestamp: timestamp,
-                      buyPrice: indicators.currentPrice,
-                      quantity: qty,
-                      indicators,
-                      claudeReasoning: decision.reasoning,
-                      patternIdsUsed: [],
-                      stopOrderId,
-                      signalType,
-                    })
+                      // Save buy context for future learning
+                      const entryLogId = randomUUID()
+                      await saveOpenPositionContext({
+                        symbol,
+                        buyTimestamp: timestamp,
+                        buyPrice: indicators.currentPrice,
+                        quantity: qty,
+                        indicators,
+                        claudeReasoning: decision.reasoning,
+                        patternIdsUsed: [],
+                        stopOrderId,
+                        signalType,
+                      })
 
-                    // If this BUY came from the Near-Miss Watchlist, link the log entry
-                    if (isAutoEntry) {
-                      await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
+                      // If this BUY came from the Near-Miss Watchlist, link the log entry
+                      if (isAutoEntry) {
+                        await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
+                      }
                     }
                   } else {
                     error = 'Insufficient buying power for position'
@@ -1228,7 +1252,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         error,
       }
 
-      decisions.push(entry)
+      if (queuedForRanking) {
+        buyQueue.push({ symbol, zScore, confidence: decision.confidence, signalType, indicators, decision, entry, qty: buyQueueQty, isAutoEntry })
+      } else {
+        decisions.push(entry)
+      }
     } catch (err) {
       console.error(`Error analyzing ${symbol}:`, err)
       decisions.push({
@@ -1241,6 +1269,81 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         orderExecuted: false,
         error: String(err),
       })
+    }
+  }
+
+  // Ranking phase — when only 1 slot was available, pick best candidate by signal strength
+  if (buyQueue.length > 0) {
+    const ranked = [...buyQueue].sort((a, b) => {
+      const aEdge = a.zScore <= -2.0 ? 1 : 0
+      const bEdge = b.zScore <= -2.0 ? 1 : 0
+      if (aEdge !== bEdge) return bEdge - aEdge
+      if (a.zScore !== b.zScore) return a.zScore - b.zScore
+      return b.confidence - a.confidence
+    })
+
+    const best = ranked[0]
+    console.log(`[RANKING] Winner: ${best.symbol} (z=${best.zScore.toFixed(3)}, confidence=${best.confidence.toFixed(2)}) — ${ranked.length} candidates evaluated`)
+
+    try {
+      if (!marketOpen) {
+        best.entry.error = 'Market closed — order queued but not executed'
+        decisions.push(best.entry)
+      } else {
+        const order = await submitOrder(best.symbol, best.qty, 'buy')
+        best.entry.orderId = order.id
+        best.entry.orderExecuted = true
+        best.decision.action = 'BUY'
+        best.decision.quantity = best.qty
+        best.entry.error = undefined
+        openPositionsCount++
+        buysToday++
+
+        const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+        const stopPrice = best.indicators.currentPrice * (1 - stopLossPct)
+        let stopOrderId: string | undefined
+        try {
+          const stopOrder = await submitStopOrder(best.symbol, best.qty, stopPrice)
+          stopOrderId = stopOrder.id
+        } catch (stopErr) {
+          console.warn(`[RANKING] Stop order failed for ${best.symbol}:`, stopErr)
+        }
+
+        const entryLogId = randomUUID()
+        await saveOpenPositionContext({
+          symbol: best.symbol,
+          buyTimestamp: timestamp,
+          buyPrice: best.indicators.currentPrice,
+          quantity: best.qty,
+          indicators: best.indicators,
+          claudeReasoning: best.decision.reasoning,
+          patternIdsUsed: [],
+          stopOrderId,
+          signalType: best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null,
+        })
+
+        if (best.isAutoEntry) {
+          await markWatchlistTriggered(best.symbol, entryLogId).catch(() => {})
+        }
+
+        decisions.push(best.entry)
+      }
+    } catch (execErr) {
+      best.entry.error = String(execErr)
+      decisions.push(best.entry)
+    }
+
+    // Log rejected candidates as outranked near-misses
+    for (const rejected of ranked.slice(1)) {
+      console.log(`[RANKING] Outranked: ${rejected.symbol} (z=${rejected.zScore.toFixed(3)} vs winner z=${best.zScore.toFixed(3)})`)
+      rejected.entry.error = `Outranked by ${best.symbol} (z=${best.zScore.toFixed(3)} vs z=${rejected.zScore.toFixed(3)})`
+      decisions.push(rejected.entry)
+      await detectNearMisses(
+        rejected.symbol,
+        rejected.indicators,
+        thresholdMap,
+        { wouldExecute: true, reason: 'outranked', signalType: rejected.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null }
+      ).catch(() => {})
     }
   }
 
