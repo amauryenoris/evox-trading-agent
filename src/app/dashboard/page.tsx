@@ -13,6 +13,7 @@ import { SystemStatus } from '@/components/dashboard/SystemStatus'
 import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
+import { LogoutButton } from '@/components/dashboard/LogoutButton'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
 import type { WeeklyReportRecord } from '@/lib/db'
 
@@ -53,6 +54,7 @@ export default async function DashboardPage() {
           </Suspense>
           <GenerateReportButton />
           <RunAgentButton />
+          <LogoutButton />
         </div>
       </div>
 
