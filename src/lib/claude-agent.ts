@@ -747,7 +747,25 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   })
   if (autoEntrySymbols.length > 0) {
     console.log(`[WATCHLIST] Auto-entry candidates: ${autoEntrySymbols.join(', ')}`)
+    // Ensure auto-entry symbols have indicators and are included in this cycle's analysis
+    for (const sym of autoEntrySymbols) {
+      if (!indicatorsCache.has(sym)) {
+        try {
+          const bars = await getBars(sym, '1Day', 260, 250)
+          const ind = calculateAllIndicators(bars)
+          indicatorsCache.set(sym, ind)
+          console.log(`[WATCHLIST] Fetched indicators for auto-entry symbol ${sym}`)
+        } catch (err) {
+          console.error(`[WATCHLIST] Failed to fetch indicators for auto-entry ${sym}:`, err)
+        }
+      }
+      if (!watchlist.includes(sym)) {
+        watchlist.push(sym)
+        console.log(`[WATCHLIST] Injected ${sym} into watchlist for priority auto-entry processing`)
+      }
+    }
   }
+  const prioritySymbols = new Set(autoEntrySymbols)
 
   // 4d. Ensure all open positions have indicators even if not selected in watchlist this cycle
   for (const position of positions) {
@@ -825,7 +843,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       }
 
       // Check if this symbol has a pending auto-entry from the watchlist monitor
-      const isAutoEntry = autoEntrySymbols.includes(symbol)
+      const isAutoEntry = prioritySymbols.has(symbol)
 
       // Generate signal type (mean reversion vs trend following) before filtering
       const signalResult = generateSignalType(indicators)
@@ -893,7 +911,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           (indicators.ema50 ?? 1)) > 0.002 &&
         momentumOk
 
-      const setup_detected = meanReversionSetup || trendSetup || emaReclaimSetup
+      const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || emaReclaimSetup
+      if (isAutoEntry && !meanReversionSetup && !trendSetup && !emaReclaimSetup) {
+        console.log(`[WATCHLIST] ${symbol}: auto-entry bypassing setup gate (monitored from near-miss watchlist)`)
+      }
 
       // Track rejected trend candidates: trend-aligned but zScore > 0.5 (price above fair value)
       const trendSetupRejected = ema50Value > 0

@@ -109,6 +109,7 @@ export async function updateWatchlist(
       news_boost_applied: newsBoost,
       effective_threshold: threshold,
       monitoring_cycles: entry.monitoring_cycles + 1,
+      gap_to_threshold: zscore - threshold,
     }
 
     if (zscore > CANCEL_REVERT_THRESHOLD) {
@@ -144,8 +145,15 @@ export async function checkAutoEntry(
     const regime = current.marketRegime
     const threshold = thresholdMap[entry.symbol] ?? ZSCORE_ENTRY_THRESHOLD
 
-    // Auto-entry conditions: z-score crossed threshold, still RANGING, portfolio has room
-    if (zscore <= threshold && regime === 'RANGING' && openPositionsCount < maxPositions) {
+    // Regime check depends on signal type:
+    // MEAN_REVERSION requires RANGING; TREND_PULLBACK and EMA_RECLAIM work in any regime
+    const signalType = entry.signal_type
+    const regimeOk = signalType === 'MEAN_REVERSION'
+      ? regime === 'RANGING'
+      : true  // TREND_PULLBACK and EMA_RECLAIM work in any regime
+
+    // Auto-entry conditions: z-score crossed threshold, regime ok, portfolio has room
+    if (zscore <= threshold && regimeOk && openPositionsCount < maxPositions) {
       console.log(
         `[WATCHLIST] Auto-entry ready: ${entry.symbol} z=${zscore.toFixed(3)} <= ${threshold.toFixed(3)} ` +
         `(monitored ${entry.monitoring_cycles} cycles${entry.news_boost_applied !== 0 ? `, boost=${entry.news_boost_applied.toFixed(3)}` : ''})`
