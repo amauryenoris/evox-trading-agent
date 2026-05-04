@@ -14,6 +14,7 @@ import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
 import { LogoutButton } from '@/components/dashboard/LogoutButton'
+import { cookies } from 'next/headers'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
 import type { WeeklyReportRecord } from '@/lib/db'
 
@@ -22,7 +23,12 @@ export const dynamic = 'force-dynamic'
 async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
   try {
     const base = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
-    const res = await fetch(`${base}${path}`, { cache: 'no-store' })
+    const cookieStore = await cookies()
+    const cookieHeader = cookieStore.getAll().map(c => `${c.name}=${c.value}`).join('; ')
+    const res = await fetch(`${base}${path}`, {
+      cache: 'no-store',
+      headers: { Cookie: cookieHeader },
+    })
     if (!res.ok) return fallback
     return res.json() as Promise<T>
   } catch {
