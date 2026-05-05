@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "cycle": "tsx scripts/run-cycle.ts",
+    "exit-only": "tsx src/scripts/exit-only.ts",
     "report": "tsx scripts/generate-weekly-report.ts"
   },
   "dependencies": {

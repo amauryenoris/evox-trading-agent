@@ -96,7 +96,7 @@ function getTradingDaysOpen(buyTimestamp: string): number {
   return Math.floor(calendarDays * (5 / 7))
 }
 
-async function enforceExitRules(
+export async function enforceExitRules(
   positions: AlpacaPosition[],
   indicatorsCache: Map<string, TechnicalIndicators>,
   openContexts: OpenPositionContext[],
