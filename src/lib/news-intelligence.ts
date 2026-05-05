@@ -88,7 +88,31 @@ Verification examples:
 
 Rules for sentiment and impact:
 - sentiment=BULLISH if positive for stock prices, BEARISH if negative, NEUTRAL otherwise
-- impact=HIGH for major surprises, MEDIUM for notable news, LOW for minor updates`
+- impact=HIGH for major surprises, MEDIUM for notable news, LOW for minor updates
+
+Additional rules for specific event types:
+
+Geopolitical events (wars, attacks, sanctions, conflicts, military strikes):
+  → sentiment=BEARISH for equity markets
+  → Exception: if directly benefits a specific sector (e.g. defense stocks) classify as SYMBOL not MACRO
+
+Oil and commodity supply disruptions (pipeline attacks, port closures, OPEC cuts, natural disasters affecting supply):
+  → sentiment=BEARISH for broad equity markets
+  → Reason: supply shock = inflation risk + economic uncertainty
+
+Central bank and rates (Fed, ECB, rate hikes, rate cuts, inflation data):
+  → BEARISH if rates rise or inflation high
+  → BULLISH if rates cut or inflation falls
+
+Earnings surprises:
+  → BULLISH if beat estimates
+  → BEARISH if miss estimates or weak guidance
+
+Examples:
+  "Iran strikes UAE port" → MACRO BEARISH HIGH
+  "Fire at petroleum site following drone attack" → MACRO BEARISH HIGH (supply disruption)
+  "Fed cuts rates 50bps" → MACRO BULLISH HIGH
+  "US sanctions on Iranian oil buyers" → MACRO BEARISH MEDIUM (trade uncertainty)`
 
   try {
     const response = await client.messages.create({
