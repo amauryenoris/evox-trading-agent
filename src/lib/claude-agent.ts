@@ -716,7 +716,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const indicatorsCache = new Map<string, TechnicalIndicators>()
   for (const sym of watchlist) {
     try {
-      const bars = await getBars(sym, '1Day', 260, 250)
+      const bars = await getBars(sym, '1Day', 300, 300)
       if (bars.length >= 30) {
         indicatorsCache.set(sym, calculateAllIndicators(bars))
       }
@@ -751,7 +751,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     for (const sym of autoEntrySymbols) {
       if (!indicatorsCache.has(sym)) {
         try {
-          const bars = await getBars(sym, '1Day', 260, 250)
+          const bars = await getBars(sym, '1Day', 300, 300)
           const ind = calculateAllIndicators(bars)
           indicatorsCache.set(sym, ind)
           console.log(`[WATCHLIST] Fetched indicators for auto-entry symbol ${sym}`)
@@ -771,7 +771,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   for (const position of positions) {
     if (!indicatorsCache.has(position.symbol)) {
       try {
-        const bars = await getBars(position.symbol, '1Day', 260, 250)
+        const bars = await getBars(position.symbol, '1Day', 300, 300)
         const indicators = calculateAllIndicators(bars)
         indicatorsCache.set(position.symbol, indicators)
         console.log(`[EXIT-RULES] Computed indicators for open position ${position.symbol} (not in watchlist this cycle)`)
