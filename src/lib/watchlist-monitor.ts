@@ -138,11 +138,14 @@ export async function checkAutoEntry(
   const readyForEntry: string[] = []
 
   for (const entry of activeEntries) {
-    const current = currentIndicators[entry.symbol]
-    if (!current?.kalman) continue
+    const currentZScore = currentIndicators[entry.symbol]?.kalman?.zScore
 
-    const zscore = current.kalman.zScore
-    const regime = current.marketRegime
+    if (currentZScore == null) {
+      console.log(`[AUTO-ENTRY] ${entry.symbol}: skipped — no current indicators available`)
+      continue
+    }
+
+    const regime = currentIndicators[entry.symbol]?.marketRegime
     const threshold = thresholdMap[entry.symbol] ?? ZSCORE_ENTRY_THRESHOLD
 
     // Regime check depends on signal type:
@@ -153,9 +156,9 @@ export async function checkAutoEntry(
       : true  // TREND_PULLBACK and EMA_RECLAIM work in any regime
 
     // Auto-entry conditions: z-score crossed threshold, regime ok, portfolio has room
-    if (zscore <= threshold && regimeOk && openPositionsCount < maxPositions) {
+    if (currentZScore <= threshold && regimeOk && openPositionsCount < maxPositions) {
       console.log(
-        `[WATCHLIST] Auto-entry ready: ${entry.symbol} z=${zscore.toFixed(3)} <= ${threshold.toFixed(3)} ` +
+        `[WATCHLIST] Auto-entry ready: ${entry.symbol} z=${currentZScore.toFixed(3)} <= ${threshold.toFixed(3)} ` +
         `(monitored ${entry.monitoring_cycles} cycles${entry.news_boost_applied !== 0 ? `, boost=${entry.news_boost_applied.toFixed(3)}` : ''})`
       )
       // Mark as TRIGGERED
