@@ -942,15 +942,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const effectiveThreshold = thresholdMap[symbol] ?? ZSCORE_ENTRY_THRESHOLD
       const newsAdjustment = parseFloat((effectiveThreshold - ZSCORE_ENTRY_THRESHOLD).toFixed(3))
 
-      const meanReversionSetup = zScore <= effectiveThreshold
-      const trendSetup = ema50Value > 0
-                      && ema200Value > 0
-                      && indicators.currentPrice > ema50Value
-                      && ema50Value > ema200Value
-                      && zScore <= 0.5
-
-      // ── EMA RECLAIM setup ──
-      // Price crosses above EMA50 from below, below fair value, with momentum confirmation
+      // ── Shared variables (used by trend, EMA reclaim, and quality filter) ──
       const hasEmaSlope = indicators.ema50Prev != null
       const hasPrevClose = indicators.prevClose != null
 
@@ -959,6 +951,52 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         : (hasPrevClose &&
            indicators.currentPrice > (indicators.prevClose ?? 0) * 0.999)
 
+      const adxValue = indicators.adx ?? null
+      const ema50Current = indicators.ema50 ?? null
+      const ema50PrevValue = indicators.ema50Prev ?? null
+
+      const ema50SlopeOk =
+        ema50Current !== null &&
+        ema50PrevValue !== null &&
+        ema50Current > ema50PrevValue
+
+      const adxOk = adxValue === null || adxValue >= 20
+
+      const trendQualityOk = ema50SlopeOk && adxOk
+
+      const isTrendStructure =
+        indicators.currentPrice > ema50Value &&
+        ema50Value > ema200Value
+
+      const isPullbackCandidate = isTrendStructure && zScore <= 0 && momentumOk
+      const isZLE05Candidate = isTrendStructure && zScore > 0 && zScore <= 0.5 && momentumOk
+
+      // ── Setup detection ──
+      const meanReversionSetup = zScore <= effectiveThreshold
+
+      // TREND_PULLBACK: uptrend structure, z-score <= 0, momentum + quality confirmed
+      const trendSetup =
+        ema50Value > 0 &&
+        ema200Value > 0 &&
+        indicators.currentPrice > ema50Value &&
+        ema50Value > ema200Value &&
+        zScore <= 0 &&
+        momentumOk &&
+        trendQualityOk
+
+      // TREND_ZLE05: same trend structure, z-score 0–0.5, momentum + quality confirmed
+      const trendZLE05Setup =
+        ema50Value > 0 &&
+        ema200Value > 0 &&
+        indicators.currentPrice > ema50Value &&
+        ema50Value > ema200Value &&
+        zScore > 0 &&
+        zScore <= 0.5 &&
+        momentumOk &&
+        trendQualityOk
+
+      // ── EMA RECLAIM setup ──
+      // Price crosses above EMA50 from below, below fair value, with momentum confirmation
       const emaReclaimSetup =
         indicators.currentPrice > (indicators.ema50 ?? 0) &&
         (indicators.prevClose ?? indicators.currentPrice) <=
@@ -968,28 +1006,26 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           (indicators.ema50 ?? 1)) > 0.002 &&
         momentumOk
 
-      const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || emaReclaimSetup
-      if (isAutoEntry && !meanReversionSetup && !trendSetup && !emaReclaimSetup) {
+      const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || trendZLE05Setup || emaReclaimSetup
+      if (isAutoEntry && !meanReversionSetup && !trendSetup && !trendZLE05Setup && !emaReclaimSetup) {
         console.log(`[WATCHLIST] ${symbol}: auto-entry bypassing setup gate (monitored from near-miss watchlist)`)
       }
 
       // Track rejected trend candidates: trend-aligned but zScore > 0.5 (price above fair value)
-      const trendSetupRejected = ema50Value > 0
-                              && ema200Value > 0
-                              && indicators.currentPrice > ema50Value
-                              && ema50Value > ema200Value
-                              && zScore > 0.5
+      const trendSetupRejected = isTrendStructure && ema50Value > 0 && ema200Value > 0 && zScore > 0.5
 
       // Computed signal type — used for sizing, context save, and near-miss tagging
       const signalType = meanReversionSetup
         ? 'MEAN_REVERSION'
         : trendSetup
-        ? (zScore <= 0 ? 'TREND_PULLBACK' : 'TREND_ZLE05')
+        ? 'TREND_PULLBACK'
+        : trendZLE05Setup
+        ? 'TREND_ZLE05'
         : emaReclaimSetup
         ? 'EMA_RECLAIM'
         : null
 
-      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendSetupRejected, emaReclaimSetup })
+      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendZLE05Setup, trendSetupRejected, emaReclaimSetup, trendQualityOk, ema50SlopeOk, adxOk })
 
       if (trendSetupRejected) {
         console.log(`[SETUP-GATE] ${symbol}: TREND_ZGT05 — trend aligned but zScore ${zScore.toFixed(3)} > 0.5, excluded (price above fair value)`)
@@ -1025,6 +1061,23 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
           error: 'EMA_RECLAIM_NEAR: conditions not met',
+        })
+        continue
+      }
+
+      // Trend candidate blocked by quality filter (flat EMA50 slope or weak ADX)
+      if ((isPullbackCandidate || isZLE05Candidate) && !trendQualityOk) {
+        const qualityError = `TREND_QUALITY_FAIL: adx=${adxValue !== null ? adxValue.toFixed(1) : 'null'} slope=${ema50SlopeOk ? 'ok' : 'flat'}`
+        console.log(`[SETUP-GATE] ${symbol}: ${qualityError}`)
+        decisions.push({
+          id: randomUUID(),
+          timestamp,
+          symbol,
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `${qualityError} — trend structure present but quality insufficient for entry`, confidence: 0 },
+          indicators,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: qualityError,
         })
         continue
       }
