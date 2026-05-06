@@ -1,4 +1,4 @@
-import { getAccount, getPositions, getBars } from './alpaca'
+import { getAccount, getPositions, getBars, getClock } from './alpaca'
 import { calculateAllIndicators } from './indicators'
 import { getOpenPositionContexts } from './db'
 import { enforceExitRules } from './claude-agent'
@@ -7,11 +7,17 @@ import type { TechnicalIndicators } from './types'
 export async function runExitOnly(): Promise<void> {
   console.log('[EXIT-ONLY] Starting exit evaluation')
 
+  const clock = await getClock()
+  if (!clock.is_open) {
+    console.log('[EXIT-ONLY] Market closed — skipping')
+    return
+  }
+
   const account = await getAccount()
   const positions = await getPositions()
 
   if (positions.length === 0) {
-    console.log('[EXIT-ONLY] No open positions')
+    console.log('[EXIT-ONLY] No open positions — skipping')
     return
   }
 

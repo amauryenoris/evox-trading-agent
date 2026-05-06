@@ -703,6 +703,18 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   const marketOpen = clock.is_open
 
+  // If market closed and no open positions, skip entire cycle — nothing to do
+  if (!marketOpen && positions.length === 0) {
+    console.log('[AGENT] Market closed, no open positions — skipping cycle')
+    return { decisions: [], evaluations: [], marketOpen, timestamp }
+  }
+
+  // If market closed but has open positions, log and continue — exits can still fire,
+  // BUYs are blocked downstream by the marketOpen gate
+  if (!marketOpen && positions.length > 0) {
+    console.log('[AGENT] Market closed — running exit evaluation only')
+  }
+
   // 3. Enforce stop losses — close any positions that fell through Alpaca's stop order
   await enforceStopLosses(positions)
 

@@ -3,7 +3,7 @@ name: Exit Check — Open and Close
 on:
   schedule:
     - cron: "30 13 * * 1-5"  # 9:30 AM ET
-    - cron: "30 19 * * 1-5"  # 3:30 PM ET
+    - cron: "0 19 * * 1-5"   # 3:00 PM ET
   workflow_dispatch:
 
 jobs:
