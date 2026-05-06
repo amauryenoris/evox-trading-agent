@@ -809,6 +809,38 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       evaluations.push(evaluation)
       await removeOpenPositionContext(ctx.symbol)
       await recordSelectionOutcome(ctx.symbol, evaluation)
+
+      // Log ghost close to agent_log so it appears in Agent Decisions dashboard
+      const pnlPct = (sellPrice - ctx.buyPrice) / ctx.buyPrice
+      const daysOpen = getTradingDaysOpen(ctx.buyTimestamp)
+      await insertAgentLogEntry({
+        id: randomUUID(),
+        timestamp: sellTimestamp,
+        symbol: ctx.symbol,
+        decision: {
+          action: 'SELL',
+          symbol: ctx.symbol,
+          quantity: ctx.quantity,
+          reasoning: `Position closed by Alpaca automatically (stop loss or external order). Entry: $${ctx.buyPrice.toFixed(2)} Exit: $${sellPrice.toFixed(2)} P&L: ${pnlPct > 0 ? '+' : ''}${(pnlPct * 100).toFixed(2)}% Signal type: ${ctx.signalType} Days open: ${daysOpen}`,
+          confidence: 1.0,
+        },
+        indicators: {
+          ...ctx.indicators,
+          entryPrice: ctx.buyPrice,
+          exitPrice: sellPrice,
+          pnlPct,
+          signalType: ctx.signalType,
+          daysOpen,
+          closedBy: 'alpaca_gtc',
+        } as unknown as TechnicalIndicators,
+        portfolioSnapshot: {
+          equity: account.equity,
+          cash: account.cash,
+          positionCount: positions.length,
+        },
+        orderExecuted: true,
+        error: 'ghost_close',
+      }).catch((err) => console.error(`[GHOST-CLOSE] Failed to insert agent_log for ${ctx.symbol}:`, err))
     } catch (err) {
       console.error(`Failed to evaluate closed trade for ${ctx.symbol}:`, err)
     }
