@@ -1088,7 +1088,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           id: randomUUID(),
           timestamp,
           symbol,
-          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Setup gate: no mean reversion setup (z-score ${zScore.toFixed(3)} > ${ZSCORE_ENTRY_THRESHOLD}) and no trend setup (price not above EMA50)`, confidence: 0 },
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Setup gate: no mean reversion setup (z-score ${zScore.toFixed(3)} > ${effectiveThreshold}) and no trend setup (price not above EMA50)`, confidence: 0 },
           indicators,
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
