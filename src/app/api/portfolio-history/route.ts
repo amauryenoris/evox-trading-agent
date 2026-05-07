@@ -17,6 +17,7 @@ export async function GET() {
       .from('agent_log')
       .select('created_at, portfolio_snapshot')
       .not('portfolio_snapshot', 'is', null)
+      .gte('created_at', '2026-04-20')
       .order('created_at', { ascending: true })
 
     if (error) throw error
