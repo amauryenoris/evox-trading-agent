@@ -985,6 +985,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         trendQualityOk
 
       // TREND_ZLE05: same trend structure, z-score 0–0.5, momentum + quality confirmed
+      // Requires positive MACD histogram — price slightly above fair value needs bullish momentum confirmation
+      const macdHistogram = indicators.macd?.histogram ?? null
+
       const trendZLE05Setup =
         ema50Value > 0 &&
         ema200Value > 0 &&
@@ -993,7 +996,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         zScore > 0 &&
         zScore <= 0.5 &&
         momentumOk &&
-        trendQualityOk
+        trendQualityOk &&
+        macdHistogram !== null &&
+        macdHistogram > 0
 
       // ── EMA RECLAIM setup ──
       // Price crosses above EMA50 from below, below fair value, with momentum confirmation
