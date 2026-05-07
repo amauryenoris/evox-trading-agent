@@ -166,7 +166,7 @@ export async function enforceExitRules(
     const ACTIVATION_PCT: Record<string, number> = {
       MEAN_REVERSION: 0.05,
       TREND_PULLBACK: 0.06,
-      TREND_ZLE05:    0.06,
+      TREND_ZLE05:    0.03,
       EMA_RECLAIM:    0.04,
       default:        0.05,
     }
