@@ -323,7 +323,7 @@ export async function getPatternLibrary(): Promise<TradingPattern[]> {
   const { data, error } = await db
     .from('pattern_library')
     .select('*')
-    .order('win_rate', { ascending: false })
+    .order('updated_at', { ascending: false })
   if (error) throw new Error(`Failed to fetch pattern library: ${error.message}`)
   return (data ?? []).map((row) => ({
     id: row.id,

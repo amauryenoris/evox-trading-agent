@@ -5,7 +5,7 @@ interface Props {
 }
 
 export function PatternLibraryCard({ patterns }: Props) {
-  const ranked = patterns.filter((p) => p.sampleCount >= 1).slice(0, 8)
+  const ranked = patterns.filter((p) => p.sampleCount >= 1).slice(0, 10)
 
   return (
     <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
