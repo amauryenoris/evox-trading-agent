@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { PortfolioOverviewCard } from '@/components/dashboard/PortfolioOverviewCard'
 import { PositionsTable } from '@/components/dashboard/PositionsTable'
-import { PnLChart } from '@/components/dashboard/PnLChart'
+import { PnLChart, type PortfolioHistory } from '@/components/dashboard/PnLChart'
 import { TradeHistoryTable } from '@/components/dashboard/TradeHistoryTable'
 import { AgentReasoningLog } from '@/components/dashboard/AgentReasoningLog'
 import { PatternLibraryCard } from '@/components/dashboard/PatternLibraryCard'
@@ -37,13 +37,14 @@ async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
 }
 
 export default async function DashboardPage() {
-  const [portfolio, positions, agentLog, trades, patterns, reports] = await Promise.all([
+  const [portfolio, positions, agentLog, trades, patterns, reports, portfolioHistory] = await Promise.all([
     fetchJSON<PortfolioSummary | null>('/api/portfolio', null),
     fetchJSON<PositionDisplay[]>('/api/positions', []),
     fetchJSON<AgentLogEntry[]>('/api/agent-log', []),
     fetchJSON<AlpacaOrder[]>('/api/trades', []),
     fetchJSON<TradingPattern[]>('/api/patterns', []),
     fetchJSON<WeeklyReportRecord[]>('/api/reports', []),
+    fetchJSON<PortfolioHistory | null>('/api/portfolio-history', null),
   ])
 
   return (
@@ -102,7 +103,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* P&L chart (supplementary) */}
-      <PnLChart entries={agentLog} />
+      <PnLChart data={portfolioHistory} />
 
       {/* 9. Weekly Reports */}
       <section id="reports">

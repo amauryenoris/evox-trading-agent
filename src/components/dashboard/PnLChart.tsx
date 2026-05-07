@@ -8,34 +8,33 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts'
-import type { AgentLogEntry } from '@/lib/types'
 import { formatCurrency } from '@/lib/utils'
 
-interface Props {
-  entries: AgentLogEntry[]
+interface EquityDataPoint {
+  date: string
+  equity: number
 }
 
-export function PnLChart({ entries }: Props) {
-  // Build one data point per unique timestamp (one per analysis cycle)
-  const seen = new Set<string>()
-  const data = entries
-    .slice()
-    .reverse() // oldest first for charting
-    .filter((e) => {
-      if (seen.has(e.timestamp)) return false
-      seen.add(e.timestamp)
-      return true
-    })
-    .map((e) => ({
-      date: new Date(e.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      equity: parseFloat(e.portfolioSnapshot.equity),
-    }))
+export interface PortfolioHistory {
+  history: EquityDataPoint[]
+  startEquity: number
+  currentEquity: number
+  totalReturn: number
+}
 
-  if (data.length === 0) {
+interface Props {
+  data: PortfolioHistory | null
+}
+
+export function PnLChart({ data }: Props) {
+  if (!data || data.history.length === 0) {
     return (
       <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Portfolio Value Over Time</h2>
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
+          Portfolio Value Over Time
+        </h2>
         <div className="flex items-center justify-center h-40 text-slate-600 text-sm">
           No data yet — run your first analysis to start tracking
         </div>
@@ -43,18 +42,39 @@ export function PnLChart({ entries }: Props) {
     )
   }
 
-  const minEquity = Math.min(...data.map((d) => d.equity))
-  const maxEquity = Math.max(...data.map((d) => d.equity))
+  const { history, startEquity, currentEquity, totalReturn } = data
+  const lineColor = currentEquity >= startEquity ? '#00B386' : '#FF4444'
+  const returnSign = totalReturn >= 0 ? '+' : ''
+
+  // Format dates for X axis display
+  const chartData = history.map((d) => ({
+    ...d,
+    label: new Date(d.date + 'T12:00:00Z').toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    }),
+  }))
+
+  const equities = history.map((d) => d.equity)
+  const minEquity = Math.min(...equities, startEquity)
+  const maxEquity = Math.max(...equities, startEquity)
   const padding = (maxEquity - minEquity) * 0.1 || 500
 
   return (
     <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Portfolio Value Over Time</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          Portfolio Value Over Time
+        </h2>
+        <span className="text-sm font-medium" style={{ color: lineColor }}>
+          {returnSign}{(totalReturn * 100).toFixed(2)}% total return
+        </span>
+      </div>
       <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={data}>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
           <XAxis
-            dataKey="date"
+            dataKey="label"
             tick={{ fill: '#64748b', fontSize: 11 }}
             axisLine={false}
             tickLine={false}
@@ -71,13 +91,19 @@ export function PnLChart({ entries }: Props) {
             labelStyle={{ color: '#94a3b8' }}
             formatter={(value) => [formatCurrency(Number(value)), 'Equity']}
           />
+          <ReferenceLine
+            y={startEquity}
+            stroke="#475569"
+            strokeDasharray="4 4"
+            label={{ value: '$100k', fill: '#475569', fontSize: 10, position: 'insideTopRight' }}
+          />
           <Line
             type="monotone"
             dataKey="equity"
-            stroke="#6366f1"
+            stroke={lineColor}
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4, fill: '#6366f1' }}
+            activeDot={{ r: 4, fill: lineColor }}
           />
         </LineChart>
       </ResponsiveContainer>
