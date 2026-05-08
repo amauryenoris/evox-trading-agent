@@ -165,6 +165,7 @@ export async function enforceExitRules(
     // ── TRAILING STOP ──────────────────────────────────────────
     const ACTIVATION_PCT: Record<string, number> = {
       MEAN_REVERSION: 0.05,
+      TREND:          0.06,
       TREND_PULLBACK: 0.06,
       TREND_ZLE05:    0.03,
       EMA_RECLAIM:    0.04,
@@ -172,8 +173,9 @@ export async function enforceExitRules(
     }
     const ATR_MULT: Record<string, number> = {
       MEAN_REVERSION: 1.2,
+      TREND:          1.5,
       TREND_PULLBACK: 1.5,
-      TREND_ZLE05:    1.5,
+      TREND_ZLE05:    1.0,
       EMA_RECLAIM:    1.0,
       default:        1.2,
     }
@@ -193,7 +195,7 @@ export async function enforceExitRules(
       )
     } else {
       // PASO 3 — Activate trailing (once only)
-      const activationPct = ACTIVATION_PCT[signalType ?? 'default']
+      const activationPct = ACTIVATION_PCT[signalType ?? 'default'] ?? ACTIVATION_PCT['default']
       let trailingActivated = ctx?.trailingActivated ?? false
       let justActivated = false
 
@@ -206,7 +208,7 @@ export async function enforceExitRules(
       let trailingStop = ctx?.trailingStop ?? null
 
       if (trailingActivated && !justActivated) {
-        const mult = ATR_MULT[signalType ?? 'default']
+        const mult = ATR_MULT[signalType ?? 'default'] ?? ATR_MULT['default']
         const distance = Math.max(mult * atr, highSinceEntry * MIN_DISTANCE_PCT)
         const newStop = highSinceEntry - distance
 
