@@ -234,6 +234,10 @@ function calculateDiagnostics(
       } else {
         otherHold++
       }
+    } else if (err.includes('TREND_ZGT05')) {
+      noSetupDetected++
+    } else if (err.includes('TREND_QUALITY_FAIL')) {
+      noSetupDetected++
     } else {
       otherHold++
     }
