@@ -273,6 +273,25 @@ export async function enforceExitRules(
         orderExecuted: true,
         error: undefined,
       })
+
+      if (ctx) {
+        try {
+          const sellOrder = await getLatestSellOrder(position.symbol, ctx.buyTimestamp)
+          const exitPrice = sellOrder?.filled_avg_price
+            ? parseFloat(sellOrder.filled_avg_price)
+            : parseFloat(position.current_price)
+          const exitTimestamp = sellOrder?.filled_at ?? timestamp
+
+          await evaluateClosedTrade(ctx, exitPrice, exitTimestamp)
+          await removeOpenPositionContext(position.symbol)
+
+          console.log(`[EXIT-RULES] Cleanup complete: ${position.symbol}`)
+        } catch (cleanupErr) {
+          console.error(`[EXIT-RULES] Cleanup failed: ${position.symbol}`, cleanupErr)
+          // Do not rethrow — Alpaca already closed
+          // detectClosedPositions() will retry next cycle
+        }
+      }
     } catch (err) {
       console.error(`[EXIT-RULES] Failed to close ${position.symbol}:`, err)
     }
@@ -353,7 +372,7 @@ async function evaluateRotation(
     const pnlPct = parseFloat(pos.unrealized_plpc)
 
     // Priority 1: position already completed its mean reversion objective
-    if (zScore >= -0.5) {
+    if (zScore >= -0.8) {
       exitCandidates.push({ symbol: pos.symbol, reason: `z-score ${zScore.toFixed(3)} reverted to fair value`, priority: 1 })
     }
     // Priority 2: position profitable and new setup has very high confidence
@@ -418,7 +437,7 @@ function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
     `Fair Value Estimate: $${kalman.stateEstimate.toFixed(2)}`,
     `Forecast Error e(t): ${kalman.forecastError >= 0 ? '+' : ''}${kalman.forecastError.toFixed(4)} (price is ${dir} fair value)`,
     `Error Std Dev Q(t): ${kalman.errorStdDev.toFixed(4)}`,
-    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < ${ZSCORE_ENTRY_THRESHOLD} | exit threshold: >= -0.5)`,
+    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < ${ZSCORE_ENTRY_THRESHOLD} | exit threshold: >= -0.8)`,
     `Signal: ${signalMap[kalman.signal]}`,
   ].join('\n')
 }
