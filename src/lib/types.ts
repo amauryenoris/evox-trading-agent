@@ -280,6 +280,11 @@ export interface PositionDisplay {
   unrealizedPnL: number
   unrealizedPnLPct: number
   changeToday: number
+  signalType?: string | null
+  trailingActivated?: boolean
+  trailingStop?: number | null
+  highSinceEntry?: number | null
+  buyPrice?: number
 }
 
 export interface NewsEvent {
