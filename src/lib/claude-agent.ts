@@ -23,7 +23,7 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
-import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext } from './db'
+import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, tradeEvaluationExists } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
@@ -832,6 +832,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   for (const ctx of closedContexts) {
     try {
+      const alreadyEvaluated = await tradeEvaluationExists(ctx.symbol, ctx.buyTimestamp)
+      if (alreadyEvaluated) {
+        console.log(`[DETECT-CLOSED] ${ctx.symbol}: already evaluated by enforceExitRules() — removing context only`)
+        await removeOpenPositionContext(ctx.symbol)
+        continue
+      }
+
       const sellOrder = await getLatestSellOrder(ctx.symbol, ctx.buyTimestamp)
       const sellPrice = sellOrder?.filled_avg_price
         ? parseFloat(sellOrder.filled_avg_price)

@@ -246,6 +246,18 @@ export async function insertTradeEvaluation(evaluation: TradeEvaluation): Promis
   if (error) throw new Error(`Failed to insert trade evaluation: ${error.message}`)
 }
 
+export async function tradeEvaluationExists(symbol: string, buyTimestamp: string): Promise<boolean> {
+  const db = getClient()
+  const { data } = await db
+    .from('trade_evaluations')
+    .select('id')
+    .eq('symbol', symbol)
+    .eq('buy_timestamp', buyTimestamp)
+    .limit(1)
+    .maybeSingle()
+  return data !== null
+}
+
 export async function getTradeEvaluations(limit = 200, startDate?: string): Promise<TradeEvaluation[]> {
   const db = getClient()
   let query = db
