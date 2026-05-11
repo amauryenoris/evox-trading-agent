@@ -1030,10 +1030,15 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       // ── EMA RECLAIM setup ──
       // Price crosses above EMA50 from below, below fair value, with momentum confirmation
+      // Requires prior day data — without it the cross cannot be confirmed
+      const hasPrevData =
+        indicators.prevClose != null &&
+        indicators.ema50Prev != null
+
       const emaReclaimSetup =
+        hasPrevData &&
         indicators.currentPrice > (indicators.ema50 ?? 0) &&
-        (indicators.prevClose ?? indicators.currentPrice) <=
-          (indicators.ema50Prev ?? indicators.ema50 ?? 0) &&
+        indicators.prevClose! <= indicators.ema50Prev! &&
         zScore < 0 &&
         ((indicators.currentPrice - (indicators.ema50 ?? 0)) /
           (indicators.ema50 ?? 1)) > 0.002 &&
