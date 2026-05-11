@@ -204,10 +204,10 @@ export async function enforceExitRules(
         justActivated = true
       }
 
-      // PASO 4 — Calculate trailing stop (only rises)
+      // PASO 4 — Calculate trailing stop (calculate immediately on activation, only rises after)
       let trailingStop = ctx?.trailingStop ?? null
 
-      if (trailingActivated && !justActivated) {
+      if (trailingActivated) {
         const mult = ATR_MULT[signalType ?? 'default'] ?? ATR_MULT['default']
         const distance = Math.max(mult * atr, highSinceEntry * MIN_DISTANCE_PCT)
         const newStop = highSinceEntry - distance
