@@ -229,6 +229,7 @@ export interface TradingPattern {
   avgPnLPct: number
   winRate: number
   exampleReasoning: string
+  signalType?: string | null
 }
 
 // ============================================================

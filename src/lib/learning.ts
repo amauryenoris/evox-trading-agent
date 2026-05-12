@@ -181,6 +181,7 @@ export async function updatePatternLibrary(
     existing.avgPnLPct =
       (existing.avgPnLPct * (existing.sampleCount - 1) + evaluation.pnlPct) / existing.sampleCount
     existing.updatedAt = now
+    existing.signalType = evaluation.signal_type ?? existing.signalType ?? null
     if (isWin && evaluation.pnlPct > 2) {
       existing.exampleReasoning = evaluation.buyIndicators
         ? `RSI: ${evaluation.buyIndicators.rsi?.toFixed(1)}, MACD hist: ${evaluation.buyIndicators.macd?.histogram.toFixed(4)}, %B: ${evaluation.buyIndicators.bollingerBands?.percentB.toFixed(2)}`
@@ -200,6 +201,7 @@ export async function updatePatternLibrary(
       avgPnLPct: evaluation.pnlPct,
       winRate: isWin ? 1 : 0,
       exampleReasoning: evaluation.claudePostMortem,
+      signalType: evaluation.signal_type ?? null,
     }
   }
 

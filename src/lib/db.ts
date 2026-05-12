@@ -325,6 +325,7 @@ export async function upsertPattern(pattern: TradingPattern): Promise<void> {
     avg_pnl_pct: pattern.avgPnLPct,
     win_rate: pattern.winRate,
     example_reasoning: pattern.exampleReasoning,
+    signal_type: pattern.signalType ?? null,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'id' })
   if (error) throw new Error(`Failed to upsert pattern: ${error.message}`)
@@ -349,6 +350,7 @@ export async function getPatternLibrary(): Promise<TradingPattern[]> {
     avgPnLPct: row.avg_pnl_pct ?? 0,
     winRate: row.win_rate ?? 0,
     exampleReasoning: row.example_reasoning ?? '',
+    signalType: row.signal_type ?? null,
   }))
 }
 
