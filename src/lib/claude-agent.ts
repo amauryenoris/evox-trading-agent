@@ -212,11 +212,14 @@ export async function enforceExitRules(
         const distance = Math.max(mult * atr, highSinceEntry * MIN_DISTANCE_PCT)
         const newStop = highSinceEntry - distance
 
+        // Floor at buy_price — activation already guarantees profit, never give it back
+        const flooredStop = Math.max(newStop, ctx?.buyPrice ?? 0)
+
         // Guardrail: ignore if stop is corrupt
         if (trailingStop !== null && trailingStop >= highSinceEntry) {
-          trailingStop = newStop
+          trailingStop = flooredStop
         } else {
-          trailingStop = Math.max(trailingStop ?? 0, newStop)
+          trailingStop = Math.max(trailingStop ?? 0, flooredStop)
         }
       }
 
