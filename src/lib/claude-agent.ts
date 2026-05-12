@@ -456,6 +456,7 @@ function buildEnrichedPrompt(
   symbolNews: AlpacaNewsArticle[],
   watchlistContext?: string,
   effectiveThreshold?: number,
+  signalType?: string | null,
   learnContext?: LearnContext,
 ): string {
   const equity = parseFloat(account.equity)
@@ -523,6 +524,22 @@ ${watchlistContext}
 --- NEWS-ADJUSTED THRESHOLD ---
 Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: ${ZSCORE_ENTRY_THRESHOLD}, news adjustment: ${(effectiveThreshold - ZSCORE_ENTRY_THRESHOLD).toFixed(3)})
 ` : ''}
+--- ACTIVE SETUP TYPE ---
+${signalType ? `The system detected a ${signalType} setup for this symbol.
+
+Setup context:
+${signalType === 'MEAN_REVERSION' ? `MEAN_REVERSION: Price is statistically below fair value.
+Edge: Kalman z-score <= threshold → price expected to revert up.
+Key indicators to analyze: z-score magnitude, RSI oversold, %B near lower band, MACD momentum direction.` : ''}${signalType === 'TREND_PULLBACK' ? `TREND_PULLBACK: Price pulled back in an established uptrend.
+Edge: EMA50 > EMA200 (trend intact), z-score <= 0 (near fair value), ADX >= 20 (trend has strength), EMA50 slope rising.
+Key indicators: trend structure, pullback depth, momentum recovery.` : ''}${signalType === 'TREND_ZLE05' ? `TREND_ZLE05: Trend continuation with price slightly above fair value.
+Edge: EMA50 > EMA200, 0 < z-score <= 0.5, MACD histogram positive, ADX >= 20, EMA50 slope rising.
+Key indicators: MACD momentum, trend strength, z-score proximity.` : ''}${signalType === 'EMA_RECLAIM' ? `EMA_RECLAIM: Price just crossed above EMA50 from below.
+Edge: Recent cross of EMA50 with z-score below fair value.
+Key indicators: cross confirmation, z-score, EMA50 slope.` : ''}
+
+Your analysis should focus on whether the conditions supporting this specific setup are strong or weak.` : 'No specific setup was detected — analyze why.'}
+
 Analyze ${symbol} and provide your trading decision as JSON.${learnContext ? `
 
 === LEARN MODE — PRE-FILTER FLAGS ===
@@ -1171,6 +1188,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         symbolNews,
         watchlistContext,
         effectiveThreshold,
+        signalType,
       )
 
       // Call Claude (with retry on 429/529)
