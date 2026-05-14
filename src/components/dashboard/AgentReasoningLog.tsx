@@ -429,12 +429,6 @@ export function AgentReasoningLog({ entries, title = 'Agent Decisions' }: { entr
     return groups
   }, [filtered])
 
-  const counts = useMemo(() => ({
-    trades:   enriched.filter(x => x.kind === 'BUY_EXECUTED' || x.kind === 'SELL_EXECUTED').length,
-    holding:  enriched.filter(x => x.kind === 'HOLDING' || x.kind === 'ALREADY_HOLDING').length,
-    rejected: enriched.filter(x => x.kind === 'NO_SETUP' || x.kind === 'TREND_REJECTED').length,
-  }), [enriched])
-
   return (
     <div className="bg-[#12121A] border border-[#1E1E2E] rounded-xl">
       <div className="flex items-baseline justify-between px-6 pt-5 pb-3 flex-wrap gap-3">
@@ -447,7 +441,7 @@ export function AgentReasoningLog({ entries, title = 'Agent Decisions' }: { entr
             <button key={f} onClick={() => setFilter(f)}
               className={`px-2.5 py-1 rounded transition tracking-wide ${filter === f ? 'bg-white/[0.06] text-slate-100' : 'text-slate-500 hover:text-slate-200'}`}
             >
-              {f === 'ALL' ? `All (${enriched.length})` : f === 'TRADES' ? `Trades (${counts.trades})` : f === 'HOLDING' ? `Holding (${counts.holding})` : `Rejected (${counts.rejected})`}
+              {f}
             </button>
           ))}
         </div>
