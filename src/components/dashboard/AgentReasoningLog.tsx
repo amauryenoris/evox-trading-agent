@@ -168,16 +168,16 @@ function KV({ label, value, tone = 'default', mono = true }: { label: string; va
   )
 }
 
-const fmt$ = (n: number | undefined, dp = 2): string =>
+const fmt$ = (n: number | null | undefined, dp = 2): string =>
   n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
 
-const fmtPct = (n: number | undefined, dp = 2): string => {
+const fmtPct = (n: number | null | undefined, dp = 2): string => {
   if (n == null) return '—'
   const x = Math.abs(n) < 5 && n !== 0 ? n * 100 : n
   return (x >= 0 ? '+' : '') + x.toFixed(dp) + '%'
 }
 
-const fmtNum = (n: number | undefined, dp = 2): string =>
+const fmtNum = (n: number | null | undefined, dp = 2): string =>
   n == null ? '—' : n.toFixed(dp)
 
 /* ─── CardShell ─── */
