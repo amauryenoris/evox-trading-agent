@@ -9,12 +9,14 @@ import { RunAgentButton } from '@/components/dashboard/RunAgentButton'
 import { MarketStatusBadge } from '@/components/dashboard/MarketStatusBadge'
 import { WeeklyReportsCard } from '@/components/dashboard/WeeklyReportsCard'
 import { GenerateReportButton } from '@/components/dashboard/GenerateReportButton'
-import { SystemStatus } from '@/components/dashboard/SystemStatus'
 import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
 import { LogoutButton } from '@/components/dashboard/LogoutButton'
+import { DashboardTabs } from '@/components/dashboard/DashboardTabs'
+import { SystemStatusBar } from '@/components/dashboard/SystemStatusBar'
 import { cookies } from 'next/headers'
+import { formatCurrency, formatPct } from '@/lib/utils'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
 import type { WeeklyReportRecord } from '@/lib/db'
 
@@ -47,68 +49,86 @@ export default async function DashboardPage() {
     fetchJSON<PortfolioHistory | null>('/api/portfolio-history', null),
   ])
 
+  const todayPositive = (portfolio?.todayPnL ?? 0) >= 0
+  const totalPositive = (portfolio?.totalPnL ?? 0) >= 0
+
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-100">Trading Dashboard</h1>
-          <p className="text-sm text-slate-500">Autonomous AI agent · Paper Trading · LEARN Mode</p>
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* ── Header ── */}
+      <div className="mb-6 space-y-3">
+        {/* Row 1: title + equity snapshot + action buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-8">
+            <div>
+              <h1 className="text-xl font-bold text-slate-100 tracking-tight">PAQUITO</h1>
+              <p className="text-xs text-slate-600">Autonomous trading agent · Paper Trading · LEARN</p>
+            </div>
+
+            {portfolio && (
+              <div className="flex items-center gap-6">
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">Equity</p>
+                  <p className="text-base font-semibold text-slate-100">{formatCurrency(portfolio.equity)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">Today</p>
+                  <p className={`text-base font-semibold ${todayPositive ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatPct(portfolio.todayPnLPct)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">All-time</p>
+                  <p className={`text-base font-semibold ${totalPositive ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatPct(portfolio.totalPnLPct)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <Suspense fallback={<span className="text-xs text-slate-600">—</span>}>
+              <MarketStatusBadge />
+            </Suspense>
+            <GenerateReportButton />
+            <RunAgentButton />
+            <LogoutButton />
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <Suspense fallback={<span className="text-xs text-slate-600">Loading market status...</span>}>
-            <MarketStatusBadge />
-          </Suspense>
-          <GenerateReportButton />
-          <RunAgentButton />
-          <LogoutButton />
-        </div>
+
+        {/* Row 2: system status strip */}
+        <SystemStatusBar />
       </div>
 
-      {/* 1. System Status — top for immediate context */}
-      <SystemStatus />
-
-      {/* 2. Portfolio overview */}
-      <section id="portfolio">
-        <PortfolioOverviewCard data={portfolio} />
-      </section>
-
-      {/* 3. Open Positions */}
-      <section id="positions">
-        <PositionsTable positions={positions} />
-      </section>
-
-      {/* 4. Near-Miss Watchlist (only shown when there are active entries) */}
-      <NearMissWatchlist />
-
-      {/* 5. News Intelligence */}
-      <NewsIntelligence />
-
-      {/* 6. Agent Decisions */}
-      <section id="agent">
-        <AgentReasoningLog entries={agentLog} />
-      </section>
-
-      {/* 7. Performance Analytics */}
-      <PerformanceAnalytics />
-
-      {/* 8. Pattern Library + Trade History */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <section id="patterns">
-          <PatternLibraryCard patterns={patterns} />
-        </section>
-        <section id="trades">
-          <TradeHistoryTable orders={trades} />
-        </section>
-      </div>
-
-      {/* P&L chart (supplementary) */}
-      <PnLChart data={portfolioHistory} />
-
-      {/* 9. Weekly Reports */}
-      <section id="reports">
-        <WeeklyReportsCard reports={reports} />
-      </section>
+      {/* ── Tabbed content ── */}
+      <DashboardTabs
+        portfolio={
+          <div className="space-y-6">
+            <PortfolioOverviewCard data={portfolio} />
+            <PositionsTable positions={positions} />
+            <PnLChart data={portfolioHistory} />
+          </div>
+        }
+        intelligence={
+          <div className="space-y-6">
+            <NearMissWatchlist />
+            <NewsIntelligence />
+          </div>
+        }
+        analytics={
+          <div className="space-y-6">
+            <PerformanceAnalytics />
+            <AgentReasoningLog entries={agentLog} />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <PatternLibraryCard patterns={patterns} />
+              <TradeHistoryTable orders={trades} />
+            </div>
+          </div>
+        }
+        reports={
+          <WeeklyReportsCard reports={reports} />
+        }
+      />
     </div>
   )
 }
