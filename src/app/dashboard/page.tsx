@@ -12,6 +12,8 @@ import { GenerateReportButton } from '@/components/dashboard/GenerateReportButto
 import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
+import { RejectedSetups } from '@/components/dashboard/RejectedSetups'
+import { DailySummary } from '@/components/dashboard/DailySummary'
 // ADAPTED: LogoutButton kept — auth layer requires it; absent in App.jsx (abstract Header)
 import { LogoutButton } from '@/components/dashboard/LogoutButton'
 import { DashboardTabs } from '@/components/dashboard/DashboardTabs'
@@ -83,6 +85,7 @@ export default async function DashboardPage() {
           subtitle="Everything currently allocated, profit-to-target progress, and how today is moving the book."
         />
         <PositionsTable positions={positions} />
+        <DailySummary portfolio={portfolio} />
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           <div className="xl:col-span-2">
             {/* ADAPTED: data prop (PortfolioHistory) — App.jsx references <PortfolioChart /> stub */}
@@ -105,7 +108,7 @@ export default async function DashboardPage() {
           <NearMissWatchlist />
           <NewsIntelligence />
         </div>
-        {/* ADAPTED: RejectedSetups — referenced in App.jsx but component not yet built */}
+        <RejectedSetups />
       </div>
     ),
     analytics: (
