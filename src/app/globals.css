@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -12,10 +13,29 @@
   --accent-hover: #168b57;
 }
 
-body {
-  background-color: var(--background);
-  color: var(--text-primary);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+@theme {
+  --color-ink:      #0A0A0F;
+  --color-surface:  #12121A;
+  --color-surface2: #171723;
+  --color-border:   #1E1E2E;
+  --color-border2:  #272739;
+  --color-text:     #E2E8F0;
+  --color-muted:    #64748B;
+  --color-mute2:    #94A3B8;
+  --color-green:    #00B386;
+  --color-green2:   #00D49A;
+  --color-red:      #FF4444;
+  --color-red2:     #FF6B6B;
+  --color-purple:   #7C3AED;
+  --color-purple2:  #A78BFA;
+  --color-amber:    #F59E0B;
+  --color-blue:     #3B82F6;
+}
+
+html, body {
+  background-color: #0A0A0F;
+  color: #E2E8F0;
+  font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -35,50 +55,6 @@ body {
   border-radius: 99px;
 }
 
-@theme {
-  /* Colors */
-  --color-ink:      #0A0A0F;
-  --color-surface:  #12121A;
-  --color-surface2: #1A1A26;
-  --color-border:   #1E1E2E;
-  --color-border2:  #2A2A3E;
-  --color-green:    #00B386;
-  --color-red:      #FF4444;
-  --color-amber:    #F59E0B;
-  --color-blue:     #3B82F6;
-  --color-purple:   #7C3AED;
-  --color-purple2:  #A78BFA;
-  --color-muted:    #64748B;
-  --color-mute2:    #475569;
-  --color-text:     #E2E8F0;
-
-  /* Background utilities */
-  --background-ink:      #0A0A0F;
-  --background-surface:  #12121A;
-  --background-surface2: #1A1A26;
-}
-
-/* Background utilities */
-.bg-ink      { background-color: #0A0A0F; }
-.bg-surface  { background-color: #12121A; }
-.bg-surface2 { background-color: #1A1A26; }
-
-/* Text utilities */
-.text-green  { color: #00B386; }
-.text-red    { color: #FF4444; }
-.text-amber  { color: #F59E0B; }
-.text-blue   { color: #3B82F6; }
-.text-purple { color: #7C3AED; }
-.text-purple2{ color: #A78BFA; }
-.text-muted  { color: #64748B; }
-.text-mute2  { color: #475569; }
-.text-text   { color: #E2E8F0; }
-
-/* Border utilities */
-.border-border  { border-color: #1E1E2E; }
-.border-border2 { border-color: #2A2A3E; }
-
-/* Dot live animation */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
@@ -87,7 +63,6 @@ body {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
-/* Tabular numbers */
 .num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";

@@ -89,7 +89,7 @@ function detectKind(entry: AgentLogEntry): EntryKind {
   if (/trend_zgt05|trend_quality_fail/i.test(err))              return 'TREND_REJECTED'
   if (/setup\s*gate|no[\s_-]?setup/i.test(err))                return 'NO_SETUP'
   if (/exit_rules_check|exit_rules_skip/i.test(err))           return 'HOLDING'
-  if (entry.decision.action === 'HOLD')                         return 'HOLDING'
+  if (entry.decision.action === 'HOLD')                         return 'NO_SETUP'
   return 'OTHER'
 }
 
