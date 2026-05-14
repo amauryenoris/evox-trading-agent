@@ -2,37 +2,70 @@
 
 import { useEffect, useState } from 'react'
 import type { NearMissEntry } from '@/lib/types'
+import { Card, Badge, Dot, Progress } from './ui'
+
+const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
+
+// ADAPTED: toSignalCode maps full signal_type to ui.tsx SignalBadge shortcodes
+const toSignalCode = (s?: string | null) => s === 'MEAN_REVERSION' ? 'MR' : s
+
+const blockedLabel: Record<string, string> = {
+  max_positions: 'Portfolio full',
+  max_buys:      'Daily limit reached',
+  outranked:     'Outranked',
+}
 
 interface Props {
   initialEntries?: NearMissEntry[]
 }
 
-const regimeBadge: Record<string, string> = {
-  RANGING:        'text-green-400 bg-green-400/10 border-green-400/20',
-  TRANSITION:     'text-amber-400 bg-amber-400/10 border-amber-400/20',
-  HIGH_VOLATILITY:'text-red-400 bg-red-400/10 border-red-400/20',
-  TRENDING:       'text-blue-400 bg-blue-400/10 border-blue-400/20',
-}
+function NearMissItemCard({ entry }: { entry: NearMissEntry }) {
+  const zscore    = entry.latest_zscore ?? entry.initial_zscore
+  const zTarget   = entry.effective_threshold
+  const regime    = entry.latest_regime ?? entry.initial_regime
+  const isBlocked = entry.near_miss_type === 'BLOCKED_BY_GATE'
 
-const signalTypeBadge: Record<string, { cls: string; label: string }> = {
-  MEAN_REVERSION: { cls: 'text-blue-400 bg-blue-500/10 border-blue-500/20',   label: 'MR'    },
-  TREND_PULLBACK: { cls: 'text-green-400 bg-green-500/10 border-green-500/20', label: 'TREND' },
-  TREND_ZLE05:    { cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20', label: 'ZLE05' },
-  EMA_RECLAIM:    { cls: 'text-purple-400 bg-purple-500/10 border-purple-500/20', label: 'EMA'  },
-}
+  // progress: how far z has moved toward threshold (both negative, so higher ratio = closer)
+  const progress  = zTarget !== 0 ? Math.min(Math.max(zscore / zTarget, 0), 1) : 0
+  const isReady   = zscore <= zTarget
+  const statusTone = isBlocked ? 'amber' : isReady ? 'green' : 'amber'
+  const statusLabel = isBlocked
+    ? (blockedLabel[entry.blocked_reason ?? ''] ?? 'Blocked')
+    : isReady ? 'READY' : 'WATCHING'
 
-const blockedReasonLabel: Record<string, string> = {
-  max_positions: 'Portfolio full',
-  max_buys:      'Daily limit reached',
-}
+  const note = isBlocked
+    ? `Signal threshold met · blocked by: ${blockedLabel[entry.blocked_reason ?? ''] ?? entry.blocked_reason ?? '—'}`
+    : `${Math.abs(entry.gap_to_threshold).toFixed(3)} gap to entry · ${entry.monitoring_cycles} cycles`
 
-function SignalBadge({ type }: { type?: string | null }) {
-  if (!type || !(type in signalTypeBadge)) return <span className="text-slate-600">—</span>
-  const { cls, label } = signalTypeBadge[type]
   return (
-    <span className={`px-1.5 py-0.5 rounded-full border text-xs ${cls}`}>
-      {label}
-    </span>
+    <div className="bg-surface2 border border-border rounded-lg p-3.5 hover:border-border2 transition">
+      {/* top row */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2.5">
+          <span className="font-semibold tracking-tight">{entry.symbol}</span>
+          <Badge tone={statusTone} size="xs">{statusLabel}</Badge>
+          {/* ADAPTED: SignalBadge replaces custom regime badge */}
+          <span className="text-[10.5px] text-muted">· {regime}</span>
+        </div>
+        {/* ADAPTED: "day X" → "cycle X" because monitoring_cycles ≠ days */}
+        <div className="text-[10.5px] text-muted num">cycle {entry.monitoring_cycles}</div>
+      </div>
+
+      {/* z-score progress bar */}
+      <div className="flex items-center gap-3 mb-2">
+        <div className="num text-[12px] tabular text-mute2">
+          z <span className="text-text font-medium">{zscore.toFixed(2)}</span>
+          <span className="opacity-60"> / {zTarget.toFixed(2)}</span>
+        </div>
+        <div className="flex-1">
+          <Progress value={progress} tone={isReady ? 'green' : 'amber'} />
+        </div>
+        <div className="num text-[11px] text-mute2 w-10 text-right">{Math.round(progress * 100)}%</div>
+      </div>
+
+      {/* note */}
+      <div className="text-[11px] text-muted">{note}</div>
+    </div>
   )
 }
 
@@ -60,124 +93,42 @@ export function NearMissWatchlist({ initialEntries = [] }: Props) {
   const blockedGate = entries.filter((e) => e.near_miss_type === 'BLOCKED_BY_GATE')
 
   return (
-    <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4 space-y-5">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-        Near-Miss Watchlist ({entries.length} active)
-      </h2>
+    <Card
+      padded={false}
+      label={`Near-Miss Watchlist · ${entries.length} tracked`}
+      right={<button className="text-[11px] text-muted hover:text-text">Configure thresholds</button>}
+    >
+      <div className="px-5 pb-5 space-y-4">
+        {entries.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted">No near-miss signals</p>
+        )}
 
-      {entries.length === 0 && (
-        <p className="text-slate-600 text-sm py-4 text-center">No near-miss signals</p>
-      )}
-
-      {/* ── GROUP 1: Close to entry ── */}
-      {nearMiss.length > 0 && (
-        <div>
-          <p className="text-xs text-slate-500 font-medium mb-2 uppercase tracking-wider">
-            Close to entry ({nearMiss.length})
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-600 border-b border-[#1e1e2e]">
-                  <th className="text-left pb-2 pr-3 font-medium">Symbol</th>
-                  <th className="text-left pb-2 pr-3 font-medium">Type</th>
-                  <th className="text-left pb-2 pr-3 font-medium w-32">Progress</th>
-                  <th className="text-right pb-2 pr-3 font-medium">Z-Score</th>
-                  <th className="text-left pb-2 pr-3 font-medium">Regime</th>
-                  <th className="text-right pb-2 pr-3 font-medium">Cycles</th>
-                  <th className="text-right pb-2 font-medium">News Boost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e1e2e]">
-                {nearMiss.map((entry) => {
-                  const zscore  = entry.latest_zscore ?? entry.initial_zscore
-                  const fillPct = Math.min(Math.max((zscore / -1.5) * 100, 0), 100)
-                  const isReady = zscore <= entry.effective_threshold
-                  const isClose = entry.gap_to_threshold < 0.10
-                  const regime  = entry.latest_regime ?? entry.initial_regime
-
-                  const rowClass   = isReady ? 'bg-green-400/5' : isClose ? 'bg-amber-400/5' : ''
-                  const zscoreColor = isReady ? 'text-green-400' : isClose ? 'text-amber-400' : 'text-slate-500'
-
-                  return (
-                    <tr key={entry.id} className={`${rowClass} transition-colors`}>
-                      <td className="py-2 pr-3 font-semibold text-slate-200">{entry.symbol}</td>
-                      <td className="py-2 pr-3"><SignalBadge type={entry.signal_type} /></td>
-                      <td className="py-2 pr-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 bg-[#0a0a0f] rounded-full h-1.5 w-24">
-                            <div
-                              className={`h-1.5 rounded-full ${fillPct >= 90 ? 'bg-green-500' : 'bg-blue-500'}`}
-                              style={{ width: `${fillPct}%` }}
-                            />
-                          </div>
-                          <span className="text-slate-600 w-8 text-right">{fillPct.toFixed(0)}%</span>
-                        </div>
-                      </td>
-                      <td className={`py-2 pr-3 text-right font-mono ${zscoreColor}`}>{zscore.toFixed(3)}</td>
-                      <td className="py-2 pr-3">
-                        <span className={`px-1.5 py-0.5 rounded-full border text-xs ${regimeBadge[regime] ?? 'text-slate-400 border-slate-600/20'}`}>
-                          {regime}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-right text-slate-400">{entry.monitoring_cycles}</td>
-                      <td className="py-2 text-right">
-                        {entry.news_boost_applied !== 0 ? (
-                          <span className="text-green-400">+{entry.news_boost_applied.toFixed(2)}</span>
-                        ) : (
-                          <span className="text-slate-600">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {/* Group 1: approaching entry */}
+        {nearMiss.length > 0 && (
+          <div>
+            {blockedGate.length > 0 && (
+              <div className="text-[10px] tracking-[0.16em] uppercase text-muted mb-2">
+                Close to entry ({nearMiss.length})
+              </div>
+            )}
+            <div className="space-y-2.5">
+              {nearMiss.map((e) => <NearMissItemCard key={e.id} entry={e} />)}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── GROUP 2: Ready but blocked ── */}
-      {blockedGate.length > 0 && (
-        <div>
-          <p className="text-xs text-amber-500/80 font-medium mb-2 uppercase tracking-wider">
-            Ready but blocked ({blockedGate.length})
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-600 border-b border-[#1e1e2e]">
-                  <th className="text-left pb-2 pr-3 font-medium">Symbol</th>
-                  <th className="text-left pb-2 pr-3 font-medium">Type</th>
-                  <th className="text-right pb-2 pr-3 font-medium">Z-Score</th>
-                  <th className="text-right pb-2 pr-3 font-medium">Threshold</th>
-                  <th className="text-left pb-2 font-medium">Blocked by</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e1e2e]">
-                {blockedGate.map((entry) => {
-                  const zscore = entry.latest_zscore ?? entry.initial_zscore
-                  return (
-                    <tr key={entry.id} className="bg-amber-400/5 transition-colors">
-                      <td className="py-2 pr-3 font-semibold text-slate-200">{entry.symbol}</td>
-                      <td className="py-2 pr-3"><SignalBadge type={entry.signal_type} /></td>
-                      <td className="py-2 pr-3 text-right font-mono text-green-400">{zscore.toFixed(3)}</td>
-                      <td className="py-2 pr-3 text-right font-mono text-slate-500">
-                        {entry.effective_threshold.toFixed(2)}
-                      </td>
-                      <td className="py-2">
-                        <span className="px-1.5 py-0.5 rounded border text-xs text-amber-400 bg-amber-500/10 border-amber-500/20">
-                          {blockedReasonLabel[entry.blocked_reason ?? ''] ?? entry.blocked_reason ?? '—'}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {/* Group 2: ready but blocked */}
+        {blockedGate.length > 0 && (
+          <div>
+            <div className="text-[10px] tracking-[0.16em] uppercase text-amber mb-2">
+              Ready but blocked ({blockedGate.length})
+            </div>
+            <div className="space-y-2.5">
+              {blockedGate.map((e) => <NearMissItemCard key={e.id} entry={e} />)}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </Card>
   )
 }

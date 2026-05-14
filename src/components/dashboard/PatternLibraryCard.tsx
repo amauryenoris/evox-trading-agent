@@ -1,86 +1,78 @@
 import type { TradingPattern } from '@/lib/types'
+import { Card, Badge, SignalBadge, Progress } from './ui'
 
-const SIGNAL_BADGE: Record<string, { label: string; className: string }> = {
-  MEAN_REVERSION: { label: 'MR',    className: 'bg-blue-900/60 text-blue-300 border border-blue-700' },
-  TREND_PULLBACK: { label: 'TP',    className: 'bg-green-900/60 text-green-300 border border-green-700' },
-  TREND_ZLE05:    { label: 'ZLE',   className: 'bg-yellow-900/60 text-yellow-300 border border-yellow-700' },
-  TREND:          { label: 'TREND', className: 'bg-green-900/60 text-green-300 border border-green-700' },
-  EMA_RECLAIM:    { label: 'EMA',   className: 'bg-purple-900/60 text-purple-300 border border-purple-700' },
-}
+const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
 
 interface Props {
   patterns: TradingPattern[]
 }
 
 export function PatternLibraryCard({ patterns }: Props) {
+  // ADAPTED: filter sampleCount>=1 and slice 10 — same logic as before
   const ranked = patterns.filter((p) => p.sampleCount >= 1).slice(0, 10)
 
   return (
-    <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-        Pattern Library ({patterns.length} patterns)
-      </h2>
+    <Card padded={false}>
+      <div className="flex items-baseline justify-between px-6 pt-5 pb-3">
+        <h3 className="text-sm font-semibold tracking-[0.18em] uppercase">Pattern Library</h3>
+        <span className="text-[11px] text-muted">{patterns.length} discovered</span>
+      </div>
+
       {ranked.length === 0 ? (
-        <p className="text-slate-600 text-sm py-6 text-center">
+        <p className="px-6 pb-8 text-center text-sm text-muted">
           Patterns appear after 1+ completed trades
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="divide-y divide-border max-h-[640px] overflow-y-auto">
           {ranked.map((p) => {
-            const winPct = (p.winRate * 100).toFixed(0)
-            const avgPnL = p.avgPnLPct >= 0 ? `+${p.avgPnLPct.toFixed(1)}%` : `${p.avgPnLPct.toFixed(1)}%`
-            const isGood = p.winRate >= 0.6
-            const symbol = p.id.split('_').pop() ?? ''
-            const signalBadge = p.signalType ? SIGNAL_BADGE[p.signalType] : null
+            // ADAPTED: symbol extracted from id (no symbol field in TradingPattern)
+            const symbol   = p.id.split('_').pop() ?? ''
+            // ADAPTED: winRate is 0–1 decimal — multiplied by 100 for display
+            const winPct   = p.winRate * 100
+            const isGood   = winPct >= 50
+            // ADAPTED: avgPnLPct is a percent value (e.g. 2.3 for 2.3%)
+            const avgLabel = p.avgPnLPct >= 0 ? '+' + p.avgPnLPct.toFixed(1) + '%' : p.avgPnLPct.toFixed(1) + '%'
+
             return (
-              <div key={p.id} className="border border-[#1e1e2e] rounded-lg p-3">
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div key={p.id} className="px-6 py-4 hover:bg-white/[0.015] transition">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2.5">
                     {symbol && (
-                      <span className="text-xs font-bold text-slate-100 bg-[#1e1e2e] px-1.5 py-0.5 rounded shrink-0">
-                        {symbol}
-                      </span>
+                      <span className="font-semibold">{symbol}</span>
                     )}
-                    <p className="text-xs text-slate-300 leading-relaxed">{p.description}</p>
+                    {/* ADAPTED: signalType passed directly — MEAN_REVERSION shows as neutral fallback in SignalBadge; acceptable since ui.tsx cannot be modified */}
+                    <SignalBadge signal={p.signalType} />
+                    <Badge tone={p.action === 'BUY' ? 'green' : 'red'} size="xs">{p.action}</Badge>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {signalBadge && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-mono font-medium ${signalBadge.className}`}>
-                        {signalBadge.label}
-                      </span>
-                    )}
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                        p.action === 'BUY'
-                          ? 'bg-green-400/10 text-green-400'
-                          : 'bg-red-400/10 text-red-400'
-                      }`}
-                    >
-                      {p.action}
-                    </span>
-                  </div>
+                  <span className="text-[10.5px] text-muted num">{p.sampleCount} samples</span>
                 </div>
+
+                <div className="text-[12.5px] text-mute2 leading-relaxed line-clamp-3 mb-3">
+                  {p.description}
+                </div>
+
                 <div className="flex items-center gap-3">
-                  {/* Win rate bar */}
-                  <div className="flex-1 bg-[#0a0a0f] rounded-full h-1.5">
-                    <div
-                      className={`h-1.5 rounded-full ${isGood ? 'bg-green-500' : 'bg-amber-500'}`}
-                      style={{ width: `${winPct}%` }}
-                    />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-[10px] tracking-wider uppercase text-muted mb-1">
+                      <span>Win Rate</span>
+                      <span className={cx('num', isGood ? 'text-green' : 'text-red')}>
+                        {winPct.toFixed(0)}%
+                      </span>
+                    </div>
+                    <Progress value={winPct / 100} tone={isGood ? 'green' : 'red'} />
                   </div>
-                  <span className={`text-xs font-medium ${isGood ? 'text-green-400' : 'text-amber-400'}`}>
-                    {winPct}% win
-                  </span>
-                  <span className={`text-xs ${p.avgPnLPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {avgPnL} avg
-                  </span>
-                  <span className="text-xs text-slate-600">{p.sampleCount} trades</span>
+                  <div className="w-20 text-right">
+                    <div className="text-[10px] uppercase tracking-wider text-muted">Avg P&L</div>
+                    <div className={cx('num text-sm font-semibold', p.avgPnLPct >= 0 ? 'text-green' : 'text-red')}>
+                      {avgLabel}
+                    </div>
+                  </div>
                 </div>
               </div>
             )
           })}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

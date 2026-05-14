@@ -1,53 +1,74 @@
-import { formatCurrency, formatDate } from '@/lib/utils'
 import type { AlpacaOrder } from '@/lib/types'
+import { Card, Badge } from './ui'
+
+const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
 
 interface Props {
   orders: AlpacaOrder[]
 }
 
 export function TradeHistoryTable({ orders }: Props) {
+  const items = orders.slice(0, 20)
+
   return (
-    <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Trade History</h2>
-      {orders.length === 0 ? (
-        <p className="text-slate-600 text-sm py-6 text-center">No executed trades yet</p>
+    <Card padded={false}>
+      <div className="flex items-baseline justify-between px-6 pt-5 pb-3">
+        <h3 className="text-sm font-semibold tracking-[0.18em] uppercase">Trade History</h3>
+        {/* ADAPTED: Export CSV is decorative — no handler implemented */}
+        <button className="text-[11px] text-muted hover:text-text">Export CSV</button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="px-6 pb-8 text-center text-sm text-muted">No executed trades yet</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-h-[640px] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="text-slate-500 border-b border-[#1e1e2e]">
-                <th className="text-left pb-2">Symbol</th>
-                <th className="text-left pb-2">Side</th>
-                <th className="text-right pb-2">Qty</th>
-                <th className="text-right pb-2">Avg Price</th>
-                <th className="text-right pb-2">Total</th>
-                <th className="text-right pb-2">Date</th>
+            <thead className="sticky top-0 bg-surface z-10">
+              <tr className="text-[10px] tracking-[0.14em] uppercase text-muted border-b border-border">
+                <th className="text-left font-medium py-2.5 px-6">Time</th>
+                <th className="text-left font-medium py-2.5 pr-4">Symbol</th>
+                <th className="text-left font-medium py-2.5 pr-4">Side</th>
+                <th className="text-right font-medium py-2.5 pr-4">Qty</th>
+                <th className="text-right font-medium py-2.5 pr-4">Price</th>
+                <th className="text-right font-medium py-2.5 pr-6">Total</th>
+                {/* ADAPTED: P&L column absent — AlpacaOrder has no pnlUSD; omitted */}
               </tr>
             </thead>
-            <tbody>
-              {orders.slice(0, 20).map((o) => {
+            <tbody className="divide-y divide-border">
+              {items.map((o) => {
                 const price = o.filled_avg_price ? parseFloat(o.filled_avg_price) : 0
-                const qty = parseFloat(o.filled_qty)
+                const qty   = parseFloat(o.filled_qty)
                 const total = price * qty
+                const isBuy = o.side === 'buy'
+                const date  = o.filled_at
+                  ? new Date(o.filled_at).toLocaleString('en-US', {
+                      month: 'short', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                      timeZone: 'America/New_York',
+                    })
+                  : '—'
+
                 return (
-                  <tr key={o.id} className="border-b border-[#1e1e2e] last:border-0">
-                    <td className="py-2.5 font-medium text-slate-100">{o.symbol}</td>
-                    <td className="py-2.5">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          o.side === 'buy'
-                            ? 'bg-green-400/10 text-green-400'
-                            : 'bg-red-400/10 text-red-400'
-                        }`}
-                      >
-                        {o.side.toUpperCase()}
-                      </span>
+                  <tr key={o.id} className="hover:bg-white/[0.015] transition">
+                    <td className="py-3 px-6 num text-[11px] text-muted whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <span className={cx(
+                          'w-1 h-6 rounded-full opacity-80',
+                          isBuy ? 'bg-green' : 'bg-red',
+                        )} />
+                        {date}
+                      </div>
                     </td>
-                    <td className="py-2.5 text-right text-slate-300">{qty}</td>
-                    <td className="py-2.5 text-right text-slate-300">{formatCurrency(price)}</td>
-                    <td className="py-2.5 text-right text-slate-300">{formatCurrency(total)}</td>
-                    <td className="py-2.5 text-right text-slate-500 text-xs">
-                      {o.filled_at ? formatDate(o.filled_at) : '—'}
+                    <td className="py-3 pr-4 font-semibold">{o.symbol}</td>
+                    <td className="py-3 pr-4">
+                      <Badge tone={isBuy ? 'green' : 'red'} size="xs">
+                        {o.side.toUpperCase()}
+                      </Badge>
+                    </td>
+                    <td className="py-3 pr-4 text-right num text-mute2">{qty}</td>
+                    <td className="py-3 pr-4 text-right num">${price.toFixed(2)}</td>
+                    <td className="py-3 pr-6 text-right num text-mute2">
+                      ${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 )
@@ -56,6 +77,6 @@ export function TradeHistoryTable({ orders }: Props) {
           </table>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

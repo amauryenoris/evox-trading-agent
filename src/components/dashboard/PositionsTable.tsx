@@ -1,112 +1,128 @@
-import { formatCurrency, formatPct } from '@/lib/utils'
 import type { PositionDisplay } from '@/lib/types'
+import { Card, SignalBadge, Dot, Progress } from './ui'
 
-interface Props {
-  positions: PositionDisplay[]
-}
+const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
 
-const SIGNAL_BADGE: Record<string, { label: string; className: string }> = {
-  MEAN_REVERSION: { label: 'MR',    className: 'bg-blue-900/60 text-blue-300 border border-blue-700' },
-  TREND_PULLBACK: { label: 'TP',    className: 'bg-green-900/60 text-green-300 border border-green-700' },
-  TREND_ZLE05:    { label: 'ZLE',   className: 'bg-yellow-900/60 text-yellow-300 border border-yellow-700' },
-  TREND:          { label: 'TREND', className: 'bg-green-900/60 text-green-300 border border-green-700' },
-  EMA_RECLAIM:    { label: 'EMA',   className: 'bg-purple-900/60 text-purple-300 border border-purple-700' },
-}
-
+// ADAPTED: mirrors claude-agent.ts ACTIVATION_PCT — same values, kept in sync manually
 const ACTIVATION_PCT: Record<string, number> = {
   MEAN_REVERSION: 0.05,
   TREND:          0.06,
   TREND_PULLBACK: 0.06,
   TREND_ZLE05:    0.03,
   EMA_RECLAIM:    0.04,
-  default:        0.05,
 }
 
-function TrailingStatus({ p }: { p: PositionDisplay }) {
-  const trailingStop = p.trailingStop ?? null
+// ADAPTED: MEAN_REVERSION → 'MR' because ui.tsx SignalBadge map uses shortcodes
+const toSignalCode = (s?: string | null) => s === 'MEAN_REVERSION' ? 'MR' : s
 
-  if (p.trailingActivated && trailingStop !== null) {
-    const distPct = ((p.currentPrice - trailingStop) / p.currentPrice) * 100
-    return (
-      <span className="text-green-400">
-        Trail: {formatCurrency(trailingStop)}{' '}
-        <span className="text-green-600">(-{distPct.toFixed(2)}% to stop)</span>
-      </span>
-    )
-  }
+const fmtPct = (n: number, dp = 2) => (n >= 0 ? '+' : '') + n.toFixed(dp) + '%'
+const greenRed = (n: number) => n >= 0 ? 'text-green' : 'text-red'
 
-  if (p.trailingActivated && trailingStop === null) {
-    return <span className="text-yellow-400">Trail: calculating...</span>
-  }
+interface Props {
+  positions: PositionDisplay[]
+}
 
-  const signal = p.signalType ?? 'default'
-  const activationPct = (ACTIVATION_PCT[signal] ?? ACTIVATION_PCT['default']) * 100
+function PositionCard({ p }: { p: PositionDisplay }) {
+  const up = p.unrealizedPnL >= 0
+  const profitTarget = 10
+  const progress = Math.max(0, Math.min(1, p.unrealizedPnLPct / profitTarget))
+
+  const trailActive = !!(p.trailingActivated && p.trailingStop != null)
+  const trailCalc   = !!(p.trailingActivated && p.trailingStop == null)
+  const trailDistPct = trailActive && p.trailingStop != null
+    ? ((p.currentPrice - p.trailingStop) / p.currentPrice) * 100
+    : null
+
+  const signal       = p.signalType ?? 'default'
+  const activatePct  = ((ACTIVATION_PCT[signal] ?? 0.05) * 100).toFixed(0)
+  const pnlSign      = p.unrealizedPnL >= 0 ? '+' : ''
+
   return (
-    <span className="text-slate-500">
-      Trail: inactive{' '}
-      <span className="text-slate-600">(activates at +{activationPct.toFixed(0)}%)</span>
-    </span>
+    <div className="group relative bg-surface border border-border rounded-xl p-5 hover:border-border2 transition">
+
+      {/* top row: symbol + signal + pnl */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="text-lg font-bold tracking-tight">{p.symbol}</div>
+          <SignalBadge signal={toSignalCode(p.signalType)} />
+        </div>
+        <div className="text-right">
+          <div className={cx('num text-2xl font-semibold leading-none', greenRed(p.unrealizedPnL))}>
+            {fmtPct(p.unrealizedPnLPct, 2)}
+          </div>
+          <div className={cx('num text-[11px] mt-1 font-medium', greenRed(p.unrealizedPnL))}>
+            {pnlSign}${Math.abs(p.unrealizedPnL).toFixed(2)}
+          </div>
+        </div>
+      </div>
+
+      {/* mid row: price + entry info */}
+      {/* ADAPTED: sparkline absent from PositionDisplay — omitted */}
+      <div className="flex items-end justify-between mb-4">
+        <div>
+          <div className="num text-[17px] font-semibold leading-none">${p.currentPrice.toFixed(2)}</div>
+          <div className="text-[10.5px] text-muted mt-1.5 num">
+            entry ${p.avgEntryPrice.toFixed(2)} · {p.qty} sh
+            {p.daysOpen != null && <span className="text-mute2"> · {p.daysOpen}d open</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* trailing stop status */}
+      <div className="flex items-center gap-2 mb-3.5">
+        {trailActive && p.trailingStop != null ? (
+          <>
+            <Dot tone="green" pulse />
+            <span className="text-[11px] num text-green">
+              Trail ${p.trailingStop.toFixed(2)}
+              <span className="opacity-80"> · {trailDistPct?.toFixed(2)}% to stop</span>
+            </span>
+          </>
+        ) : trailCalc ? (
+          <>
+            <Dot tone="amber" />
+            <span className="text-[11px] text-amber">Trail calculating...</span>
+          </>
+        ) : (
+          <>
+            <Dot tone="muted" />
+            <span className="text-[11px] text-muted">Trail inactive · activates at +{activatePct}%</span>
+          </>
+        )}
+      </div>
+
+      {/* progress to profit target */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] tracking-wider text-muted uppercase">Profit Target</span>
+          <span className="text-[10px] num text-mute2">{p.unrealizedPnLPct.toFixed(1)}% / {profitTarget}%</span>
+        </div>
+        <Progress value={progress} tone={up ? 'green' : 'red'} />
+      </div>
+
+      <div className="absolute inset-x-5 -bottom-px h-px bg-gradient-to-r from-transparent via-border2 to-transparent opacity-0 group-hover:opacity-100 transition" />
+    </div>
   )
 }
 
 export function PositionsTable({ positions }: Props) {
   return (
-    <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-        Open Positions ({positions.length})
-      </h2>
+    <Card padded={false}>
+      <div className="flex items-baseline justify-between px-6 pt-5 pb-4">
+        <div className="flex items-baseline gap-3">
+          <h3 className="text-sm font-semibold tracking-[0.18em] uppercase text-text">Open Positions</h3>
+          {/* ADAPTED: positionsMax not available as prop — showing count only */}
+          <span className="text-[11px] text-muted">{positions.length} active</span>
+        </div>
+        <button className="text-[11px] text-muted hover:text-text tracking-wide">View all →</button>
+      </div>
       {positions.length === 0 ? (
-        <p className="text-slate-600 text-sm py-6 text-center">No open positions</p>
+        <p className="px-6 pb-8 text-center text-sm text-muted">No open positions</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-slate-500 border-b border-[#1e1e2e]">
-                <th className="text-left pb-2">Symbol</th>
-                <th className="text-right pb-2">Shares</th>
-                <th className="text-right pb-2">Avg Cost</th>
-                <th className="text-right pb-2">Price</th>
-                <th className="text-right pb-2">Value</th>
-                <th className="text-right pb-2">P&L</th>
-                <th className="text-right pb-2">Today</th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => {
-                const badge = p.signalType ? SIGNAL_BADGE[p.signalType] : null
-                return (
-                  <tr key={p.symbol} className="border-b border-[#1e1e2e] last:border-0">
-                    <td className="py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-100">{p.symbol}</span>
-                        {badge && (
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] mt-0.5">
-                        <TrailingStatus p={p} />
-                      </div>
-                    </td>
-                    <td className="py-2.5 text-right text-slate-300">{p.qty}</td>
-                    <td className="py-2.5 text-right text-slate-300">{formatCurrency(p.avgEntryPrice)}</td>
-                    <td className="py-2.5 text-right text-slate-300">{formatCurrency(p.currentPrice)}</td>
-                    <td className="py-2.5 text-right text-slate-300">{formatCurrency(p.marketValue)}</td>
-                    <td className={`py-2.5 text-right font-medium ${p.unrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {formatCurrency(p.unrealizedPnL)}{' '}
-                      <span className="text-xs">({formatPct(p.unrealizedPnLPct)})</span>
-                    </td>
-                    <td className={`py-2.5 text-right text-xs ${p.changeToday >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {formatPct(p.changeToday)}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="px-6 pb-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {positions.map((p) => <PositionCard key={p.symbol} p={p} />)}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

@@ -1,19 +1,73 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { Card, Badge, SignalBadge, Progress } from './ui'
+import type { BadgeTone } from './ui'
 
-interface TradeSummary {
-  index: number
-  pnlUSD: number
-  outcome: string
-  symbol: string
+const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
+
+const fmtPct  = (n: number, dp = 2) => (n >= 0 ? '+' : '') + n.toFixed(dp) + '%'
+const fmtUSD  = (n: number, dp = 2) =>
+  (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+const fmtSgn  = (n: number, dp = 2) =>
+  (n >= 0 ? '+' : '') + n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+
+// ─── Local sub-components (not in ui.tsx — defined inline per Components.jsx) ───
+
+function Metric({ label, value, tone = 'neutral', sub }: {
+  label: string; value: string; tone?: 'green' | 'red' | 'neutral'; sub?: string
+}) {
+  const tones = { green: 'text-green', red: 'text-red', neutral: 'text-text' }
+  return (
+    <div className="px-5 py-4">
+      <div className="text-[10px] tracking-[0.14em] uppercase text-muted">{label}</div>
+      <div className={cx('num text-xl font-semibold mt-1', tones[tone])}>{value}</div>
+      {sub && <div className="text-[10.5px] text-muted mt-1">{sub}</div>}
+    </div>
+  )
 }
 
-interface SignalTypeStat {
+function KVMini({ label, value, tone = 'neutral' }: {
+  label: string; value: string; tone?: 'green' | 'red' | 'amber' | 'neutral'
+}) {
+  const tones = { green: 'text-green', red: 'text-red', amber: 'text-amber', neutral: 'text-text' }
+  return (
+    <div>
+      <div className="text-[9.5px] uppercase tracking-wider text-muted">{label}</div>
+      <div className={cx('num font-semibold mt-0.5', tones[tone])}>{value}</div>
+    </div>
+  )
+}
+
+// ADAPTED: data is last10Trades[].pnlUSD array, not a flat number[] — extracted inline
+function Waterfall({ data }: { data: number[] }) {
+  const W = 380, H = 70
+  const max = Math.max(...data.map(Math.abs), 1)
+  const mid = H / 2
+  const bw  = W / data.length
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full block">
+      <line x1="0" x2={W} y1={mid} y2={mid} stroke="#1E1E2E" />
+      {data.map((v, i) => {
+        const h    = (Math.abs(v) / max) * (H / 2 - 4)
+        const x    = i * bw + bw * 0.18
+        const w    = bw * 0.64
+        const y    = v >= 0 ? mid - h : mid
+        const fill = v >= 0 ? '#00B386' : '#FF4444'
+        return <rect key={i} x={x} y={y} width={w} height={h} fill={fill} opacity="0.85" rx="2" />
+      })}
+    </svg>
+  )
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface SignalStat {
   count: number
   winRate: number
   avgPnlPct: number
+  profitFactor: number
+  expectancy: number
 }
 
 interface PerformanceData {
@@ -27,266 +81,236 @@ interface PerformanceData {
   avgLossUSD: number
   avgLossPct: number
   expectancy: number
-  last10Trades: TradeSummary[]
+  last10Trades: { index: number; pnlUSD: number; outcome: string; symbol: string }[]
   evoxYtdPct: number
   spyYtdPct: number | null
-  signalTypeBreakdown?: { meanReversion: SignalTypeStat; trend: SignalTypeStat; emaReclaim: SignalTypeStat }
+  signalTypeBreakdown?: {
+    meanReversion: SignalStat
+    trend: SignalStat
+    emaReclaim: SignalStat
+  }
+  best?: { symbol: string; pct: number; pnl: number } | null
+  worst?: { symbol: string; pct: number; pnl: number } | null
   since: string | null
 }
 
-type ViewMode = 'new_system' | 'all_time'
-
+type Scope = 'NEW' | 'ALL'
 const NEW_SYSTEM_DATE = '2026-04-20'
 
-function formatPct(v: number): string {
-  const sign = v >= 0 ? '+' : ''
-  return `${sign}${v.toFixed(2)}%`
-}
-
-function formatUSD(v: number): string {
-  const sign = v >= 0 ? '+' : ''
-  return `${sign}$${Math.abs(v).toFixed(2)}`
-}
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function PerformanceAnalytics() {
-  const [data, setData] = useState<PerformanceData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<ViewMode>('new_system')
+  const [data, setData]       = useState<PerformanceData | null>(null)
+  const [error, setError]     = useState<string | null>(null)
+  const [scope, setScope]     = useState<Scope>('NEW')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
     setData(null)
-    const url = view === 'new_system'
-      ? `/api/performance?since=${NEW_SYSTEM_DATE}`
-      : '/api/performance'
+    const url = scope === 'NEW' ? `/api/performance?since=${NEW_SYSTEM_DATE}` : '/api/performance'
     fetch(url)
       .then((r) => r.json())
       .then((d: PerformanceData) => { setData(d); setLoading(false) })
       .catch((e) => { setError(String(e)); setLoading(false) })
-  }, [view])
+  }, [scope])
 
   if (error) {
     return (
-      <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-        <p className="text-xs text-red-400">Performance data unavailable: {error}</p>
-      </div>
+      <Card>
+        <p className="text-xs text-red">Performance data unavailable: {error}</p>
+      </Card>
     )
   }
 
   if (loading || !data) {
     return (
-      <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-        <div className="animate-pulse space-y-3">
+      <Card padded={false}>
+        <div className="animate-pulse px-6 py-5 space-y-3">
           <div className="grid grid-cols-5 gap-3">
-            {[...Array(5)].map((_, i) => <div key={i} className="h-16 bg-slate-800 rounded-lg" />)}
+            {[...Array(5)].map((_, i) => <div key={i} className="h-16 bg-white/[0.04] rounded-lg" />)}
           </div>
-          <div className="h-24 bg-slate-800 rounded-lg" />
+          <div className="h-24 bg-white/[0.04] rounded-lg" />
         </div>
-      </div>
+      </Card>
     )
   }
 
-  const winRateColor = data.winRate >= 50 ? 'text-green-400' : 'text-red-400'
-  const pfColor = data.profitFactor >= 1.5 ? 'text-green-400' : 'text-red-400'
-  const expectancyColor = data.expectancy >= 0 ? 'text-green-400' : 'text-red-400'
+  const g = data
+
+  // Build sigs array from signalTypeBreakdown
+  type SigColor = 'blue' | 'green' | 'amber' | 'purple'
+  interface Sig {
+    type: string; label: string; trades: number
+    winRate: number; avgPnL: number; profitFactor: number; expectancy: number; color: SigColor
+  }
+  const sigs: Sig[] = data.signalTypeBreakdown ? [
+    {
+      type: 'MR', label: 'Mean Reversion',
+      trades: data.signalTypeBreakdown.meanReversion.count,
+      winRate: data.signalTypeBreakdown.meanReversion.winRate,
+      avgPnL: data.signalTypeBreakdown.meanReversion.avgPnlPct,
+      profitFactor: data.signalTypeBreakdown.meanReversion.profitFactor,
+      expectancy: data.signalTypeBreakdown.meanReversion.expectancy,
+      color: 'blue' as SigColor,
+    },
+    {
+      type: 'TREND_PULLBACK', label: 'Trend',
+      trades: data.signalTypeBreakdown.trend.count,
+      winRate: data.signalTypeBreakdown.trend.winRate,
+      avgPnL: data.signalTypeBreakdown.trend.avgPnlPct,
+      profitFactor: data.signalTypeBreakdown.trend.profitFactor,
+      expectancy: data.signalTypeBreakdown.trend.expectancy,
+      color: 'green' as SigColor,
+    },
+    ...(data.signalTypeBreakdown.emaReclaim.count > 0 ? [{
+      type: 'EMA_RECLAIM', label: 'EMA Reclaim',
+      trades: data.signalTypeBreakdown.emaReclaim.count,
+      winRate: data.signalTypeBreakdown.emaReclaim.winRate,
+      avgPnL: data.signalTypeBreakdown.emaReclaim.avgPnlPct,
+      profitFactor: data.signalTypeBreakdown.emaReclaim.profitFactor,
+      expectancy: data.signalTypeBreakdown.emaReclaim.expectancy,
+      color: 'purple' as SigColor,
+    }] : []),
+  ].filter((s) => s.trades > 0) : []
+
+  const last10Pnl = g.last10Trades.map((t) => t.pnlUSD)
+  const wrc = g.winRate >= 50 ? 'green' : 'red' as const
+  const pfc = g.profitFactor >= 2 ? 'green' : 'neutral' as const
+  const exc = g.expectancy >= 0 ? 'green' : 'red' as const
 
   return (
-    <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4 space-y-4">
-      {/* Header + toggle */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-          Performance Analytics
-        </h2>
-        <div className="flex items-center bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-0.5 gap-0.5">
-          <button
-            onClick={() => setView('new_system')}
-            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-              view === 'new_system'
-                ? 'bg-indigo-600 text-white'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            New System (Apr 20+)
+    <Card padded={false}>
+      {/* Header + scope toggle */}
+      <div className="flex items-baseline justify-between px-6 pt-5 pb-3">
+        <div className="flex items-baseline gap-3">
+          <h3 className="text-sm font-semibold tracking-[0.18em] uppercase">Performance Analytics</h3>
+          <span className="text-[11px] text-muted">{g.total} trades · win {g.winRate.toFixed(0)}%</span>
+        </div>
+        <div className="flex p-0.5 rounded-md bg-white/[0.04] border border-border text-[10.5px]">
+          <button onClick={() => setScope('NEW')}
+            className={cx('px-2.5 py-1 rounded transition tracking-wide',
+              scope === 'NEW' ? 'bg-purple text-white' : 'text-muted hover:text-text')}>
+            New System · Apr 20+
           </button>
-          <button
-            onClick={() => setView('all_time')}
-            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-              view === 'all_time'
-                ? 'bg-indigo-600 text-white'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
+          <button onClick={() => setScope('ALL')}
+            className={cx('px-2.5 py-1 rounded transition tracking-wide',
+              scope === 'ALL' ? 'bg-purple text-white' : 'text-muted hover:text-text')}>
             All Time
           </button>
         </div>
       </div>
 
-      {/* Row 1 — 5 metric cards */}
-      <div className="grid grid-cols-5 gap-3">
-        {/* Win Rate */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Win Rate</p>
-          <p className={`text-lg font-bold ${winRateColor}`}>{data.winRate.toFixed(0)}%</p>
-          <p className={`text-xs ${winRateColor}`}>
-            {data.winRate >= 50 ? 'target met' : 'target 50%'}
-          </p>
-        </div>
-
-        {/* Profit Factor */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Profit Factor</p>
-          <p className={`text-lg font-bold ${pfColor}`}>
-            {data.profitFactor >= 999 ? '∞' : data.profitFactor.toFixed(2)}
-          </p>
-          <p className={`text-xs ${pfColor}`}>
-            {data.profitFactor >= 1.5 ? 'target met' : 'target 1.5'}
-          </p>
-        </div>
-
-        {/* Avg Win */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Avg Win</p>
-          <p className="text-lg font-bold text-green-400">{formatUSD(data.avgWinUSD)}</p>
-          <p className="text-xs text-green-400">{formatPct(data.avgWinPct)}</p>
-        </div>
-
-        {/* Avg Loss */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Avg Loss</p>
-          <p className="text-lg font-bold text-red-400">{formatUSD(data.avgLossUSD)}</p>
-          <p className="text-xs text-red-400">{formatPct(data.avgLossPct)}</p>
-        </div>
-
-        {/* Expectancy */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Expectancy</p>
-          <p className={`text-lg font-bold ${expectancyColor}`}>{formatPct(data.expectancy)}</p>
-          <p className={`text-xs ${expectancyColor}`}>per trade</p>
-        </div>
+      {/* Global metrics row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-border border-y border-border">
+        <Metric label="Win Rate"      value={g.winRate.toFixed(0) + '%'}                     tone={wrc} sub="target 50%" />
+        <Metric label="Profit Factor" value={g.profitFactor >= 999 ? '∞' : g.profitFactor.toFixed(2)} tone={pfc} sub="2.0+ target" />
+        <Metric label="Avg Win"       value={fmtUSD(g.avgWinUSD)}  tone="green" sub={'+' + g.avgWinPct.toFixed(2) + '%'} />
+        <Metric label="Avg Loss"      value={fmtUSD(g.avgLossUSD)} tone="red"   sub={g.avgLossPct.toFixed(2) + '%'} />
+        <Metric label="Expectancy"    value={fmtSgn(g.expectancy) + '%'} tone={exc} sub="per trade" />
       </div>
 
-      {/* Row 2 — Charts */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* P&L per trade bar chart — last 10 */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-2">P&L per Trade (last {data.last10Trades.length})</p>
-          {data.last10Trades.length > 0 ? (
-            <ResponsiveContainer width="100%" height={80}>
-              <BarChart data={data.last10Trades} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                <Bar dataKey="pnlUSD" radius={[2, 2, 0, 0]}>
-                  {data.last10Trades.map((entry, i) => (
-                    <Cell key={i} fill={entry.pnlUSD >= 0 ? '#4ade80' : '#f87171'} />
-                  ))}
-                </Bar>
-                <Tooltip
-                  contentStyle={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: 6, fontSize: 11 }}
-                  formatter={(v) => [formatUSD(Number(v)), 'P&L']}
-                  labelFormatter={(_, payload) => payload?.[0]?.payload?.symbol ?? ''}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 py-6">
+        {/* Left: signal breakdown */}
+        <div>
+          <div className="text-[10px] tracking-[0.14em] uppercase text-muted mb-3">By Signal Type</div>
+          {sigs.length === 0 ? (
+            <p className="text-sm text-muted">No closed trades yet</p>
           ) : (
-            <p className="text-xs text-slate-600 text-center py-4">No closed trades yet</p>
+            <div className="space-y-2.5">
+              {sigs.map((s) => (
+                <div key={s.type} className="bg-surface2 border border-border rounded-lg p-3.5">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <SignalBadge signal={s.type} />
+                      <span className="text-[11px] text-mute2">{s.label}</span>
+                    </div>
+                    <span className="text-[10.5px] text-muted num">{s.trades} trades</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 text-[11px]">
+                    <KVMini label="Win"   value={s.winRate.toFixed(0) + '%'}       tone={s.winRate >= 50 ? 'green' : 'red'} />
+                    <KVMini label="Avg P&L" value={fmtPct(s.avgPnL, 2)}           tone={s.avgPnL >= 0 ? 'green' : 'red'} />
+                    <KVMini label="PF"    value={s.profitFactor >= 999 ? '∞' : s.profitFactor.toFixed(2)} tone={s.profitFactor >= 1.5 ? 'green' : s.profitFactor >= 1 ? 'amber' : 'red'} />
+                    <KVMini label="Exp"   value={fmtPct(s.expectancy, 2)}         tone={s.expectancy >= 0 ? 'green' : 'red'} />
+                  </div>
+                  <div className="mt-2.5">
+                    <Progress value={s.winRate / 100} tone={s.color as 'green' | 'blue' | 'purple'} />
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* EVOX vs S&P 500 YTD */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-3">YTD Performance</p>
-          <div className="flex items-center justify-around">
-            <div className="text-center">
-              <p className="text-xs text-slate-500 mb-1">EVOX</p>
-              <p className={`text-xl font-bold ${data.evoxYtdPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {formatPct(data.evoxYtdPct)}
-              </p>
-            </div>
-            <div className="w-px h-8 bg-slate-700" />
-            <div className="text-center">
-              <p className="text-xs text-slate-500 mb-1">S&P 500</p>
-              {data.spyYtdPct !== null ? (
-                <p className={`text-xl font-bold ${data.spyYtdPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {formatPct(data.spyYtdPct)}
-                </p>
+        {/* Right: best/worst + waterfall + YTD */}
+        <div className="space-y-4">
+          {/* Best / Worst */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-surface2 border border-border rounded-lg p-3.5">
+              <div className="text-[10px] tracking-[0.14em] uppercase text-muted mb-1">Best Trade</div>
+              {data.best ? (
+                <>
+                  <div className="text-sm font-semibold">{data.best.symbol}</div>
+                  <div className="num text-green text-lg mt-0.5">{fmtPct(data.best.pct, 1)}</div>
+                  <div className="num text-[11px] text-mute2">{fmtUSD(data.best.pnl)} realized</div>
+                </>
               ) : (
-                <p className="text-xl font-bold text-slate-600">—</p>
+                <div className="text-sm text-muted mt-2">—</div>
+              )}
+            </div>
+            <div className="bg-surface2 border border-border rounded-lg p-3.5">
+              <div className="text-[10px] tracking-[0.14em] uppercase text-muted mb-1">Worst Trade</div>
+              {data.worst ? (
+                <>
+                  <div className="text-sm font-semibold">{data.worst.symbol}</div>
+                  <div className="num text-red text-lg mt-0.5">{fmtPct(data.worst.pct, 1)}</div>
+                  <div className="num text-[11px] text-mute2">{fmtUSD(data.worst.pnl)} realized</div>
+                </>
+              ) : (
+                <div className="text-sm text-muted mt-2">—</div>
               )}
             </div>
           </div>
+
+          {/* Waterfall — last 10 P&L */}
+          <div className="bg-surface2 border border-border rounded-lg p-3.5">
+            <div className="text-[10px] tracking-[0.14em] uppercase text-muted mb-3">
+              P&L Per Trade · last {last10Pnl.length}
+            </div>
+            {last10Pnl.length > 0
+              ? <Waterfall data={last10Pnl} />
+              : <p className="text-xs text-muted text-center py-4">No closed trades yet</p>
+            }
+          </div>
+
+          {/* YTD vs Benchmark */}
+          <div className="bg-surface2 border border-border rounded-lg p-3.5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] tracking-[0.14em] uppercase text-muted">YTD vs Benchmark</div>
+              <div className="text-[10.5px] text-muted">2026 YTD</div>
+            </div>
+            <div className="flex items-end gap-4">
+              <div className="flex-1">
+                <div className="text-[11px] text-muted">PAQUITO</div>
+                <div className={cx('num text-2xl font-semibold', g.evoxYtdPct >= 0 ? 'text-green' : 'text-red')}>
+                  {fmtPct(g.evoxYtdPct)}
+                </div>
+              </div>
+              <div className="w-px self-stretch bg-border" />
+              <div className="flex-1">
+                <div className="text-[11px] text-muted">S&P 500</div>
+                {g.spyYtdPct !== null ? (
+                  <div className={cx('num text-2xl font-semibold', g.spyYtdPct >= 0 ? 'text-green' : 'text-red')}>
+                    {fmtPct(g.spyYtdPct)}
+                  </div>
+                ) : (
+                  <div className="num text-2xl font-semibold text-mute2">—</div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Signal Type Breakdown */}
-      {data.signalTypeBreakdown && (data.signalTypeBreakdown.meanReversion.count > 0 || data.signalTypeBreakdown.trend.count > 0 || data.signalTypeBreakdown.emaReclaim.count > 0) && (
-        <div className={`grid gap-3 ${data.signalTypeBreakdown.emaReclaim.count > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-          <div className="bg-[#0d0d14] border border-blue-500/10 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Mean Reversion</span>
-              <span className="text-xs text-slate-500">{data.signalTypeBreakdown.meanReversion.count} trades</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Win rate</span>
-              <span className={data.signalTypeBreakdown.meanReversion.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
-                {data.signalTypeBreakdown.meanReversion.winRate.toFixed(0)}%
-              </span>
-            </div>
-            <div className="flex justify-between text-xs mt-1">
-              <span className="text-slate-500">Avg P&L</span>
-              <span className={data.signalTypeBreakdown.meanReversion.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}>
-                {formatPct(data.signalTypeBreakdown.meanReversion.avgPnlPct)}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-[#0d0d14] border border-green-500/10 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">Trend</span>
-              <span className="text-xs text-slate-500">{data.signalTypeBreakdown.trend.count} trades</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Win rate</span>
-              <span className={data.signalTypeBreakdown.trend.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
-                {data.signalTypeBreakdown.trend.winRate.toFixed(0)}%
-              </span>
-            </div>
-            <div className="flex justify-between text-xs mt-1">
-              <span className="text-slate-500">Avg P&L</span>
-              <span className={data.signalTypeBreakdown.trend.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}>
-                {formatPct(data.signalTypeBreakdown.trend.avgPnlPct)}
-              </span>
-            </div>
-          </div>
-
-          {data.signalTypeBreakdown.emaReclaim.count > 0 && (
-            <div className="bg-[#0d0d14] border border-violet-500/10 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 font-medium">EMA Reclaim</span>
-                <span className="text-xs text-slate-500">{data.signalTypeBreakdown.emaReclaim.count} trades</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Win rate</span>
-                <span className={data.signalTypeBreakdown.emaReclaim.winRate >= 50 ? 'text-green-400' : 'text-red-400'}>
-                  {data.signalTypeBreakdown.emaReclaim.winRate.toFixed(0)}%
-                </span>
-              </div>
-              <div className="flex justify-between text-xs mt-1">
-                <span className="text-slate-500">Avg P&L</span>
-                <span className={data.signalTypeBreakdown.emaReclaim.avgPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}>
-                  {formatPct(data.signalTypeBreakdown.emaReclaim.avgPnlPct)}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Footer */}
-      <p className="text-xs text-slate-600">
-        {view === 'new_system'
-          ? `New system (Apr 20+) — ${data.total} closed trade${data.total !== 1 ? 's' : ''}`
-          : `All time — ${data.total} closed trade${data.total !== 1 ? 's' : ''}`
-        }
-      </p>
-    </div>
+    </Card>
   )
 }

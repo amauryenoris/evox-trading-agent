@@ -28,6 +28,9 @@ export async function GET() {
         trailingStop: ctx?.trailingStop ?? null,
         highSinceEntry: ctx?.highSinceEntry ?? null,
         buyPrice: ctx?.buyPrice ?? parseFloat(p.avg_entry_price),
+        daysOpen: ctx?.buyTimestamp
+          ? Math.floor((Date.now() - new Date(ctx.buyTimestamp).getTime()) / 86_400_000)
+          : null,
       }
     })
     return NextResponse.json(display)

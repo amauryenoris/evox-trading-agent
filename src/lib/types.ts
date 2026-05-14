@@ -286,6 +286,7 @@ export interface PositionDisplay {
   trailingStop?: number | null
   highSinceEntry?: number | null
   buyPrice?: number
+  daysOpen?: number | null
 }
 
 export interface NewsEvent {
