@@ -12,9 +12,12 @@ import { GenerateReportButton } from '@/components/dashboard/GenerateReportButto
 import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
+// ADAPTED: LogoutButton kept — auth layer requires it; absent in App.jsx (abstract Header)
 import { LogoutButton } from '@/components/dashboard/LogoutButton'
 import { DashboardTabs } from '@/components/dashboard/DashboardTabs'
+// ADAPTED: SystemStatusBar (not SystemStatus) — Row 2 strip lives in SystemStatusBar.tsx
 import { SystemStatusBar } from '@/components/dashboard/SystemStatusBar'
+// ADAPTED: cookies forwarded so auth-protected API routes work server-side
 import { cookies } from 'next/headers'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
 import type { WeeklyReportRecord } from '@/lib/db'
@@ -29,11 +32,13 @@ const fmtUSD = (n: number, dp = 0) =>
     maximumFractionDigits: dp,
   })
 
+// ADAPTED: n * 100 — API returns decimal fractions (0.02 = 2%), not percentage points
 const fmtPct = (n: number, dp = 2) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dp) + '%'
 
 async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
   try {
     const base = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
+    // ADAPTED: cookie forwarding — App.jsx has no server fetch; needed for authenticated endpoints
     const cookieStore = await cookies()
     const cookieHeader = cookieStore.getAll().map(c => `${c.name}=${c.value}`).join('; ')
     const res = await fetch(`${base}${path}`, {
@@ -47,29 +52,6 @@ async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
-function ZoneTitle({
-  kicker,
-  title,
-  subtitle,
-}: {
-  kicker: string
-  title: string
-  subtitle?: string
-}) {
-  return (
-    <div className="mt-2 mb-1">
-      <div className="flex items-center gap-3 mb-1">
-        <span className="text-[10px] tracking-[0.22em] uppercase text-[#00B386] font-semibold">
-          {kicker}
-        </span>
-        <span className="h-px w-10 bg-[#00B386]/40" />
-      </div>
-      <h2 className="text-[22px] font-semibold tracking-tight text-slate-100">{title}</h2>
-      {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
-    </div>
-  )
-}
-
 export default async function DashboardPage() {
   const [portfolio, positions, agentLog, trades, patterns, reports, portfolioHistory] =
     await Promise.all([
@@ -79,15 +61,19 @@ export default async function DashboardPage() {
       fetchJSON<AlpacaOrder[]>('/api/trades', []),
       fetchJSON<TradingPattern[]>('/api/patterns', []),
       fetchJSON<WeeklyReportRecord[]>('/api/reports', []),
+      // ADAPTED: PortfolioHistory shape — not a flat PortfolioHistoryPoint[], matches PnLChart prop
       fetchJSON<PortfolioHistory | null>('/api/portfolio-history', null),
     ])
 
+  // ADAPTED: todayPnL / todayPnLPct — PortfolioSummary uses these names, not dayPnL / dayPnLPct
   const equity      = portfolio?.equity      ?? 0
   const todayPnL    = portfolio?.todayPnL    ?? 0
   const todayPnLPct = portfolio?.todayPnLPct ?? 0
   const totalPnL    = portfolio?.totalPnL    ?? 0
   const totalPnLPct = portfolio?.totalPnLPct ?? 0
 
+  // ADAPTED: tabs object fed to DashboardTabs — App.jsx uses client useState + separate Tab
+  // functions; here panels are server-rendered and switched by DashboardTabs client component
   const tabs = {
     portfolio: (
       <div className="space-y-5">
@@ -99,6 +85,7 @@ export default async function DashboardPage() {
         <PositionsTable positions={positions} />
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           <div className="xl:col-span-2">
+            {/* ADAPTED: data prop (PortfolioHistory) — App.jsx references <PortfolioChart /> stub */}
             <PnLChart data={portfolioHistory} />
           </div>
           <div>
@@ -118,6 +105,7 @@ export default async function DashboardPage() {
           <NearMissWatchlist />
           <NewsIntelligence />
         </div>
+        {/* ADAPTED: RejectedSetups — referenced in App.jsx but component not yet built */}
       </div>
     ),
     analytics: (
@@ -207,14 +195,14 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* Row 2: system status strip */}
+          {/* Row 2: system status strip — DashboardTabs sticky offset is top-[108px] (72px row1 + 36px row2) */}
           <div className="border-t border-[#1E1E2E]/60">
             <SystemStatusBar />
           </div>
         </div>
       </header>
 
-      {/* Tabbed content */}
+      {/* ADAPTED: DashboardTabs renders sticky TabBar at top-[108px] + switches server-rendered panels */}
       <DashboardTabs tabs={tabs} defaultTab="portfolio" />
 
       <footer className="max-w-[1480px] mx-auto px-6 lg:px-8 pt-10 pb-8 text-center">
@@ -224,6 +212,29 @@ export default async function DashboardPage() {
           <span className="h-px w-12 bg-[#1E1E2E]" />
         </div>
       </footer>
+    </div>
+  )
+}
+
+function ZoneTitle({
+  kicker,
+  title,
+  subtitle,
+}: {
+  kicker: string
+  title: string
+  subtitle?: string
+}) {
+  return (
+    <div className="mt-2 mb-1">
+      <div className="flex items-center gap-3 mb-1">
+        <span className="text-[10px] tracking-[0.22em] uppercase text-[#00B386] font-semibold">
+          {kicker}
+        </span>
+        <span className="h-px w-10 bg-[#00B386]/40" />
+      </div>
+      <h2 className="text-[22px] font-semibold tracking-tight text-slate-100">{title}</h2>
+      {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
     </div>
   )
 }

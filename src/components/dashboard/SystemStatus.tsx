@@ -1,182 +1,105 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+/**
+ * SystemStatusBar — thin metadata strip for header Row 2.
+ *
+ * Replaces the card-style <SystemStatus /> when placed inside the sticky
+ * header. Pass in the same shape your existing endpoint returns, or wire it
+ * up to your own data fetch.
+ */
 
-interface GateStatus {
-  status: 'open' | 'warning' | 'closed'
+import type { ReactNode } from 'react'
+
+type Props = {
+  mode?: string
+  regime?: string
+  zThreshold?: number
+  positionsUsed?: number
+  positionsMax?: number
+  buysToday?: number
+  buysMax?: number
+  liquidity?: string
+  liquidityOk?: boolean
+  marketState?: 'OPEN' | 'CLOSED' | 'PRE' | 'POST'
+  buyBudget?: number
+  lastRun?: string
+}
+
+const toneText: Record<string, string> = {
+  green:  'text-[#00B386]',
+  red:    'text-[#FF4444]',
+  amber:  'text-amber-400',
+  purple: 'text-[#A78BFA]',
+  blue:   'text-blue-400',
+  muted:  'text-slate-400',
+}
+
+function Item({
+  label,
+  value,
+  tone = 'muted',
+}: {
   label: string
-}
-
-interface SystemStatusData {
-  mode: 'LEARN' | 'STRICT'
-  marketRegime: string | null
-  zScoreThreshold: number
-  positionCount: number
-  maxPositions: number
-  lastRun: string | null
-  gates: {
-    hours: GateStatus
-    overtrading: GateStatus
-    positions: GateStatus
-  }
-  setupsDetected?: { meanReversion: number; trend: number }
-}
-
-const regimeColors: Record<string, string> = {
-  RANGING: 'text-green-400 bg-green-400/10 border-green-400/20',
-  TRENDING: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  TRANSITION: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
-  HIGH_VOLATILITY: 'text-red-400 bg-red-400/10 border-red-400/20',
-}
-
-const gateDotColors = {
-  open: 'bg-green-400',
-  warning: 'bg-amber-400',
-  closed: 'bg-red-400',
-}
-
-export function SystemStatus() {
-  const [data, setData] = useState<SystemStatusData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  async function fetchStatus() {
-    try {
-      const res = await fetch('/api/system-status')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json() as SystemStatusData
-      setData(json)
-      setError(null)
-    } catch (err) {
-      setError(String(err))
-    }
-  }
-
-  useEffect(() => {
-    fetchStatus()
-    const interval = setInterval(fetchStatus, 60_000)
-    return () => clearInterval(interval)
-  }, [])
-
-  if (error) {
-    return (
-      <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-        <p className="text-xs text-red-400">System status unavailable: {error}</p>
-      </div>
-    )
-  }
-
-  if (!data) {
-    return (
-      <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4">
-        <div className="animate-pulse flex gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="flex-1 h-16 bg-slate-800 rounded-lg" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  const positionColor =
-    data.positionCount >= 5 ? 'text-red-400' :
-    data.positionCount >= 4 ? 'text-amber-400' :
-    'text-green-400'
-
+  value: ReactNode
+  tone?: keyof typeof toneText
+}) {
   return (
-    <div className="bg-[#13131a] border border-[#1e1e2e] rounded-xl p-4 space-y-3">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-        System Status
-      </h2>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className="text-slate-500 tracking-wider uppercase">{label}</span>
+      <span className={`font-mono tabular-nums font-semibold ${toneText[tone] ?? 'text-slate-200'}`}>
+        {value}
+      </span>
+    </span>
+  )
+}
 
-      {/* Row 1 — 4 metric cards */}
-      <div className="grid grid-cols-4 gap-3">
-        {/* Mode */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Mode</p>
-          <p className={`text-sm font-bold ${data.mode === 'LEARN' ? 'text-green-400' : 'text-amber-400'}`}>
-            {data.mode}
-          </p>
-        </div>
+const Sep = ({ className = '' }: { className?: string }) => (
+  <span className={`text-[#272739] select-none ${className}`}>·</span>
+)
 
-        {/* Market Regime */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Market Regime</p>
-          {data.marketRegime ? (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${regimeColors[data.marketRegime] ?? 'text-slate-400 bg-slate-700/50 border-slate-600/20'}`}>
-              {data.marketRegime}
-            </span>
-          ) : (
-            <p className="text-sm text-slate-600">—</p>
-          )}
-        </div>
-
-        {/* Z-Score Threshold */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Z-Score Threshold</p>
-          <p className="text-sm font-bold text-slate-200">{data.zScoreThreshold.toFixed(2)}</p>
-        </div>
-
-        {/* Positions */}
-        <div className="bg-[#0d0d14] border border-[#1e1e2e] rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">Positions</p>
-          <p className={`text-sm font-bold ${positionColor}`}>
-            {data.positionCount} / {data.maxPositions}
-          </p>
-        </div>
-      </div>
-
-      {/* Row 2 — Gates status bar */}
-      <div className="flex items-center gap-4 bg-[#0d0d14] border border-[#1e1e2e] rounded-lg px-4 py-2.5">
-        <span className="text-xs text-slate-500 font-medium w-10">Gates</span>
-        <div className="flex items-center gap-6">
-          {/* Liquidity gate — static (no live data without running cycle) */}
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-slate-600 shrink-0" />
-            <span className="text-xs text-slate-500">Liquidity</span>
-          </div>
-
-          {/* Trading hours */}
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${gateDotColors[data.gates.hours.status]}`} />
-            <span className="text-xs text-slate-400">{data.gates.hours.label}</span>
-          </div>
-
-          {/* Overtrading */}
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${gateDotColors[data.gates.overtrading.status]}`} />
-            <span className="text-xs text-slate-400">{data.gates.overtrading.label}</span>
-          </div>
-
-          {/* Positions / portfolio */}
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${gateDotColors[data.gates.positions.status]}`} />
-            <span className="text-xs text-slate-400">{data.gates.positions.label}</span>
-          </div>
-        </div>
-
-        {data.lastRun && (
-          <span className="ml-auto text-xs text-slate-600">
-            Last run: {new Date(data.lastRun).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        )}
-      </div>
-
-      {/* Row 3 — Setups detected in last cycle */}
-      {data.setupsDetected && (data.setupsDetected.meanReversion > 0 || data.setupsDetected.trend > 0) && (
-        <div className="flex items-center gap-4 bg-[#0d0d14] border border-[#1e1e2e] rounded-lg px-4 py-2.5">
-          <span className="text-xs text-slate-500 font-medium w-16">Setups</span>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">MR</span>
-              <span className="text-xs text-slate-400">{data.setupsDetected.meanReversion}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">TREND</span>
-              <span className="text-xs text-slate-400">{data.setupsDetected.trend}</span>
-            </div>
-          </div>
-        </div>
+export function SystemStatusBar({
+  mode = 'LEARN',
+  regime = 'HIGH_VOLATILITY',
+  zThreshold = -1.30,
+  positionsUsed = 0,
+  positionsMax = 5,
+  buysToday = 0,
+  buysMax = 5,
+  liquidity = 'SIP',
+  liquidityOk = true,
+  marketState = 'CLOSED',
+  buyBudget,
+  lastRun,
+}: Props) {
+  return (
+    <div className="flex items-center flex-wrap gap-x-5 gap-y-1 py-2 text-[10.5px] overflow-x-auto">
+      <Item label="Mode"        value={mode}                                  tone="purple" />
+      <Sep />
+      <Item label="Regime"      value={regime}                                tone={regime.includes('HIGH') ? 'red' : 'amber'} />
+      <Sep />
+      <Item label="Z-Threshold" value={zThreshold.toFixed(2)}                 tone="amber" />
+      <Sep />
+      <Item label="Positions"   value={`${positionsUsed}/${positionsMax}`}    tone="green" />
+      <Sep />
+      <Item label="Buys Today"  value={`${buysToday}/${buysMax}`}             tone="muted" />
+      <Sep />
+      <Item label="Liquidity"   value={liquidity}                             tone={liquidityOk ? 'green' : 'red'} />
+      <Sep />
+      <Item label="Market"      value={marketState}                           tone={marketState === 'OPEN' ? 'green' : 'red'} />
+      {buyBudget != null && (
+        <>
+          <Sep />
+          <Item
+            label="Buy Budget"
+            value={'$' + buyBudget.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+            tone="muted"
+          />
+        </>
       )}
+      <Sep className="ml-auto" />
+      <span className="text-slate-500 font-mono tabular-nums">
+        Last run · <span className="text-slate-400">{lastRun ?? '—'}</span>
+      </span>
     </div>
   )
 }
