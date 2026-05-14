@@ -2,55 +2,77 @@
 
 import { useState, type ReactNode } from 'react'
 
-type Tab = 'portfolio' | 'intelligence' | 'analytics' | 'reports'
+const TABS = [
+  { id: 'portfolio',    label: 'Portfolio',    kicker: '01' },
+  { id: 'intelligence', label: 'Intelligence', kicker: '02' },
+  { id: 'analytics',    label: 'Analytics',    kicker: '03' },
+  { id: 'reports',      label: 'Reports',      kicker: '04' },
+] as const
 
-interface Props {
-  portfolio: ReactNode
-  intelligence: ReactNode
-  analytics: ReactNode
-  reports: ReactNode
-}
+type TabId = (typeof TABS)[number]['id']
 
-const TABS: { id: Tab; label: string; number: string }[] = [
-  { id: 'portfolio',    label: 'Portfolio',     number: '01' },
-  { id: 'intelligence', label: 'Intelligence',  number: '02' },
-  { id: 'analytics',   label: 'Analytics',     number: '03' },
-  { id: 'reports',     label: 'Reports',       number: '04' },
-]
-
-export function DashboardTabs({ portfolio, intelligence, analytics, reports }: Props) {
-  const [active, setActive] = useState<Tab>('portfolio')
-
-  const panels: Record<Tab, ReactNode> = { portfolio, intelligence, analytics, reports }
+export function DashboardTabs({
+  tabs,
+  defaultTab = 'portfolio',
+}: {
+  tabs: Record<TabId, ReactNode>
+  defaultTab?: TabId
+}) {
+  const [active, setActive] = useState<TabId>(defaultTab)
 
   return (
-    <div>
-      {/* Sticky tab bar */}
-      <div className="sticky top-0 z-20 bg-[#0a0a0f]/90 backdrop-blur-sm border-b border-[#1e1e2e] mb-6">
-        <div className="flex gap-0.5">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActive(tab.id)}
-              className={[
-                'flex items-center gap-1.5 px-5 py-3 text-sm font-medium transition-colors',
-                'border-b-2 -mb-px focus:outline-none',
-                active === tab.id
-                  ? 'border-indigo-500 text-slate-100'
-                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-600',
-              ].join(' ')}
-            >
-              <span className="text-[10px] text-slate-600 font-mono">{tab.number}</span>
-              {tab.label}
-            </button>
-          ))}
+    <>
+      {/* Tab bar — sticky below the sticky header (~108px tall) */}
+      <div className="sticky top-[108px] z-30 bg-[#0A0A0F]/85 backdrop-blur-xl border-b border-[#1E1E2E]">
+        <div className="max-w-[1480px] mx-auto px-6 lg:px-8">
+          <div
+            role="tablist"
+            aria-label="Dashboard sections"
+            className="flex items-stretch gap-1 -mb-px overflow-x-auto"
+          >
+            {TABS.map((t) => {
+              const isActive = active === t.id
+              return (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`panel-${t.id}`}
+                  id={`tab-${t.id}`}
+                  onClick={() => setActive(t.id)}
+                  className={[
+                    'relative px-4 lg:px-5 py-3.5 text-[12px] tracking-wide font-medium transition whitespace-nowrap',
+                    isActive ? 'text-white' : 'text-slate-500 hover:text-slate-200',
+                  ].join(' ')}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span className={`font-mono tabular-nums text-[10px] tracking-[0.18em] ${isActive ? 'text-[#00B386]' : 'text-slate-600'}`}>
+                      {t.kicker}
+                    </span>
+                    <span>{t.label}</span>
+                  </span>
+                  {isActive && (
+                    <span
+                      className="absolute left-2 right-2 -bottom-px h-[2px] bg-[#00B386] rounded-full"
+                      style={{ boxShadow: '0 0 8px rgba(0,179,134,0.6)' }}
+                    />
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
       {/* Active panel */}
-      <div className="space-y-6">
-        {panels[active]}
-      </div>
-    </div>
+      <main
+        id={`panel-${active}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${active}`}
+        className="max-w-[1480px] mx-auto px-6 lg:px-8 py-8"
+      >
+        {tabs[active]}
+      </main>
+    </>
   )
 }

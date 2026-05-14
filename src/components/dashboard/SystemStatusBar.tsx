@@ -21,21 +21,31 @@ interface SystemStatusData {
   }
 }
 
-const regimeColors: Record<string, string> = {
-  RANGING:         'text-green-400 bg-green-400/10 border-green-400/20',
-  TRENDING:        'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  TRANSITION:      'text-amber-400 bg-amber-400/10 border-amber-400/20',
-  HIGH_VOLATILITY: 'text-red-400 bg-red-400/10 border-red-400/20',
+const TONE: Record<string, string> = {
+  green:  'text-[#00B386]',
+  red:    'text-[#FF4444]',
+  amber:  'text-amber-400',
+  purple: 'text-[#A78BFA]',
+  blue:   'text-blue-400',
+  muted:  'text-slate-400',
 }
 
-const gateDotColors = {
-  open:    'bg-green-400',
-  warning: 'bg-amber-400',
-  closed:  'bg-red-400',
+function Item({ label, value, tone = 'muted' }: { label: string; value: string; tone?: keyof typeof TONE }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className="text-slate-500 tracking-wider uppercase">{label}</span>
+      <span className={`font-mono tabular-nums font-semibold ${TONE[tone] ?? 'text-slate-200'}`}>{value}</span>
+    </span>
+  )
 }
 
-function Divider() {
-  return <span className="w-px h-3.5 bg-[#1e1e2e] shrink-0" />
+const Sep = ({ className = '' }: { className?: string }) => (
+  <span className={`text-[#272739] select-none ${className}`}>·</span>
+)
+
+function GateDot({ status }: { status: 'open' | 'warning' | 'closed' }) {
+  const color = { open: 'bg-[#00B386]', warning: 'bg-amber-500', closed: 'bg-[#FF4444]' }[status]
+  return <span className={`inline-block w-1.5 h-1.5 rounded-full ${color}`} />
 }
 
 export function SystemStatusBar() {
@@ -48,7 +58,7 @@ export function SystemStatusBar() {
         if (!res.ok) return
         setData(await res.json() as SystemStatusData)
       } catch {
-        // silently skip — bar is non-critical
+        // non-critical — fail silently
       }
     }
     fetchStatus()
@@ -58,70 +68,49 @@ export function SystemStatusBar() {
 
   if (!data) {
     return (
-      <div className="flex items-center gap-3 animate-pulse">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-3 w-16 bg-slate-800 rounded" />
+      <div className="flex items-center gap-4 py-2 animate-pulse">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="h-2.5 w-14 bg-slate-800 rounded" />
         ))}
       </div>
     )
   }
 
-  const positionColor =
-    data.positionCount >= data.maxPositions ? 'text-red-400' :
-    data.positionCount >= data.maxPositions - 1 ? 'text-amber-400' :
-    'text-green-400'
+  const isHV = data.marketRegime?.includes('HIGH') || data.marketRegime?.includes('VOLATILITY')
+  const regimeTone: keyof typeof TONE = isHV ? 'red' : 'amber'
+  const marketOpen = data.gates.hours.status === 'open'
+  const lastRunLabel = data.lastRun
+    ? new Date(data.lastRun).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    : '—'
 
   return (
-    <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
-      {/* Mode */}
-      <span className={data.mode === 'LEARN' ? 'text-green-400 font-medium' : 'text-amber-400 font-medium'}>
-        {data.mode}
-      </span>
+    <div className="flex items-center flex-wrap gap-x-5 gap-y-1 py-2 text-[10.5px] overflow-x-auto">
+      <Item label="Mode"        value={data.mode}                                       tone="purple" />
+      <Sep />
+      <Item label="Regime"      value={data.marketRegime ?? '—'}                        tone={regimeTone} />
+      <Sep />
+      <Item label="Z-Threshold" value={data.zScoreThreshold.toFixed(2)}                 tone="amber" />
+      <Sep />
+      <Item label="Positions"   value={`${data.positionCount}/${data.maxPositions}`}    tone="green" />
+      <Sep />
 
-      <Divider />
-
-      {/* Market Regime */}
-      {data.marketRegime ? (
-        <span className={`px-1.5 py-0.5 rounded-full font-medium border text-[10px] ${regimeColors[data.marketRegime] ?? 'text-slate-400 bg-slate-700/50 border-slate-600/20'}`}>
-          {data.marketRegime}
+      {/* gate dots */}
+      <span className="inline-flex items-center gap-2">
+        <span className="text-slate-500 tracking-wider uppercase">Gates</span>
+        <span className="inline-flex items-center gap-1.5">
+          <GateDot status={data.gates.hours.status} />
+          <GateDot status={data.gates.overtrading.status} />
+          <GateDot status={data.gates.positions.status} />
         </span>
-      ) : (
-        <span>Regime —</span>
-      )}
-
-      <Divider />
-
-      {/* Z-Score threshold */}
-      <span>Z ≤ {data.zScoreThreshold.toFixed(2)}</span>
-
-      <Divider />
-
-      {/* Positions */}
-      <span>
-        Pos <span className={positionColor}>{data.positionCount}/{data.maxPositions}</span>
       </span>
+      <Sep />
 
-      <Divider />
+      <Item label="Market" value={marketOpen ? 'OPEN' : 'CLOSED'} tone={marketOpen ? 'green' : 'red'} />
 
-      {/* Gates */}
-      <div className="flex items-center gap-2">
-        {[data.gates.hours, data.gates.overtrading, data.gates.positions].map((gate, i) => (
-          <span key={i} title={gate.label} className="flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${gateDotColors[gate.status]}`} />
-          </span>
-        ))}
-        <span className="text-slate-600">gates</span>
-      </div>
-
-      {/* Last run */}
-      {data.lastRun && (
-        <>
-          <Divider />
-          <span className="text-slate-600">
-            Last run {new Date(data.lastRun).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </>
-      )}
+      <Sep className="ml-auto" />
+      <span className="text-slate-500 font-mono tabular-nums">
+        Last run · <span className="text-slate-400">{lastRunLabel}</span>
+      </span>
     </div>
   )
 }
