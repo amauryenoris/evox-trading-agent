@@ -6,10 +6,14 @@ on:
     - cron: "0 14-19 * * 1-5"
   workflow_dispatch: # Allow manual trigger from GitHub Actions tab
 
+concurrency:
+  group: trading-cycle
+  cancel-in-progress: false
+
 jobs:
   run-cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}

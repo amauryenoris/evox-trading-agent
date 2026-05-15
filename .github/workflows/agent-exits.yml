@@ -6,11 +6,15 @@ on:
     - cron: "0 19 * * 1-5"   # 3:00 PM ET
   workflow_dispatch:
 
+concurrency:
+  group: exit-check
+  cancel-in-progress: false
+
 jobs:
   exit-check:
     name: Exit Check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
