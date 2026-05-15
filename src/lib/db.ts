@@ -552,6 +552,31 @@ export async function getActiveNewsEvents(symbols: string[]): Promise<NewsEvent[
   return (data ?? []) as NewsEvent[]
 }
 
+export async function getRecentNormalizedHeadlines(hours: number): Promise<Set<string>> {
+  const db = getClient()
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  const { data } = await db
+    .from('news_events')
+    .select('headline_normalized')
+    .gt('created_at', since)
+  return new Set(
+    (data ?? [])
+      .map((r: { headline_normalized: string | null }) => r.headline_normalized)
+      .filter((v): v is string => Boolean(v))
+  )
+}
+
+export async function getRecentNewsClassifications(hours: number): Promise<NewsEvent[]> {
+  const db = getClient()
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  const { data, error } = await db
+    .from('news_events')
+    .select('scope, symbol, sentiment, impact, threshold_adjustment')
+    .gt('created_at', since)
+  if (error) throw new Error(`Failed to fetch recent news classifications: ${error.message}`)
+  return (data ?? []) as NewsEvent[]
+}
+
 // ── near_miss_watchlist ───────────────────────────────────────────────────────
 
 export async function insertNearMiss(

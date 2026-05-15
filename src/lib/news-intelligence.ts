@@ -1,10 +1,18 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getNewsForSymbols, getMacroNews } from './alpaca'
-import { saveNewsEvent } from './db'
+import { saveNewsEvent, getRecentNormalizedHeadlines, getRecentNewsClassifications } from './db'
 import type { ThresholdMap, NewsEvent } from './types'
 import { ZSCORE_ENTRY_THRESHOLD } from './config'
 
 const BASE_THRESHOLD = ZSCORE_ENTRY_THRESHOLD
+
+function normalizeHeadline(h: string): string {
+  return h
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+}
 const MAX_NEWS_PER_CYCLE = 10
 
 // Hard caps — symmetric ±0.15 around base threshold
@@ -159,18 +167,34 @@ export async function newsIntelligenceLayer(symbols: string[]): Promise<Threshol
       return buildDefaultMap(symbols)
     }
 
-    // Deduplicate by headline
+    // Cross-cycle dedup: fetch normalized headlines already processed in last 12h
+    const existingNormalized = await getRecentNormalizedHeadlines(12)
+
+    // Deduplicate within-cycle AND against DB
     const seen = new Set<string>()
     const unique = allArticles.filter((a) => {
-      const normalized = a.headline
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9 ]/g, '')
-        .replace(/\s+/g, ' ')
-      if (seen.has(normalized)) return false
+      const normalized = normalizeHeadline(a.headline)
+      if (seen.has(normalized) || existingNormalized.has(normalized)) return false
       seen.add(normalized)
       return true
     })
+
+    // If all articles are already in DB, rebuild thresholdMap from recent DB events
+    if (unique.length === 0) {
+      console.log('[NEWS] All articles already processed — rebuilding thresholdMap from DB')
+      const recentEvents = await getRecentNewsClassifications(12)
+      const asClassified: NewsClassification[] = recentEvents
+        .filter((e) => e.scope && e.sentiment && e.impact)
+        .map((e) => ({
+          scope: e.scope as 'MACRO' | 'SYMBOL',
+          symbol: e.symbol,
+          sentiment: e.sentiment as 'BULLISH' | 'BEARISH' | 'NEUTRAL',
+          impact: e.impact as 'HIGH' | 'MEDIUM' | 'LOW',
+          threshold_adjustment: e.threshold_adjustment,
+          reasoning: '',
+        }))
+      return buildThresholdMap(symbols, asClassified)
+    }
 
     // Limit to MAX_NEWS_PER_CYCLE
     const toProcess = unique.slice(0, MAX_NEWS_PER_CYCLE)
@@ -196,6 +220,7 @@ export async function newsIntelligenceLayer(symbols: string[]): Promise<Threshol
         impact: result.impact,
         threshold_adjustment: result.threshold_adjustment,
         headline: article.headline,
+        headline_normalized: normalizeHeadline(article.headline),
         reasoning: result.reasoning,
       }
       try {

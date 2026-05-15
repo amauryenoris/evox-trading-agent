@@ -298,6 +298,7 @@ export interface NewsEvent {
   impact: 'HIGH' | 'MEDIUM' | 'LOW'
   threshold_adjustment: number
   headline: string
+  headline_normalized?: string
   reasoning?: string
   expires_at?: string
   applied_to_symbols?: string[]
