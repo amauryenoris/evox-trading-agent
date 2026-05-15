@@ -1,2 +1,17 @@
 // Single source of truth for trading parameters
 export const ZSCORE_ENTRY_THRESHOLD = -1.3
+
+export const INSTRUMENT_BLACKLIST = new Set([
+  // Inverse ETFs — semiconductor
+  'SOXS', 'SOXX',
+  // Inverse ETFs — broad market
+  'SQQQ', 'SPXS', 'SDOW', 'SH', 'PSQ',
+  'DOG', 'RWM', 'MYY', 'SMDD',
+  // Inverse ETFs — sectors
+  'LABD', 'DRIP', 'DUST', 'JDST',
+  'ERY', 'FAZ', 'SKF', 'SDS',
+  // Leveraged long ETFs (distorted Kalman)
+  'TQQQ', 'SOXL', 'UPRO', 'SPXL',
+  'LABU', 'FNGU', 'TECL', 'BULZ',
+  'NAIL', 'WANT', 'WEBL',
+])

@@ -27,7 +27,7 @@ import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry,
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
-import { ZSCORE_ENTRY_THRESHOLD } from './config'
+import { ZSCORE_ENTRY_THRESHOLD, INSTRUMENT_BLACKLIST } from './config'
 import {
   detectNearMisses,
   updateWatchlist,
@@ -929,6 +929,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const slotsAvailable = maxPositions - openPositionsCount
 
   for (const symbol of watchlist) {
+    if (INSTRUMENT_BLACKLIST.has(symbol)) {
+      console.log(`[AGENT] ${symbol} skipped — blacklisted instrument`)
+      continue
+    }
+
     try {
       // Use pre-computed indicators from pre-pass (avoids double bar fetch)
       const indicators = indicatorsCache.get(symbol)
