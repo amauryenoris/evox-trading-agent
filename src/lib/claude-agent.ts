@@ -5,13 +5,14 @@ import {
   getPositions,
   getClock,
   getBars,
-  submitOrder,
+  submitLimitOrder,
   submitStopOrder,
   closePosition,
   getLatestSellOrder,
   getMarketMovers,
   getMacroNews,
   getNewsForSymbols,
+  getQuote,
   type AlpacaNewsArticle,
 } from './alpaca'
 import { calculateAllIndicators } from './indicators'
@@ -27,7 +28,7 @@ import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry,
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
 import { newsIntelligenceLayer } from './news-intelligence'
-import { ZSCORE_ENTRY_THRESHOLD, INSTRUMENT_BLACKLIST } from './config'
+import { ZSCORE_ENTRY_THRESHOLD, INSTRUMENT_BLACKLIST, MAX_SPREAD_BPS } from './config'
 import {
   detectNearMisses,
   updateWatchlist,
@@ -1273,21 +1274,38 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             if (!hasOpenPosition) {
               // Gate 1: liquidity
               console.log(`[LIQUIDITY] ${symbol} feed: delayed_sip, prevDayVolume: ${indicators.prevDayVolume.toLocaleString()}`)
+              // Gate 2: spread — fetch quote (used for gate check and limit order execution)
+              const quote = await getQuote(symbol)
+              if (quote) {
+                console.log(`[SPREAD] ${symbol}: ${quote.spreadBps}bps bid: $${quote.bid} ask: $${quote.ask} fresh: ${quote.fresh}`)
+              }
               if (!checkLiquidity(indicators.prevDayVolume)) {
                 error = `Liquidity gate: prev day volume ${indicators.prevDayVolume.toLocaleString()} < 1,000,000`
                 decision.action = 'HOLD'
               }
-              // Gate 2: trading hours
+              else if (!quote) {
+                error = 'Spread gate: no quote available'
+                decision.action = 'HOLD'
+              }
+              else if (!quote.fresh) {
+                error = 'Spread gate: stale quote'
+                decision.action = 'HOLD'
+              }
+              else if (quote.spreadBps > MAX_SPREAD_BPS) {
+                error = `Spread gate: ${quote.spreadBps}bps > ${MAX_SPREAD_BPS}bps max`
+                decision.action = 'HOLD'
+              }
+              // Gate 3: trading hours
               else if (!checkTradingHours()) {
                 error = 'Trading hours gate: outside 9:45am–3:30pm ET window'
                 decision.action = 'HOLD'
               }
-              // Gate 3: overtrading limit (uses in-cycle counter — already checked at loop top)
+              // Gate 4: overtrading limit (uses in-cycle counter — already checked at loop top)
               else if (buysToday >= maxBuysPerDay) {
                 error = `Overtrading gate: ${buysToday} BUYs already executed today`
                 decision.action = 'HOLD'
               }
-              // Gate 4: portfolio risk / drawdown / correlation
+              // Gate 5: portfolio risk / drawdown / correlation
               else {
                 const openContexts = await getAllOpenPositionContexts()
                 const { data: recentLog } = await import('./db').then(async (m) => {
@@ -1335,7 +1353,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                     } else {
                       // Normal mode — execute immediately
                       decision.action = 'BUY'
-                      const order = await submitOrder(symbol, qty, 'buy')
+                      const limitPrice = quote.ask
+                      const order = await submitLimitOrder(symbol, qty, 'buy', limitPrice)
+                      console.log(`[ORDER] ${symbol} limit IOC BUY @ $${limitPrice} status: ${order.status} spread: ${quote.spreadBps}bps`)
+                      if (order.status === 'canceled') {
+                        console.log(`[ORDER] ${symbol} IOC not filled — no liquidity at ask $${limitPrice}`)
+                      }
                       orderId = order.id
                       orderExecuted = true
                       decision.quantity = qty
@@ -1451,7 +1474,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         best.entry.error = 'Market closed — order queued but not executed'
         decisions.push(best.entry)
       } else {
-        const order = await submitOrder(best.symbol, best.qty, 'buy')
+        const rankingQuote = await getQuote(best.symbol)
+        if (!rankingQuote) throw new Error('Spread gate: no quote at ranking execution')
+        const order = await submitLimitOrder(best.symbol, best.qty, 'buy', rankingQuote.ask)
+        console.log(`[ORDER] ${best.symbol} limit IOC BUY @ $${rankingQuote.ask} status: ${order.status} spread: ${rankingQuote.spreadBps}bps`)
+        if (order.status === 'canceled') {
+          console.log(`[ORDER] ${best.symbol} IOC not filled — no liquidity at ask $${rankingQuote.ask}`)
+        }
         best.entry.orderId = order.id
         best.entry.orderExecuted = true
         best.decision.action = 'BUY'

@@ -6,6 +6,7 @@ import type {
   AlpacaPosition,
   ScreenerStock,
 } from './types'
+import { MAX_QUOTE_AGE_SECONDS } from './config'
 
 function getHeaders() {
   const key = process.env.ALPACA_API_KEY
@@ -99,6 +100,62 @@ export async function submitOrder(
     method: 'POST',
     body: JSON.stringify({ symbol, qty, side, type, time_in_force: timeInForce }),
   })
+}
+
+export async function submitLimitOrder(
+  symbol: string,
+  qty: number,
+  side: 'buy' | 'sell',
+  limitPrice: number,
+): Promise<AlpacaOrder> {
+  return alpacaFetch<AlpacaOrder>(`${baseUrl()}/v2/orders`, {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      qty,
+      side,
+      type: 'limit',
+      limit_price: Number(limitPrice.toFixed(2)),
+      time_in_force: 'ioc',
+    }),
+  })
+}
+
+interface AlpacaQuoteResponse {
+  quote?: {
+    bp?: number
+    ap?: number
+    t?: string
+  }
+}
+
+export async function getQuote(symbol: string): Promise<{
+  bid: number
+  ask: number
+  spread: number
+  spreadBps: number
+  fresh: boolean
+} | null> {
+  try {
+    const data = await alpacaFetch<AlpacaQuoteResponse>(
+      `${dataUrl()}/v2/stocks/${symbol}/quotes/latest?feed=iex`
+    )
+    const bid = data?.quote?.bp ?? 0
+    const ask = data?.quote?.ap ?? 0
+    if (!bid || !ask) return null
+
+    const quoteTime = data?.quote?.t ? new Date(data.quote.t).getTime() : null
+    const fresh =
+      quoteTime != null && (Date.now() - quoteTime) / 1000 < MAX_QUOTE_AGE_SECONDS
+
+    const spread = ask - bid
+    const mid = (bid + ask) / 2
+    const spreadBps = mid > 0 ? Math.round((spread / mid) * 10000) : 9999
+
+    return { bid, ask, spread, spreadBps, fresh }
+  } catch {
+    return null
+  }
 }
 
 export async function closePosition(symbol: string): Promise<AlpacaOrder> {

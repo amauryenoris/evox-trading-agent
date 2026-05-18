@@ -1,5 +1,7 @@
 // Single source of truth for trading parameters
 export const ZSCORE_ENTRY_THRESHOLD = -1.3
+export const MAX_SPREAD_BPS = 50
+export const MAX_QUOTE_AGE_SECONDS = 60
 
 export const INSTRUMENT_BLACKLIST = new Set([
   // Inverse ETFs — semiconductor
