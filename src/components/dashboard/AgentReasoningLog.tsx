@@ -57,7 +57,7 @@ function parseEntry(text: string | undefined | null): ParsedEntry {
   p.highSinceEntry = num(rx(/highSinceEntry\s*=\s*\$?(-?\d+\.?\d*)/i))
   p.trail          = num(rx(/trail(?:Price|Stop)?\s*[=:]?\s*\$?(-?\d+\.?\d*)/i))
   p.adx            = num(rx(/adx\s*[=:]?\s*(-?\d+\.?\d*)/i))
-  p.threshold      = num(rx(/(?:threshold|>)\s*(-?\d+\.?\d*)/i))
+  p.threshold      = num(rx(/z-score [0-9.-]+ > ([0-9.-]+)/))
   p.rsi            = num(rx(/rsi\s*[=:]?\s*(-?\d+\.?\d*)/i))
   p.macd           = num(rx(/macd\s*[=:]?\s*(-?\d+\.?\d*)/i))
   p.bb             = num(rx(/%?b\s*[=:]?\s*(-?\d+\.?\d*)/i))

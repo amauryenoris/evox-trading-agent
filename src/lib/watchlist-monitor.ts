@@ -54,8 +54,9 @@ export async function detectNearMisses(
     return
   }
 
-  // Standard near-miss: z-score between -1.0 and threshold, only in RANGING regime
-  if (zscore > NEAR_MISS_UPPER || zscore <= threshold || marketRegime !== 'RANGING') return
+  // Standard near-miss: z-score between -1.0 and threshold, in RANGING or TRANSITION regime
+  const nearMissRegimes = ['RANGING', 'TRANSITION']
+  if (zscore > NEAR_MISS_UPPER || zscore <= threshold || !nearMissRegimes.includes(marketRegime)) return
 
   // Check if there's already an ACTIVE entry for this symbol
   const existing = await getActiveNearMissForSymbol(symbol)
