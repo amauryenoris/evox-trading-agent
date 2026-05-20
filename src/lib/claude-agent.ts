@@ -929,9 +929,17 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   }> = []
   const slotsAvailable = maxPositions - openPositionsCount
 
+  // Skip open positions in the main loop — already handled by enforceExitRules()
+  const openPositionSymbols = new Set(positions.map((p) => p.symbol))
+
   for (const symbol of watchlist) {
     if (INSTRUMENT_BLACKLIST.has(symbol)) {
       console.log(`[AGENT] ${symbol} skipped — blacklisted instrument`)
+      continue
+    }
+
+    if (openPositionSymbols.has(symbol)) {
+      console.log(`[AGENT] ${symbol} skipped — open position, handled by enforceExitRules`)
       continue
     }
 
