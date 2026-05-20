@@ -271,7 +271,8 @@ export async function getNewsForSymbols(
     url.searchParams.set('sort', 'desc')
     const res = await alpacaFetch<{ news: AlpacaNewsArticle[] }>(url.toString())
     return res.news ?? []
-  } catch {
+  } catch (err) {
+    console.error('[NEWS] getNewsForSymbols failed:', (err as Error)?.message ?? err)
     return []
   }
 }
@@ -285,7 +286,8 @@ export async function getMacroNews(hoursBack = 12, limit = 8): Promise<AlpacaNew
     url.searchParams.set('sort', 'desc')
     const res = await alpacaFetch<{ news: AlpacaNewsArticle[] }>(url.toString())
     return res.news ?? []
-  } catch {
+  } catch (err) {
+    console.error('[NEWS] getMacroNews failed:', (err as Error)?.message ?? err)
     return []
   }
 }

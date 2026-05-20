@@ -179,6 +179,8 @@ export async function newsIntelligenceLayer(symbols: string[]): Promise<Threshol
       return true
     })
 
+    console.log('[NEWS] Articles fetched:', allArticles.length, '| Unique after dedup:', unique.length)
+
     // If all articles are already in DB, rebuild thresholdMap from recent DB events
     if (unique.length === 0) {
       console.log('[NEWS] All articles already processed — rebuilding thresholdMap from DB')
