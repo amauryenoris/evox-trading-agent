@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useMemo } from 'react'
 import {
   LineChart,
   Line,
@@ -29,13 +30,35 @@ interface Props {
   data: PortfolioHistory | null
 }
 
+const RANGES = ['Today', '1W', '1M', '3M', 'YTD', 'All'] as const
+type Range = (typeof RANGES)[number]
+
+function filterData(range: Range, pts: EquityDataPoint[]): EquityDataPoint[] {
+  const now = new Date()
+  const cutoffs: Record<Range, Date> = {
+    Today: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+    '1W':  new Date(Date.now() - 7  * 86400000),
+    '1M':  new Date(Date.now() - 30 * 86400000),
+    '3M':  new Date(Date.now() - 90 * 86400000),
+    YTD:   new Date(now.getFullYear(), 0, 1),
+    All:   new Date('2026-04-20'),
+  }
+  return pts.filter((d) => new Date(d.date) >= cutoffs[range])
+}
+
 export function PnLChart({ data }: Props) {
+  const [activeRange, setActiveRange] = useState<Range>('All')
+
+  const filtered = useMemo(
+    () => (data ? filterData(activeRange, data.history) : []),
+    [activeRange, data],
+  )
+
   if (!data || data.history.length === 0) {
     return (
       <Card padded={false}>
         <div className="flex items-baseline justify-between px-6 pt-5 pb-2">
           <h3 className="text-sm font-semibold tracking-[0.18em] uppercase">Portfolio Value</h3>
-          <span className="text-[11px] text-muted">Last 30 trading days</span>
         </div>
         <div className="flex items-center justify-center h-40 text-muted text-sm px-6 pb-6">
           No data yet — run your first analysis to start tracking
@@ -44,12 +67,12 @@ export function PnLChart({ data }: Props) {
     )
   }
 
-  const { history, startEquity, currentEquity, totalReturn } = data
+  const { startEquity, currentEquity, totalReturn } = data
   const lineColor  = currentEquity >= startEquity ? '#00B386' : '#FF4444'
   const totalUp    = totalReturn >= 0
   const returnSign = totalReturn >= 0 ? '+' : ''
 
-  const chartData = history.map((d) => ({
+  const chartData = filtered.map((d) => ({
     ...d,
     label: new Date(d.date + 'T12:00:00Z').toLocaleDateString('en-US', {
       month: 'short',
@@ -57,30 +80,32 @@ export function PnLChart({ data }: Props) {
     }),
   }))
 
-  const equities  = history.map((d) => d.equity)
+  const equities  = filtered.length > 0 ? filtered.map((d) => d.equity) : [startEquity]
   const minEquity = Math.min(...equities, startEquity)
   const maxEquity = Math.max(...equities, startEquity)
   const padding   = (maxEquity - minEquity) * 0.1 || 500
+
+  const singlePoint = chartData.length === 1
 
   return (
     <Card padded={false}>
       <div className="flex items-baseline justify-between px-6 pt-5 pb-2">
         <div className="flex items-baseline gap-3">
           <h3 className="text-sm font-semibold tracking-[0.18em] uppercase">Portfolio Value</h3>
-          <span className="text-[11px] text-muted">Last 30 trading days</span>
         </div>
         <div className="flex items-center gap-4">
-          {/* ADAPTED: totalReturn from PortfolioHistory (0-1 decimal) — multiplied by 100 for display */}
           <div className={`num text-sm font-semibold ${totalUp ? 'text-green' : 'text-red'}`}>
             {returnSign}{(totalReturn * 100).toFixed(2)}%
             <span className="text-muted font-normal text-[11px] ml-1">total return</span>
           </div>
-          {/* ADAPTED: time range selector is decorative — no filter implemented (recharts uses all history) */}
           <div className="flex items-center gap-1 text-[10px] tracking-wider uppercase text-muted">
-            {['1W', '1M', '3M', 'YTD', 'ALL'].map((t, i) => (
+            {RANGES.map((t) => (
               <button
                 key={t}
-                className={`px-2 py-1 rounded transition ${i === 1 ? 'bg-white/[0.06] text-text' : 'hover:text-text'}`}
+                onClick={() => setActiveRange(t)}
+                className={`px-2 py-1 rounded transition ${
+                  activeRange === t ? 'bg-white/[0.06] text-text' : 'hover:text-text'
+                }`}
               >
                 {t}
               </button>
@@ -89,7 +114,6 @@ export function PnLChart({ data }: Props) {
         </div>
       </div>
       <div className="px-2 pb-3">
-        {/* ADAPTED: recharts kept instead of pure SVG — was already adapted in previous session */}
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1E1E2E" />
@@ -121,8 +145,8 @@ export function PnLChart({ data }: Props) {
               type="monotone"
               dataKey="equity"
               stroke={lineColor}
-              strokeWidth={2}
-              dot={false}
+              strokeWidth={singlePoint ? 0 : 2}
+              dot={singlePoint ? { r: 6, fill: lineColor, strokeWidth: 0 } : false}
               activeDot={{ r: 4, fill: lineColor }}
             />
           </LineChart>

@@ -19,6 +19,7 @@ export async function GET() {
       .not('portfolio_snapshot', 'is', null)
       .gte('created_at', '2026-04-20')
       .order('created_at', { ascending: true })
+      .limit(10000) // FIX 1: default Supabase limit is 1000 rows — raises it to prevent date truncation
 
     if (error) throw error
 
@@ -27,16 +28,16 @@ export async function GET() {
     for (const row of data ?? []) {
       const snapshot = row.portfolio_snapshot as { equity?: string } | null
       const equity = parseFloat(snapshot?.equity ?? '0')
-      if (!equity || equity <= 0) continue
+      if (!equity || equity <= 50000) continue // FIX 2: skip test cycles with incorrect equity values
       const date = (row.created_at as string).split('T')[0]
       if (!byDay.has(date)) {
         byDay.set(date, equity)
       }
     }
 
+    // FIX 1: return full history — frontend handles range filtering
     const history = Array.from(byDay.entries())
       .map(([date, equity]) => ({ date, equity }))
-      .slice(-30) // last 30 trading days
 
     const START_EQUITY = 100_000
     const currentEquity = history.at(-1)?.equity ?? START_EQUITY
