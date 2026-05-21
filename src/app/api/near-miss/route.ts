@@ -9,6 +9,7 @@ export async function GET() {
     const sorted = [...entries].sort((a, b) => a.gap_to_threshold - b.gap_to_threshold)
     return NextResponse.json(sorted)
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[near-miss]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

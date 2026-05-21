@@ -8,6 +8,7 @@ export async function GET() {
     const patterns = await readPatternLibrary()
     return NextResponse.json(patterns)
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[patterns]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

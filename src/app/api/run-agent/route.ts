@@ -7,12 +7,15 @@ export const dynamic = 'force-dynamic'
 // Requires GITHUB_TOKEN env var — a PAT with "workflow" scope.
 export async function POST() {
   const token = process.env.GITHUB_TOKEN
-  if (!token) {
-    return NextResponse.json({ success: false, error: 'GITHUB_TOKEN is not set' }, { status: 500 })
+  const owner = process.env.GITHUB_OWNER
+  const repo = process.env.GITHUB_REPO
+  if (!token || !owner || !repo) {
+    console.error('[run-agent]: Missing GITHUB_TOKEN, GITHUB_OWNER, or GITHUB_REPO')
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 
   const res = await fetch(
-    'https://api.github.com/repos/amauryenoris/evox-trading-agent/actions/workflows/agent-cron.yml/dispatches',
+    `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-cron.yml/dispatches`,
     {
       method: 'POST',
       headers: {
@@ -26,8 +29,8 @@ export async function POST() {
   )
 
   if (!res.ok) {
-    const text = await res.text()
-    return NextResponse.json({ success: false, error: text }, { status: 500 })
+    console.error('[run-agent]: GitHub dispatch failed with status', res.status)
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 
   // GitHub returns 204 No Content on success

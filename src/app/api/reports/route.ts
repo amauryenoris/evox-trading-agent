@@ -8,6 +8,7 @@ export async function GET() {
     const reports = await getWeeklyReports(20)
     return NextResponse.json(reports)
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    console.error('[reports]:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

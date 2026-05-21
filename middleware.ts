@@ -27,7 +27,8 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // API routes — return 401, not redirect (so fetch() callers get a proper error)
-  if (pathname.startsWith('/api/')) {
+  // /api/cron/run is excluded — it authenticates via CRON_SECRET header instead
+  if (pathname.startsWith('/api/') && pathname !== '/api/cron/run') {
     if (!user) {
       return new Response('Unauthorized', { status: 401 })
     }

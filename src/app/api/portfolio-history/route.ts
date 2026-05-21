@@ -45,6 +45,7 @@ export async function GET() {
 
     return NextResponse.json({ history, startEquity: START_EQUITY, currentEquity, totalReturn })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[portfolio-history]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

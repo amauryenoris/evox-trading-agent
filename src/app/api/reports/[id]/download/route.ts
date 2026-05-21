@@ -14,6 +14,7 @@ export async function GET(
     const signedUrl = await createStorageSignedUrl(report.storagePath, 3600)
     return NextResponse.redirect(signedUrl)
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    console.error('[reports/download]:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

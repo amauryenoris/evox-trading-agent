@@ -543,11 +543,12 @@ export async function saveNewsEvent(
 export async function getActiveNewsEvents(symbols: string[]): Promise<NewsEvent[]> {
   const db = getClient()
   const now = new Date().toISOString()
+  const sanitized = symbols.filter(s => /^[A-Z]{1,5}$/.test(s))
   const { data, error } = await db
     .from('news_events')
     .select('*')
     .gt('expires_at', now)
-    .or(`symbol.in.(${symbols.join(',')}),scope.eq.MACRO`)
+    .or(`symbol.in.(${sanitized.join(',')}),scope.eq.MACRO`)
   if (error) throw new Error(`Failed to fetch active news events: ${error.message}`)
   return (data ?? []) as NewsEvent[]
 }

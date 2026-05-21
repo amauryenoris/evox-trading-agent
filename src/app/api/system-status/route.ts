@@ -63,6 +63,7 @@ export async function GET() {
       setupsDetected: { meanReversion: meanReversionSetups, trend: trendSetups },
     })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[system-status]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

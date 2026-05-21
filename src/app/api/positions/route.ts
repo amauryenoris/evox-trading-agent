@@ -35,6 +35,7 @@ export async function GET() {
     })
     return NextResponse.json(display)
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[positions]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

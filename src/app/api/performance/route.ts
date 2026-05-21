@@ -9,7 +9,8 @@ const SPY_BASE_2026 = 585.50
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const since = searchParams.get('since') ?? undefined
+    const sinceRaw = searchParams.get('since')
+    const since = sinceRaw && /^\d{4}-\d{2}-\d{2}$/.test(sinceRaw) ? sinceRaw : undefined
 
     const [evaluations, account] = await Promise.all([
       getTradeEvaluations(200, since),
@@ -119,6 +120,7 @@ export async function GET(request: Request) {
       since: since ?? null,
     })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[performance]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

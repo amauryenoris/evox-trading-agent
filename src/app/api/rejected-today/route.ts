@@ -48,6 +48,7 @@ export async function GET() {
 
     return NextResponse.json(rows)
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[rejected-today]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

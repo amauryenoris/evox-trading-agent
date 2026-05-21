@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   LineChart,
   Line,
@@ -47,14 +47,22 @@ function filterData(range: Range, pts: EquityDataPoint[]): EquityDataPoint[] {
 }
 
 export function PnLChart({ data }: Props) {
+  const [liveData, setLiveData] = useState<PortfolioHistory | null>(data)
   const [activeRange, setActiveRange] = useState<Range>('All')
 
+  useEffect(() => {
+    fetch('/api/portfolio-history')
+      .then((r) => r.json())
+      .then((d: PortfolioHistory) => setLiveData(d))
+      .catch(() => {}) // keep last known data on error
+  }, [])
+
   const filtered = useMemo(
-    () => (data ? filterData(activeRange, data.history) : []),
-    [activeRange, data],
+    () => (liveData ? filterData(activeRange, liveData.history) : []),
+    [activeRange, liveData],
   )
 
-  if (!data || data.history.length === 0) {
+  if (!liveData || liveData.history.length === 0) {
     return (
       <Card padded={false}>
         <div className="flex items-baseline justify-between px-6 pt-5 pb-2">
@@ -67,7 +75,7 @@ export function PnLChart({ data }: Props) {
     )
   }
 
-  const { startEquity, currentEquity, totalReturn } = data
+  const { startEquity, currentEquity, totalReturn } = liveData
   const lineColor  = currentEquity >= startEquity ? '#00B386' : '#FF4444'
   const totalUp    = totalReturn >= 0
   const returnSign = totalReturn >= 0 ? '+' : ''

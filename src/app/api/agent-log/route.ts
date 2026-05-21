@@ -8,6 +8,7 @@ export async function GET() {
     const log = await readAgentLog()
     return NextResponse.json(log)
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[agent-log]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

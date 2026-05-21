@@ -20,6 +20,7 @@ export async function GET() {
       todayPnLPct: lastEquity !== 0 ? ((equity - lastEquity) / lastEquity) * 100 : 0,
     })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('[portfolio]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

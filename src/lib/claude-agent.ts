@@ -141,7 +141,7 @@ export async function enforceExitRules(
 
     // Mean Reversion exits
     if (!exitReason && signalType === 'MEAN_REVERSION') {
-      if (zScore >= -0.8) {
+      if (zScore >= -0.8 && !ctx?.trailingActivated) {
         exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.8 — price reverted to fair value`
       }
     }
@@ -677,7 +677,8 @@ async function enforceStopLosses(positions: AlpacaPosition[]): Promise<void> {
   let openContexts
   try {
     openContexts = await getAllOpenPositionContexts()
-  } catch {
+  } catch (err) {
+    console.error('[enforceStopLosses] CRITICAL: Failed to fetch positions — stop losses NOT enforced:', err)
     return
   }
 
@@ -1220,7 +1221,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       if (content.type !== 'text') throw new Error('Unexpected Claude response type')
 
       const jsonText = content.text.replace(/```json\n?|\n?```/g, '').trim()
-      const decision = JSON.parse(jsonText) as AgentDecision
+      let decision: AgentDecision
+      try {
+        decision = JSON.parse(jsonText) as AgentDecision
+      } catch {
+        console.error(`[CLAUDE] JSON parse failed for ${symbol}:`, jsonText.slice(0, 200))
+        decision = { action: 'HOLD', symbol, quantity: 0, reasoning: 'Parse error — defaulting to HOLD', confidence: 0 }
+      }
       decision.symbol = symbol
       decision.action = 'HOLD'   // Claude no longer decides action — system decides via setup_detected + gates
       decision.quantity = decision.quantity ?? 0

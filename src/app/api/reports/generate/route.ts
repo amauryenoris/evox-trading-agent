@@ -9,6 +9,7 @@ export async function POST() {
     const report = await generateAndSaveReport()
     return NextResponse.json({ success: true, reportId: report.id, report })
   } catch (err) {
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 })
+    console.error('[reports/generate]:', err)
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
