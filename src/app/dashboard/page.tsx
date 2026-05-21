@@ -39,7 +39,7 @@ const fmtPct = (n: number, dp = 2) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dp
 
 async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
   try {
-    const base = process.env.BASE_URL ?? 'http://localhost:3000'
+    const base = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
     // ADAPTED: cookie forwarding — App.jsx has no server fetch; needed for authenticated endpoints
     const cookieStore = await cookies()
     const cookieHeader = cookieStore.getAll().map(c => `${c.name}=${c.value}`).join('; ')
