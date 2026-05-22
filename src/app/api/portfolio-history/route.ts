@@ -23,16 +23,15 @@ export async function GET() {
 
     if (error) throw error
 
-    // One point per day — first entry of each trading day (UTC date)
+    // One point per day — max equity of each trading day (UTC date)
     const byDay = new Map<string, number>()
     for (const row of data ?? []) {
       const snapshot = row.portfolio_snapshot as { equity?: string } | null
       const equity = parseFloat(snapshot?.equity ?? '0')
-      if (!equity || equity <= 50000) continue // FIX 2: skip test cycles with incorrect equity values
+      if (!equity || equity <= 50000) continue
       const date = (row.created_at as string).split('T')[0]
-      if (!byDay.has(date)) {
-        byDay.set(date, equity)
-      }
+      const existing = byDay.get(date) ?? 0
+      if (equity > existing) byDay.set(date, equity)
     }
 
     // FIX 1: return full history — frontend handles range filtering
@@ -43,7 +42,10 @@ export async function GET() {
     const currentEquity = history.at(-1)?.equity ?? START_EQUITY
     const totalReturn = (currentEquity - START_EQUITY) / START_EQUITY
 
-    return NextResponse.json({ history, startEquity: START_EQUITY, currentEquity, totalReturn })
+    return NextResponse.json(
+      { history, startEquity: START_EQUITY, currentEquity, totalReturn },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
   } catch (error) {
     console.error('[portfolio-history]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

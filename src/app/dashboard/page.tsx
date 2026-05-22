@@ -1,5 +1,4 @@
 import { Suspense } from 'react'
-import { PortfolioOverviewCard } from '@/components/dashboard/PortfolioOverviewCard'
 import { PositionsTable } from '@/components/dashboard/PositionsTable'
 import { PnLChart, type PortfolioHistory } from '@/components/dashboard/PnLChart'
 import { TradeHistoryTable } from '@/components/dashboard/TradeHistoryTable'
@@ -86,15 +85,8 @@ export default async function DashboardPage() {
         />
         <PositionsTable positions={positions} />
         <DailySummary portfolio={portfolio} />
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-          <div className="xl:col-span-2">
-            {/* ADAPTED: data prop (PortfolioHistory) — App.jsx references <PortfolioChart /> stub */}
-            <PnLChart data={portfolioHistory} />
-          </div>
-          <div>
-            <PortfolioOverviewCard data={portfolio} />
-          </div>
-        </div>
+        {/* ADAPTED: data prop (PortfolioHistory) — App.jsx references <PortfolioChart /> stub */}
+        <PnLChart data={portfolioHistory} />
       </div>
     ),
     intelligence: (
