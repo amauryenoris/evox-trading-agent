@@ -623,6 +623,27 @@ export async function getActiveNearMissForSymbol(
   return data as NearMissEntry | null
 }
 
+export async function cleanupExpiredNearMisses(): Promise<void> {
+  const db = getClient()
+  const { error } = await db
+    .from('near_miss_watchlist')
+    .update({ status: 'EXPIRED' })
+    .eq('status', 'ACTIVE')
+    .lt('expires_at', new Date().toISOString())
+  if (error) console.error('[NEAR-MISS] cleanup error:', error.message)
+}
+
+export async function cancelRevertedNearMisses(upperThreshold: number): Promise<void> {
+  const db = getClient()
+  const { error } = await db
+    .from('near_miss_watchlist')
+    .update({ status: 'CANCELLED' })
+    .eq('status', 'ACTIVE')
+    .gt('latest_zscore', upperThreshold)
+    .gt('expires_at', new Date().toISOString())
+  if (error) console.error('[NEAR-MISS] cancel-revert error:', error.message)
+}
+
 // ── weekly report stats ───────────────────────────────────────────────────────
 
 export async function getWeeklyNewsStats(

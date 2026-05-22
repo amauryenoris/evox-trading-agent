@@ -3,6 +3,8 @@ import {
   getActiveNearMisses,
   updateNearMiss,
   getActiveNearMissForSymbol,
+  cleanupExpiredNearMisses,
+  cancelRevertedNearMisses,
 } from './db'
 import type { TechnicalIndicators, ThresholdMap, NearMissEntry } from './types'
 import { ZSCORE_ENTRY_THRESHOLD } from './config'
@@ -89,6 +91,13 @@ export async function updateWatchlist(
   thresholdMap: ThresholdMap,
   currentIndicators: Record<string, TechnicalIndicators>
 ): Promise<void> {
+  // Bulk cleanup: runs before the per-symbol loop so entries not in the
+  // current watchlist cycle still get expired/cancelled correctly.
+  await cleanupExpiredNearMisses()
+  console.log('[NEAR-MISS] Cleaned up expired entries')
+  await cancelRevertedNearMisses(NEAR_MISS_UPPER)
+  console.log('[NEAR-MISS] Cancelled reverted entries (z > NEAR_MISS_UPPER)')
+
   const activeEntries = await getActiveNearMisses()
   if (activeEntries.length === 0) return
 
