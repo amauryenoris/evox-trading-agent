@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'
 // Requires GITHUB_TOKEN env var — a PAT with "workflow" scope.
 export async function POST() {
   const token = process.env.GITHUB_TOKEN
-  const owner = process.env.GITHUB_OWNER
-  const repo = process.env.GITHUB_REPO
-  if (!token || !owner || !repo) {
-    console.error('[run-agent]: Missing GITHUB_TOKEN, GITHUB_OWNER, or GITHUB_REPO')
+  const owner = process.env.GITHUB_OWNER ?? 'amauryenoris'
+  const repo = process.env.GITHUB_REPO ?? 'evox-trading-agent'
+  if (!token) {
+    console.error('[run-agent]: Missing GITHUB_TOKEN')
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 
