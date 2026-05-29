@@ -14,6 +14,10 @@ import {
   getSelectionEvaluations,
   insertSelectionEvaluation,
 } from './db'
+import { INSTRUMENT_BLACKLIST } from './config'
+
+const MAX_DAILY_CHANGE_PCT = 15
+const MAX_POOL_A_CANDIDATES = 15
 
 // Default sector watchlist — overridable via SECTOR_WATCHLIST env var
 const DEFAULT_SECTOR_WATCHLIST = [
@@ -56,6 +60,11 @@ export async function selectStocksForAnalysis(
 
   const heldSymbols = new Set(positions.map((p) => p.symbol))
 
+  // Pre-filter Pool A — applied before allCandidates is built so validation is consistent
+  candidates = candidates.filter(c => !INSTRUMENT_BLACKLIST.has(c.symbol))  // Step 1: blacklist
+  candidates = candidates.filter(c => !heldSymbols.has(c.symbol))           // Step 2: open positions
+  candidates = candidates.filter(c => Math.abs(c.changePercent) < MAX_DAILY_CHANGE_PCT)  // Step 3: overbought spikes
+
   // Fetch sector watchlist snapshots and merge with screener candidates
   const sectorSymbols = (process.env.SECTOR_WATCHLIST ?? DEFAULT_SECTOR_WATCHLIST)
     .split(',')
@@ -71,6 +80,22 @@ export async function selectStocksForAnalysis(
 
   const [selectionEvals] = await Promise.all([getSelectionEvaluations(50)])
 
+  // Step 4: sort — symbols with profitable history first (volume order preserved within ties)
+  const goodSymbols = new Set(
+    selectionEvals
+      .filter(e => e.outcome === 'profitable' || e.pnlPct > 0)
+      .map(e => e.symbol)
+  )
+  candidates.sort((a, b) => {
+    const aGood = goodSymbols.has(a.symbol) ? 1 : 0
+    const bGood = goodSymbols.has(b.symbol) ? 1 : 0
+    return bGood - aGood
+  })
+
+  // Step 5: truncate to top 15 (reduced from 30 — higher quality pool for Claude)
+  candidates = candidates.slice(0, MAX_POOL_A_CANDIDATES)
+  console.log(`[STOCK-SELECTOR] Pool A after pre-filter: ${candidates.length} candidates (blacklist/held/overbought removed, history sorted)`)
+
   const learningLines: string[] = []
   if (selectionEvals.length > 0) {
     const wins = selectionEvals.filter((e) => e.outcome === 'profitable')
@@ -84,7 +109,7 @@ export async function selectStocksForAnalysis(
     })
   }
 
-  const screenerLines = candidates.slice(0, 30).map((s) => {
+  const screenerLines = candidates.map((s) => {
     const change = s.changePercent >= 0 ? `+${s.changePercent.toFixed(1)}%` : `${s.changePercent.toFixed(1)}%`
     const held = heldSymbols.has(s.symbol) ? ' [CURRENTLY HELD]' : ''
     return `${s.symbol}: $${s.price.toFixed(2)} (${change}) Vol: ${(s.volume / 1e6).toFixed(1)}M${held}`

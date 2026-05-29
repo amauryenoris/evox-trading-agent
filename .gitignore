@@ -45,6 +45,7 @@ next-env.d.ts
 
 # credentials
 credentials.json
+.claude/settings.json
 *.key
 *.p12
 service-account*.json
