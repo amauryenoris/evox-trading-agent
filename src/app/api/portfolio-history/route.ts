@@ -23,6 +23,9 @@ export async function GET() {
 
     if (error) throw error
 
+    const CURRENT_LIMIT = 10000
+    console.log('[API DEBUG]', 'rows:', data?.length, 'limit:', CURRENT_LIMIT, 'hitLimit:', data?.length === CURRENT_LIMIT, 'first:', data?.[0]?.created_at, 'last:', data?.at(-1)?.created_at)
+
     // One point per day — max equity of each trading day (UTC date)
     const byDay = new Map<string, number>()
     for (const row of data ?? []) {
