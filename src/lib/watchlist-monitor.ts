@@ -5,6 +5,7 @@ import {
   getActiveNearMissForSymbol,
   cleanupExpiredNearMisses,
   cancelRevertedNearMisses,
+  cancelRevertedMRNearMisses,
 } from './db'
 import type { TechnicalIndicators, ThresholdMap, NearMissEntry } from './types'
 import { ZSCORE_ENTRY_THRESHOLD } from './config'
@@ -20,6 +21,11 @@ export async function detectNearMisses(
   thresholdMap: ThresholdMap,
   blockedByGate?: { wouldExecute: boolean; reason: 'max_positions' | 'max_buys' | 'outranked'; signalType: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null }
 ): Promise<void> {
+  await cleanupExpiredNearMisses()
+  console.log('[NEAR-MISS] Cleaned up expired entries')
+  await cancelRevertedMRNearMisses(NEAR_MISS_UPPER)
+  console.log('[NEAR-MISS] Cancelled reverted MR entries')
+
   const { kalman, marketRegime } = indicators
   if (!kalman || !marketRegime) return
 

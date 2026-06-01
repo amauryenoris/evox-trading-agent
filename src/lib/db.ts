@@ -644,6 +644,18 @@ export async function cancelRevertedNearMisses(upperThreshold: number): Promise<
   if (error) console.error('[NEAR-MISS] cancel-revert error:', error.message)
 }
 
+export async function cancelRevertedMRNearMisses(upperThreshold: number): Promise<void> {
+  const db = getClient()
+  const { error } = await db
+    .from('near_miss_watchlist')
+    .update({ status: 'CANCELLED' })
+    .eq('status', 'ACTIVE')
+    .eq('signal_type', 'MEAN_REVERSION')
+    .gt('latest_zscore', upperThreshold)
+    .gt('expires_at', new Date().toISOString())
+  if (error) console.error('[NEAR-MISS] cancel-revert-mr error:', error.message)
+}
+
 // ── weekly report stats ───────────────────────────────────────────────────────
 
 export async function getWeeklyNewsStats(
