@@ -933,6 +933,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // Skip open positions in the main loop — already handled by enforceExitRules()
   const openPositionSymbols = new Set(positions.map((p) => p.symbol))
 
+  // Prevent same-cycle re-entry after GTC stop loss
+  const closedThisCycle = new Set(closedContexts.map(ctx => ctx.symbol))
+
   for (const symbol of watchlist) {
     if (INSTRUMENT_BLACKLIST.has(symbol)) {
       console.log(`[AGENT] ${symbol} skipped — blacklisted instrument`)
@@ -941,6 +944,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
     if (openPositionSymbols.has(symbol)) {
       console.log(`[AGENT] ${symbol} skipped — open position, handled by enforceExitRules`)
+      continue
+    }
+
+    if (closedThisCycle.has(symbol)) {
+      console.log(`[AGENT] ${symbol} skipped — closed by GTC this cycle, cooldown`)
       continue
     }
 
