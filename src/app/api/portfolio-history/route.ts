@@ -37,6 +37,14 @@ export async function GET() {
       if (equity > existing) byDay.set(date, equity)
     }
 
+    console.log(
+      '[API DEBUG]',
+      'raw rows:', data?.length,
+      'first row date:', data?.[0]?.created_at?.split('T')[0],
+      'last row date:', data?.at(-1)?.created_at?.split('T')[0],
+      'unique days in map:', byDay.size
+    )
+
     // FIX 1: return full history — frontend handles range filtering
     const history = Array.from(byDay.entries())
       .map(([date, equity]) => ({ date, equity }))
