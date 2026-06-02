@@ -23,9 +23,6 @@ export async function GET() {
 
     if (error) throw error
 
-    const CURRENT_LIMIT = 10000
-    console.log('[API DEBUG]', 'rows:', data?.length, 'limit:', CURRENT_LIMIT, 'hitLimit:', data?.length === CURRENT_LIMIT, 'first:', data?.[0]?.created_at, 'last:', data?.at(-1)?.created_at)
-
     // One point per day — max equity of each trading day (UTC date)
     const byDay = new Map<string, number>()
     for (const row of data ?? []) {
@@ -36,14 +33,6 @@ export async function GET() {
       const existing = byDay.get(date) ?? 0
       if (equity > existing) byDay.set(date, equity)
     }
-
-    console.log(
-      '[API DEBUG]',
-      'raw rows:', data?.length,
-      'first row date:', data?.[0]?.created_at?.split('T')[0],
-      'last row date:', data?.at(-1)?.created_at?.split('T')[0],
-      'unique days in map:', byDay.size
-    )
 
     // FIX 1: return full history — frontend handles range filtering
     const history = Array.from(byDay.entries())
