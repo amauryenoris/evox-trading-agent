@@ -136,7 +136,20 @@ export function PerformanceAnalytics() {
     )
   }
 
-  const g = data
+  const g = {
+    ...data,
+    total:        data.total        ?? 0,
+    winRate:      data.winRate      ?? 0,
+    profitFactor: data.profitFactor ?? 0,
+    avgWinUSD:    data.avgWinUSD    ?? 0,
+    avgWinPct:    data.avgWinPct    ?? 0,
+    avgLossUSD:   data.avgLossUSD   ?? 0,
+    avgLossPct:   data.avgLossPct   ?? 0,
+    expectancy:   data.expectancy   ?? 0,
+    last10Trades: data.last10Trades ?? [],
+    evoxYtdPct:   data.evoxYtdPct   ?? 0,
+    spyYtdPct:    data.spyYtdPct    ?? null,
+  }
 
   // Build sigs array from signalTypeBreakdown
   type SigColor = 'blue' | 'green' | 'amber' | 'purple'
@@ -175,9 +188,9 @@ export function PerformanceAnalytics() {
   ].filter((s) => s.trades > 0) : []
 
   const last10Pnl = g.last10Trades.map((t) => t.pnlUSD)
-  const wrc = g.winRate >= 50 ? 'green' : 'red' as const
-  const pfc = g.profitFactor >= 2 ? 'green' : 'neutral' as const
-  const exc = g.expectancy >= 0 ? 'green' : 'red' as const
+  const wrc = g.winRate     >= 50 ? 'green' : 'red'     as const
+  const pfc = g.profitFactor >= 2  ? 'green' : 'neutral' as const
+  const exc = g.expectancy  >= 0  ? 'green' : 'red'     as const
 
   return (
     <Card padded={false}>
