@@ -31,16 +31,16 @@
 
 ### Phase 4 — Testing
 
-- [ ] T-05: Write unit tests for the two new UPDATE paths in `detectNearMisses()` — BLOCKED: no test framework configured (no jest/vitest in package.json)
-  - Expired entry gets status = EXPIRED
-  - Active MR entry with zscore > -1.0 gets status = CANCELLED
-  - Active non-MR entry with zscore > -1.0 remains ACTIVE (FR-06 regression check)
-- [ ] T-06: Verify 80% coverage on modified code paths — BLOCKED: no test framework configured
+- [x] T-05: Write unit tests for the two new UPDATE paths in `detectNearMisses()` — completed via setup-vitest spec (src/lib/__tests__/db.near-miss.test.ts)
+  - Expired entry gets status = EXPIRED ✅
+  - Active MR entry with zscore > -1.0 gets status = CANCELLED ✅
+  - Active non-MR entry with zscore > -1.0 remains ACTIVE (FR-06 regression check) ✅
+- [x] T-06: Verify 80% coverage on modified code paths — both functions 100% covered (see setup-vitest spec)
 
 ## Post-Implementation
 
-- [ ] Run `/review near-miss-lifecycle-cleanup` to verify implementation matches spec
-- [ ] Confirm no detection or insertion logic was altered in `detectNearMisses()`
+- [X] Run `/review near-miss-lifecycle-cleanup` to verify implementation matches spec
+- [X] Confirm no detection or insertion logic was altered in `detectNearMisses()`
 
 ## Estimated Complexity
 

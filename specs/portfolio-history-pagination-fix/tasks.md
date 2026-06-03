@@ -2,7 +2,7 @@
 
 ## Pre-Implementation
 
-- [ X] Amaury has reviewed and approved this spec
+- [X] Amaury has reviewed and approved this spec
 - [ ] Protected Zone changes confirmed (N/A — no Protected Zone files touched)
 - [ ] Database migrations drafted (N/A — no DB changes)
 
@@ -30,11 +30,11 @@
 
 ### Phase 3 — Deploy & Production Verify
 
-- [ ] T-05: Commit with `fix: paginate portfolio-history route to bypass Supabase Max Rows limit`
+- [X] T-05: Commit with `fix: paginate portfolio-history route to bypass Supabase Max Rows limit`
       and push to trigger Vercel redeploy.
-- [ ] T-06: After deploy, open `/api/portfolio-history` on the production URL and
+- [X] T-06: After deploy, open `/api/portfolio-history` on the production URL and
       confirm `history.length` ≥ 40 and last date = `2026-06-02`.
-- [ ] T-07: Open dashboard and confirm "Portfolio Value" chart renders a continuous
+- [X] T-07: Open dashboard and confirm "Portfolio Value" chart renders a continuous
       equity curve from April 20 through June 2.
 
 ### Phase 4 — Testing
@@ -47,8 +47,8 @@
 
 ## Post-Implementation
 
-- [ ] Run `/review portfolio-history-pagination-fix` to verify implementation matches spec
-- [ ] Confirm Protected Zone files unchanged (expected: yes)
+- [X] Run `/review portfolio-history-pagination-fix` to verify implementation matches spec
+- [X] Confirm Protected Zone files unchanged (expected: yes)
 
 ## Estimated Complexity
 
