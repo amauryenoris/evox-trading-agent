@@ -1,0 +1,249 @@
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        continue-on-error: true
+        run: |
+          set +e
+          TSC_OUT=$(npx tsc --noEmit 2>&1)
+          TSC_CODE=$?
+          set -e
+          if [ $TSC_CODE -eq 0 ]; then
+            echo "TS_STATUS=pass" >> "$GITHUB_ENV"
+          else
+            echo "TS_STATUS=fail" >> "$GITHUB_ENV"
+          fi
+          {
+            echo "TS_OUTPUT<<__EOF_TS__"
+            printf '%s' "$TSC_OUT"
+            echo ""
+            echo "__EOF_TS__"
+          } >> "$GITHUB_ENV"
+
+      - name: Run tests
+        continue-on-error: true
+        run: |
+          set +e
+          TEST_OUT=$(npx vitest run 2>&1)
+          TEST_CODE=$?
+          set -e
+          if [ $TEST_CODE -eq 0 ]; then
+            echo "TEST_STATUS=pass" >> "$GITHUB_ENV"
+          else
+            echo "TEST_STATUS=fail" >> "$GITHUB_ENV"
+          fi
+          {
+            echo "TEST_OUTPUT<<__EOF_TEST__"
+            printf '%s' "$TEST_OUT"
+            echo ""
+            echo "__EOF_TEST__"
+          } >> "$GITHUB_ENV"
+
+      - name: Protected Zone audit
+        run: |
+          PROTECTED_ZONE=(
+            "src/lib/config.ts"
+            "src/lib/claude-agent.ts"
+            "src/lib/risk-manager.ts"
+            "src/lib/indicators.ts"
+            "src/lib/news-intelligence.ts"
+            "src/lib/watchlist-monitor.ts"
+            "src/lib/learning.ts"
+          )
+          CHANGED=$(git diff "origin/${{ github.base_ref }}...HEAD" --name-only 2>/dev/null || true)
+          FOUND=""
+          for pf in "${PROTECTED_ZONE[@]}"; do
+            if echo "$CHANGED" | grep -qx "$pf"; then
+              FOUND="${FOUND}${pf}"$'\n'
+            fi
+          done
+          {
+            echo "PROTECTED_FILES<<__EOF_PZ__"
+            printf '%s' "$FOUND"
+            echo "__EOF_PZ__"
+          } >> "$GITHUB_ENV"
+
+      - name: Claude review
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" > /tmp/pr.diff 2>/dev/null || true
+          python3 << 'PYEOF'
+          import json, os, urllib.request
+
+          with open('/tmp/pr.diff', 'r', errors='replace') as fh:
+              diff = fh.read()
+
+          if len(diff) > 12000:
+              diff = diff[:12000] + '\n[DIFF TRUNCATED]'
+
+          prompt = (
+              "You are a code reviewer for a Next.js trading agent (Paquito / EVOX).\n"
+              "Evaluate the following pull request diff and respond with a structured report.\n\n"
+              "ARCHITECTURE RULES:\n"
+              "- Claude is a pure analyst. It must never decide to BUY, SELL, or HOLD.\n"
+              "- The action field in claude-agent.ts must always be forced to HOLD after parsing.\n"
+              "- Protected Zone files (config.ts, claude-agent.ts, risk-manager.ts,\n"
+              "  indicators.ts, news-intelligence.ts, watchlist-monitor.ts, learning.ts)\n"
+              "  require explicit owner confirmation before modification.\n"
+              "- No hardcoded secrets. No console.log with sensitive data.\n"
+              "- Functions < 50 lines, files < 800 lines, no deep nesting.\n\n"
+              "RESPOND with exactly this format:\n"
+              "VERDICT: CRITICAL | WARNING | OK\n"
+              "SUMMARY: <1-2 sentences>\n"
+              "FINDINGS:\n"
+              "- [CRITICAL|HIGH|MEDIUM|LOW] <finding>\n"
+              "(repeat for each finding, or write None if clean)\n\n"
+              "DIFF:\n" + diff
+          )
+
+          payload = json.dumps({
+              "model": "claude-sonnet-4-6",
+              "max_tokens": 1024,
+              "messages": [{"role": "user", "content": prompt}]
+          }).encode()
+
+          req = urllib.request.Request(
+              "https://api.anthropic.com/v1/messages",
+              data=payload,
+              headers={
+                  "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                  "anthropic-version": "2023-06-01",
+                  "content-type": "application/json",
+              }
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  result = json.loads(resp.read())
+                  verdict = result["content"][0]["text"]
+          except Exception as exc:
+              verdict = (
+                  "VERDICT: WARNING\n"
+                  "SUMMARY: Claude review unavailable — API call failed.\n"
+                  "FINDINGS:\n"
+                  "- [LOW] Could not reach Claude API: " + type(exc).__name__
+              )
+
+          with open(os.environ["GITHUB_ENV"], "a") as fh:
+              fh.write("CLAUDE_VERDICT<<__EOF_CV__\n")
+              fh.write(verdict)
+              fh.write("\n__EOF_CV__\n")
+          PYEOF
+
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const BOT_MARKER = '<!-- pr-review-bot -->'
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const existing = comments.find(c => c.body && c.body.includes(BOT_MARKER))
+            if (existing) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+              })
+            }
+
+            const tsStatus   = process.env.TS_STATUS   === 'pass' ? '✅ Pass' : '❌ Fail'
+            const testStatus = process.env.TEST_STATUS === 'pass' ? '✅ Pass' : '❌ Fail'
+            const tsOut      = (process.env.TS_OUTPUT   || '').slice(0, 3000)
+            const testOut    = (process.env.TEST_OUTPUT || '').slice(0, 3000)
+            const pzFiles    = (process.env.PROTECTED_FILES || '').trim()
+            const verdict    = process.env.CLAUDE_VERDICT || 'Not available'
+
+            const pzSection = pzFiles
+              ? '⚠️ **Protected Zone files modified:**\n```\n' + pzFiles + '\n```'
+              : '✅ No Protected Zone files modified'
+
+            const tsDetail   = tsOut   ? '\n<details><summary>TypeScript output</summary>\n\n```\n' + tsOut   + '\n```\n</details>' : ''
+            const testDetail = testOut ? '\n<details><summary>Test output</summary>\n\n```\n'        + testOut + '\n```\n</details>' : ''
+
+            const body = [
+              BOT_MARKER,
+              '## 🤖 Automated PR Review',
+              '',
+              '| Check | Status |',
+              '|-------|--------|',
+              '| TypeScript | ' + tsStatus + ' |',
+              '| Tests | '      + testStatus + ' |',
+              tsDetail,
+              testDetail,
+              '',
+              '### Protected Zone Audit',
+              pzSection,
+              '',
+              '### Claude Analysis',
+              '```',
+              verdict,
+              '```',
+            ].join('\n')
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            })
+
+      - name: Apply label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const verdict    = process.env.CLAUDE_VERDICT || ''
+            const isCritical = verdict.includes('VERDICT: CRITICAL')
+            const owner      = context.repo.owner
+            const repo       = context.repo.repo
+            const number     = context.issue.number
+
+            if (isCritical) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['needs-work'] })
+              await github.rest.pulls.createReview({
+                owner, repo, pull_number: number,
+                event: 'REQUEST_CHANGES',
+                body: 'Critical issues found by automated review. See PR comment for details.',
+              })
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'ready-for-review' })
+              } catch (_) {}
+            } else {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['ready-for-review'] })
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'needs-work' })
+              } catch (_) {}
+            }
