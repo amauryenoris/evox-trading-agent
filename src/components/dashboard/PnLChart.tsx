@@ -58,11 +58,11 @@ export function PnLChart({ data }: Props) {
   }, [])
 
   const filtered = useMemo(
-    () => (liveData ? filterData(activeRange, liveData.history) : []),
+    () => (liveData ? filterData(activeRange, liveData.history ?? []) : []),
     [activeRange, liveData],
   )
 
-  if (!liveData || liveData.history.length === 0) {
+  if (!liveData || !liveData.history?.length) {
     return (
       <Card padded={false}>
         <div className="flex items-baseline justify-between px-6 pt-5 pb-2">
