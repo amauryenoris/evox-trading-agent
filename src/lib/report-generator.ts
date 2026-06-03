@@ -96,6 +96,8 @@ interface SignalTypeStats {
 interface SignalTypeBreakdown {
   meanReversion: SignalTypeStats
   trend: SignalTypeStats
+  trendPullback?: SignalTypeStats
+  trendZLE05?: SignalTypeStats
 }
 
 interface RegimeDistribution {
@@ -287,9 +289,10 @@ function calculateDiagnostics(
   }
 
   const mrTrades = weekEvals.filter((e) => e.signal_type === 'MEAN_REVERSION')
-  const trendTrades = weekEvals.filter((e) =>
-    ['TREND', 'TREND_PULLBACK', 'TREND_ZLE05'].includes(e.signal_type ?? '')
+  const trendPullbackTrades = weekEvals.filter((e) =>
+    ['TREND', 'TREND_PULLBACK', 'PULLBACK_EMA50', 'TREND_FOLLOWING'].includes(e.signal_type ?? '')
   )
+  const trendZLE05Trades = weekEvals.filter((e) => e.signal_type === 'TREND_ZLE05')
 
   return {
     holdsBreakdown: {
@@ -323,7 +326,9 @@ function calculateDiagnostics(
     },
     signalTypeBreakdown: {
       meanReversion: buildSignalStats(mrTrades),
-      trend: buildSignalStats(trendTrades),
+      trend:         buildSignalStats([...trendPullbackTrades, ...trendZLE05Trades]), // backward compat — do not remove
+      trendPullback: buildSignalStats(trendPullbackTrades),
+      trendZLE05:    buildSignalStats(trendZLE05Trades),
     },
   }
 }
@@ -612,7 +617,8 @@ function generatePDF(
       drawSectionTitle(doc, 'Signal Type Breakdown')
       doc.fontSize(10).fillColor(C_BLACK)
       doc.text(`Mean Reversion trades:    ${stb.meanReversion.count}`, MARGIN)
-      doc.text(`Trend trades:             ${stb.trend.count}`, MARGIN)
+      doc.text(`Trend PB trades:          ${stb.trendPullback?.count ?? 0}`, MARGIN)
+      doc.text(`Trend ZLE trades:         ${stb.trendZLE05?.count ?? 0}`, MARGIN)
 
       if (stb.meanReversion.count > 0) {
         doc.moveDown(0.3)
@@ -624,14 +630,24 @@ function generatePDF(
         doc.text(`    Avg loss:   -$${Math.abs(stb.meanReversion.avgLossUSD).toFixed(2)}`, MARGIN)
       }
 
-      if (stb.trend.count > 0) {
+      if (stb.trendPullback && stb.trendPullback.count > 0) {
         doc.moveDown(0.3)
-        doc.font('Helvetica-Bold').text('  Trend performance:', MARGIN)
+        doc.font('Helvetica-Bold').text('  Trend PB performance:', MARGIN)
         doc.font('Helvetica')
-        doc.text(`    Win rate:   ${stb.trend.winRate.toFixed(1)}%`, MARGIN)
-        doc.text(`    Avg P&L:    ${stb.trend.avgPnlPct >= 0 ? '+' : ''}${stb.trend.avgPnlPct.toFixed(2)}%`, MARGIN)
-        doc.text(`    Avg win:    +$${stb.trend.avgWinUSD.toFixed(2)}`, MARGIN)
-        doc.text(`    Avg loss:   -$${Math.abs(stb.trend.avgLossUSD).toFixed(2)}`, MARGIN)
+        doc.text(`    Win rate:   ${stb.trendPullback.winRate.toFixed(1)}%`, MARGIN)
+        doc.text(`    Avg P&L:    ${stb.trendPullback.avgPnlPct >= 0 ? '+' : ''}${stb.trendPullback.avgPnlPct.toFixed(2)}%`, MARGIN)
+        doc.text(`    Avg win:    +$${stb.trendPullback.avgWinUSD.toFixed(2)}`, MARGIN)
+        doc.text(`    Avg loss:   -$${Math.abs(stb.trendPullback.avgLossUSD).toFixed(2)}`, MARGIN)
+      }
+
+      if (stb.trendZLE05 && stb.trendZLE05.count > 0) {
+        doc.moveDown(0.3)
+        doc.font('Helvetica-Bold').text('  Trend ZLE performance:', MARGIN)
+        doc.font('Helvetica')
+        doc.text(`    Win rate:   ${stb.trendZLE05.winRate.toFixed(1)}%`, MARGIN)
+        doc.text(`    Avg P&L:    ${stb.trendZLE05.avgPnlPct >= 0 ? '+' : ''}${stb.trendZLE05.avgPnlPct.toFixed(2)}%`, MARGIN)
+        doc.text(`    Avg win:    +$${stb.trendZLE05.avgWinUSD.toFixed(2)}`, MARGIN)
+        doc.text(`    Avg loss:   -$${Math.abs(stb.trendZLE05.avgLossUSD).toFixed(2)}`, MARGIN)
       }
     }
 
