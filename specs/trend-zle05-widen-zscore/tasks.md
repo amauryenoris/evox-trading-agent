@@ -116,7 +116,7 @@
 
 ## Post-Implementation
 
-- [ ] Run `/review trend-zle05-widen-zscore` to verify implementation matches spec
+- [X] Run `/review trend-zle05-widen-zscore` to verify implementation matches spec
 - [X] Confirm no other setup (MEAN_REVERSION, TREND_PULLBACK, EMA_RECLAIM) was changed
 - [ ] Schedule follow-up task: remove temp logging (T-05–T-10) ~2026-06-17
 

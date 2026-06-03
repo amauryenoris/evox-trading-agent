@@ -2,7 +2,9 @@
 
 **Date**: 2026-06-03
 **Reviewer**: Claude (automated)
-**Status**: BLOCKED
+**Status**: APPROVED
+
+> **v2** — HIGH finding resolved in commit `a7e8ec4`. See findings section for details.
 
 ---
 
@@ -19,10 +21,10 @@
 | FR-07 | Never accept TREND_ZLE05 for z > 1.25 | ✅ | `trendSetupRejected` updated to `> 1.25`; fires `continue` |
 | NFR-01 | Temp logging removal scheduled ~2 weeks post-deploy | ✅ | Comment `// TEMP LOGGING — remove ~2026-06-17` present |
 | NFR-02 | Zero TypeScript errors in source files | ✅ | Pre-existing test-file errors unrelated to this change |
-| NFR-03 | No change to position sizing, exit rules, risk params | ❌ | **See HIGH finding below** — `adxOk` change affects TREND_PULLBACK |
+| NFR-03 | No change to position sizing, exit rules, risk params | ✅ | Fixed in v2: `adxOk` restored, TREND_PULLBACK unaffected |
 | C-01 | Protected Zone file touched with Amaury confirmation | ✅ | Confirmed in tasks.md |
 | C-02 | `detectMarketRegime()` unchanged | ✅ | Not touched |
-| C-03 | MEAN_REVERSION, TREND_PULLBACK, EMA_RECLAIM blocks unchanged | ❌ | **See HIGH finding** — TREND_PULLBACK's effective ADX threshold changed |
+| C-03 | MEAN_REVERSION, TREND_PULLBACK, EMA_RECLAIM blocks unchanged | ✅ | Fixed in v2: TREND_PULLBACK uses original `trendQualityOk` |
 | C-04 | Only `adxOk` changed in quality-gate variables | ✅ | `momentumOk`, `ema50SlopeOk`, `trendQualityOk` untouched |
 | C-05 | `enforceExitRules()`, cooldown, `openPositionSymbols` unchanged | ✅ | Not touched |
 
@@ -64,53 +66,15 @@
 ### CRITICAL (blocks merge)
 None
 
-### HIGH (must fix before merge)
+### HIGH (resolved in commit `a7e8ec4`)
 
-**`adxOk` is shared — TREND_PULLBACK's ADX threshold was silently raised**
+~~`adxOk` is shared — TREND_PULLBACK's ADX threshold was silently raised~~
 
-`adxOk` is consumed by `trendQualityOk`, which is used by **both** `trendZLE05Setup`
-and `trendSetup` (TREND_PULLBACK):
-
-```typescript
-// Line 1040 — shared gate
-const adxOk = adxValue !== null && adxValue >= 25  // ← changed
-
-// Line 1042 — used by both setups
-const trendQualityOk = ema50SlopeOk && adxOk
-
-// Line 1055–1062 — TREND_PULLBACK uses trendQualityOk
-const trendSetup = ... && trendQualityOk
-
-// Line 1072–1082 — TREND_ZLE05 also uses trendQualityOk
-const trendZLE05Setup = ... && trendQualityOk
-```
-
-**Effect**: TREND_PULLBACK now requires ADX >= 25 AND non-null. Previously it
-required ADX >= 20 (with null pass-through). The spec explicitly puts "Any change
-to TREND_PULLBACK's ADX threshold" out of scope (requirements.md) and C-03 states
-TREND_PULLBACK blocks must not be changed.
-
-**Fix**: Introduce a separate `adxOkZLE05` for TREND_ZLE05 only. Keep `adxOk`
-(and therefore `trendQualityOk`) at its original `adxValue === null || adxValue >= 20`
-for TREND_PULLBACK. Apply `adxOkZLE05` only in `trendZLE05Setup`:
-
-```typescript
-// Shared (unchanged) — used by TREND_PULLBACK
-const adxOk = adxValue === null || adxValue >= 20
-
-// ZLE05-specific — tighter gate
-const adxOkZLE05 = adxValue !== null && adxValue >= 25
-
-const trendQualityOk = ema50SlopeOk && adxOk           // TREND_PULLBACK unchanged
-const trendQualityOkZLE05 = ema50SlopeOk && adxOkZLE05 // ZLE05 only
-
-// trendZLE05Setup uses trendQualityOkZLE05 instead of trendQualityOk
-// isZLE05Candidate uses trendQualityOkZLE05 is optional (it's a candidate flag,
-//   not an entry gate — but for consistency should also use the tighter gate)
-```
-
-Also update `wouldPassWithoutZ` to use `trendQualityOkZLE05` so it mirrors the
-actual `trendZLE05Setup` conditions.
+**Resolved**: `adxOk` restored to `adxValue === null || adxValue >= 20` (original).
+New `adxOkZLE05 = adxValue !== null && adxValue >= 25` and `trendQualityOkZLE05`
+introduced. `trendZLE05Setup`, `wouldPassWithoutZ`, and `isZLE05Candidate` now use
+`trendQualityOkZLE05`. TREND_PULLBACK continues to use the original `trendQualityOk`
+— no behavioral change.
 
 ### MEDIUM (consider fixing)
 None
@@ -129,9 +93,4 @@ None
 
 ## Decision
 
-**BLOCKED** — 1 HIGH finding. Must fix before merge:
-
-- **Shared `adxOk` raises TREND_PULLBACK's ADX threshold as a side effect.**
-  Create `adxOkZLE05 = adxValue !== null && adxValue >= 25` and use it only in
-  `trendZLE05Setup` (and `isZLE05Candidate`). Restore `adxOk` to
-  `adxValue === null || adxValue >= 20` so TREND_PULLBACK is unaffected.
+**APPROVED** — No CRITICAL or HIGH findings. All requirements satisfied. Ready to ship.
