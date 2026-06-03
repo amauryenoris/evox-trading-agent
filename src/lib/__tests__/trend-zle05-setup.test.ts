@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-// Replicates trendZLE05Setup conditions from claude-agent.ts.
+// Replicates trendZLE05Setup conditions from claude-agent.ts (uses trendQualityOkZLE05).
 // Keep in sync with the detection block when conditions change.
 function evalTrendZLE05Setup(p: {
   ema50: number

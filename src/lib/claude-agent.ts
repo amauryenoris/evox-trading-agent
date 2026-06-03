@@ -1037,16 +1037,21 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ema50PrevValue !== null &&
         ema50Current > ema50PrevValue
 
-      const adxOk = adxValue !== null && adxValue >= 25
+      // Shared gate — used by TREND_PULLBACK (unchanged from original)
+      const adxOk = adxValue === null || adxValue >= 20
 
-      const trendQualityOk = ema50SlopeOk && adxOk
+      // ZLE05-specific gate — tighter: null rejected, floor raised to 25
+      const adxOkZLE05 = adxValue !== null && adxValue >= 25
+
+      const trendQualityOk     = ema50SlopeOk && adxOk       // TREND_PULLBACK
+      const trendQualityOkZLE05 = ema50SlopeOk && adxOkZLE05 // TREND_ZLE05 only
 
       const isTrendStructure =
         indicators.currentPrice > ema50Value &&
         ema50Value > ema200Value
 
       const isPullbackCandidate = isTrendStructure && zScore <= 0 && momentumOk
-      const isZLE05Candidate = isTrendStructure && zScore > 0 && zScore <= 1.25 && momentumOk
+      const isZLE05Candidate = isTrendStructure && zScore > 0 && zScore <= 1.25 && momentumOk && trendQualityOkZLE05
 
       // ── Setup detection ──
       const meanReversionSetup = zScore <= effectiveThreshold
@@ -1077,7 +1082,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         zScore > 0 &&
         zScore <= 1.25 &&
         momentumOk &&
-        trendQualityOk &&
+        trendQualityOkZLE05 &&
         macdHistogram !== null &&
         macdHistogram > 0
 
@@ -1088,7 +1093,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ema50Value > ema200Value &&
         zScore > 0 &&
         momentumOk &&
-        trendQualityOk &&
+        trendQualityOkZLE05 &&
         macdHistogram !== null &&
         macdHistogram > 0
 
@@ -1140,7 +1145,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ? 'EMA_RECLAIM'
         : null
 
-      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendZLE05Setup, trendSetupRejected, emaReclaimSetup, trendQualityOk, ema50SlopeOk, adxOk })
+      console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendZLE05Setup, trendSetupRejected, emaReclaimSetup, trendQualityOk, trendQualityOkZLE05, ema50SlopeOk, adxOk, adxOkZLE05 })
 
       if (trendSetupRejected) {
         console.log(`[SETUP-GATE] ${symbol}: TREND_ZGT125 — trend aligned but zScore ${zScore.toFixed(3)} > 1.25, excluded (price above fair value)`)
