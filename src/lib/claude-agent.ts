@@ -936,6 +936,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // Prevent same-cycle re-entry after GTC stop loss
   const closedThisCycle = new Set(closedContexts.map(ctx => ctx.symbol))
 
+  // TEMP LOGGING — remove ~2026-06-17
+  let trendZLE05Signals = 0
+  let legacySignals = 0
+  let expandedSignals = 0
+  let trendZLE05Rejected = 0
+
   for (const symbol of watchlist) {
     if (INSTRUMENT_BLACKLIST.has(symbol)) {
       console.log(`[AGENT] ${symbol} skipped — blacklisted instrument`)
@@ -1031,7 +1037,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ema50PrevValue !== null &&
         ema50Current > ema50PrevValue
 
-      const adxOk = adxValue === null || adxValue >= 20
+      const adxOk = adxValue !== null && adxValue >= 25
 
       const trendQualityOk = ema50SlopeOk && adxOk
 
@@ -1040,7 +1046,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ema50Value > ema200Value
 
       const isPullbackCandidate = isTrendStructure && zScore <= 0 && momentumOk
-      const isZLE05Candidate = isTrendStructure && zScore > 0 && zScore <= 0.5 && momentumOk
+      const isZLE05Candidate = isTrendStructure && zScore > 0 && zScore <= 1.25 && momentumOk
 
       // ── Setup detection ──
       const meanReversionSetup = zScore <= effectiveThreshold
@@ -1055,9 +1061,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         momentumOk &&
         trendQualityOk
 
-      // TREND_ZLE05: same trend structure, z-score 0–0.5, momentum + quality confirmed
+      // TREND_ZLE05: same trend structure, z-score 0–1.25, momentum + quality confirmed
       // Requires positive MACD histogram — price slightly above fair value needs bullish momentum confirmation
       const macdHistogram = indicators.macd?.histogram ?? null
+
+      if (adxValue === null && zScore > 0 && zScore <= 1.25 && macdHistogram !== null && macdHistogram > 0) {
+        console.log(`[TREND_ZLE05] ${symbol} blocked — ADX null`)
+      }
 
       const trendZLE05Setup =
         ema50Value > 0 &&
@@ -1065,11 +1075,35 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         indicators.currentPrice > ema50Value &&
         ema50Value > ema200Value &&
         zScore > 0 &&
-        zScore <= 0.5 &&
+        zScore <= 1.25 &&
         momentumOk &&
         trendQualityOk &&
         macdHistogram !== null &&
         macdHistogram > 0
+
+      const wouldPassWithoutZ =
+        ema50Value > 0 &&
+        ema200Value > 0 &&
+        indicators.currentPrice > ema50Value &&
+        ema50Value > ema200Value &&
+        zScore > 0 &&
+        momentumOk &&
+        trendQualityOk &&
+        macdHistogram !== null &&
+        macdHistogram > 0
+
+      if (trendZLE05Setup) {
+        trendZLE05Signals++
+        const zBucket = zScore <= 0.5 ? 'legacy' : 'expanded'
+        if (zBucket === 'legacy') legacySignals++
+        else expandedSignals++
+        console.log(`[TREND_ZLE05_ENTRY] bucket=${zBucket} symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)}`)
+      }
+
+      if (!trendZLE05Setup && zScore > 1.25 && zScore <= 2.5 && wouldPassWithoutZ) {
+        trendZLE05Rejected++
+        console.log(`[TREND_ZLE05_REJECTED_Z] symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)} regime=${indicators.marketRegime}`)
+      }
 
       // ── EMA RECLAIM setup ──
       // Price crosses above EMA50 from below, below fair value, with momentum confirmation
@@ -1093,7 +1127,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       }
 
       // Track rejected trend candidates: trend-aligned but zScore > 0.5 (price above fair value)
-      const trendSetupRejected = isTrendStructure && ema50Value > 0 && ema200Value > 0 && zScore > 0.5
+      const trendSetupRejected = isTrendStructure && ema50Value > 0 && ema200Value > 0 && zScore > 1.25
 
       // Computed signal type — used for sizing, context save, and near-miss tagging
       const signalType = meanReversionSetup
@@ -1109,16 +1143,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       console.log({ symbol, price: indicators.currentPrice, ema50: ema50Value, ema200: ema200Value, ema50_gt_ema200: ema50Value > ema200Value, trendSetup, trendZLE05Setup, trendSetupRejected, emaReclaimSetup, trendQualityOk, ema50SlopeOk, adxOk })
 
       if (trendSetupRejected) {
-        console.log(`[SETUP-GATE] ${symbol}: TREND_ZGT05 — trend aligned but zScore ${zScore.toFixed(3)} > 0.5, excluded (price above fair value)`)
+        console.log(`[SETUP-GATE] ${symbol}: TREND_ZGT125 — trend aligned but zScore ${zScore.toFixed(3)} > 1.25, excluded (price above fair value)`)
         decisions.push({
           id: randomUUID(),
           timestamp,
           symbol,
-          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `TREND_ZGT05: trend setup detected but excluded — zScore ${zScore.toFixed(3)} > 0.5 (price above fair value)`, confidence: 0 },
+          decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `TREND_ZGT125: trend setup detected but excluded — zScore ${zScore.toFixed(3)} > 1.25 (price above fair value)`, confidence: 0 },
           indicators,
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
-          error: 'TREND_ZGT05: excluded — zScore > 0.5',
+          error: 'TREND_ZGT125: excluded — zScore > 1.25',
         })
         continue
       }
@@ -1478,6 +1512,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       })
     }
   }
+
+  console.log(`[TREND_ZLE05_STATS] signals=${trendZLE05Signals} legacy=${legacySignals} expanded=${expandedSignals} rejectedZ=${trendZLE05Rejected}`)
 
   // Ranking phase — when only 1 slot was available, pick best candidate by signal strength
   if (buyQueue.length > 0) {
