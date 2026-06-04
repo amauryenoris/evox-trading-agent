@@ -57,14 +57,17 @@ export async function GET(request: Request) {
     }
 
     const mrTrades = closedTrades.filter((t) => t.signal_type === 'MEAN_REVERSION')
-    const trendTrades = closedTrades.filter((t) =>
-      ['TREND', 'TREND_PULLBACK', 'TREND_ZLE05'].includes(t.signal_type ?? '')
+    const trendPullbackTrades = closedTrades.filter((t) =>
+      ['TREND', 'TREND_PULLBACK', 'PULLBACK_EMA50', 'TREND_FOLLOWING'].includes(t.signal_type ?? '')
     )
+    const trendZLE05Trades = closedTrades.filter((t) => t.signal_type === 'TREND_ZLE05')
     const emaReclaimTrades = closedTrades.filter((t) => t.signal_type === 'EMA_RECLAIM')
     const signalTypeBreakdown = {
       meanReversion: signalStats(mrTrades),
-      trend: signalStats(trendTrades),
-      emaReclaim: signalStats(emaReclaimTrades),
+      trend:         signalStats([...trendPullbackTrades, ...trendZLE05Trades]), // backward compat — do not remove
+      trendPullback: signalStats(trendPullbackTrades),
+      trendZLE05:    signalStats(trendZLE05Trades),
+      emaReclaim:    signalStats(emaReclaimTrades),
     }
 
     const last10 = closedTrades

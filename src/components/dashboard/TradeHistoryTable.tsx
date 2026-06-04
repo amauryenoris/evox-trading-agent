@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function TradeHistoryTable({ orders }: Props) {
-  const items = orders.slice(0, 20)
+  const items = orders.slice(0, 50)
 
   return (
     <Card padded={false}>

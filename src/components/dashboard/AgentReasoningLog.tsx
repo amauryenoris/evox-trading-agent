@@ -128,16 +128,16 @@ function SignalBadge({ signal }: { signal: SignalKind }) {
     MR:                 { bg: 'bg-blue-500/10',   text: 'text-blue-400',   border: 'border-blue-500/25',   label: 'MR' },
     MEAN_REVERSION:     { bg: 'bg-blue-500/10',   text: 'text-blue-400',   border: 'border-blue-500/25',   label: 'MR' },
     TP:                 { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'TP' },
-    TREND_PULLBACK:     { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'TREND PB' },
+    TREND_PULLBACK:     { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'Trend PB' },
     ZLE:                { bg: 'bg-amber-500/10',  text: 'text-amber-400',  border: 'border-amber-500/25',  label: 'ZLE' },
-    TREND_ZLE05:        { bg: 'bg-amber-500/10',  text: 'text-amber-400',  border: 'border-amber-500/25',  label: 'TREND ZLE' },
+    TREND_ZLE05:        { bg: 'bg-amber-500/10',  text: 'text-amber-400',  border: 'border-amber-500/25',  label: 'Trend ZLE' },
     TREND_ZGT05:        { bg: 'bg-amber-500/10',  text: 'text-amber-400',  border: 'border-amber-500/25',  label: 'TREND ZGT' },
     TREND_QUALITY_FAIL: { bg: 'bg-amber-500/10',  text: 'text-amber-400',  border: 'border-amber-500/25',  label: 'QUALITY' },
     EMA:                { bg: 'bg-[#7C3AED]/15',  text: 'text-[#A78BFA]',  border: 'border-[#7C3AED]/30',  label: 'EMA' },
     EMA_RECLAIM:        { bg: 'bg-[#7C3AED]/15',  text: 'text-[#A78BFA]',  border: 'border-[#7C3AED]/30',  label: 'EMA RECLAIM' },
-    TREND:              { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'TREND' },
-    TREND_FOLLOWING:    { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'TREND' },
-    PULLBACK_EMA50:     { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'TREND' },
+    TREND:              { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'Trend PB' },
+    TREND_FOLLOWING:    { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'Trend PB' },
+    PULLBACK_EMA50:     { bg: 'bg-[#00B386]/10',  text: 'text-[#00B386]',  border: 'border-[#00B386]/25',  label: 'Trend PB' },
   }
   const key = String(signal).toUpperCase()
   const m = map[key] ?? { bg: 'bg-white/5', text: 'text-slate-400', border: 'border-[#1E1E2E]', label: key }

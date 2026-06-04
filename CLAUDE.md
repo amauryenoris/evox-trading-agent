@@ -1,6 +1,30 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 @AGENTS.md
 
 # Paquito — EVOX Trading Agent
+
+## Commands
+
+```bash
+npm run dev          # Start dev server (localhost:3000)
+npm run build        # Production build + type-check
+npm run lint         # ESLint (eslint-config-next)
+npm test             # Run all Vitest tests (watch mode)
+npm run test:coverage  # Coverage report (v8, targets src/lib/db.ts)
+
+# Run a single test file
+npx vitest run src/lib/__tests__/db.near-miss.test.ts
+
+# CLI agent runners (tsx, require .env.local)
+npm run cycle        # Full agent cycle (entry + exit analysis)
+npm run exit-only    # Exit evaluation only (no new entries)
+npm run report       # Generate weekly PDF report
+```
+
+---
 
 ## Decision Architecture
 
@@ -187,6 +211,27 @@ Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 5
 
 ---
 
+## Test Patterns
+
+Tests live in `src/lib/__tests__/`. The Vitest environment is `node`; the test config (`vitest.config.ts`) pre-injects `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` so you don't need a real `.env` to run them.
+
+**Supabase mock pattern** — always use `vi.hoisted` so mocks are hoisted before imports:
+
+```ts
+const { mockFrom, mockSelect } = vi.hoisted(() => ({
+  mockFrom: vi.fn(),
+  mockSelect: vi.fn(),
+}))
+
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({ from: mockFrom }),
+}))
+```
+
+**Signal condition tests** (`trend-zle05-setup.test.ts`) replicate the detection logic inline rather than importing from `claude-agent.ts`. If you change a signal condition in `claude-agent.ts`, update the corresponding test helper to match — they are intentionally decoupled to avoid false-positive tests.
+
+---
+
 ## GitHub Actions Schedule
 
 ```yaml
@@ -215,13 +260,35 @@ Env vars injected per workflow — see each `.github/workflows/*.yml` for the fu
 
 ## Env Variables Required
 
+Server-side (`src/lib/db.ts`, `src/lib/supabase/server.ts`) and client-side use **different** variable names:
+
 ```
-ANTHROPIC_API_KEY
+# Broker
 ALPACA_API_KEY
 ALPACA_SECRET_KEY
+ALPACA_BASE_URL          # https://paper-api.alpaca.markets or live URL
+
+# AI
+ANTHROPIC_API_KEY
+
+# Supabase — server side (service role, never sent to browser)
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+
+# Supabase — client side (anon key, safe for browser)
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
+
+# App
+NEXT_PUBLIC_BASE_URL
+CRON_SECRET              # Protects /api/cron/run from unauthorized calls
+
+# GitHub (used by dashboard "Run Agent" button)
+GITHUB_TOKEN
+GITHUB_OWNER
+GITHUB_REPO
+
+# Trading config
 RISK_PCT
 STOP_LOSS_PCT
 MAX_POSITION_SIZE

@@ -87,6 +87,8 @@ interface PerformanceData {
   signalTypeBreakdown?: {
     meanReversion: SignalStat
     trend: SignalStat
+    trendPullback?: SignalStat
+    trendZLE05?: SignalStat
     emaReclaim: SignalStat
   }
   best?: { symbol: string; pct: number; pnl: number } | null
@@ -168,12 +170,21 @@ export function PerformanceAnalytics() {
       color: 'blue' as SigColor,
     },
     {
-      type: 'TREND_PULLBACK', label: 'Trend',
-      trades: data.signalTypeBreakdown.trend.count,
-      winRate: data.signalTypeBreakdown.trend.winRate,
-      avgPnL: data.signalTypeBreakdown.trend.avgPnlPct,
-      profitFactor: data.signalTypeBreakdown.trend.profitFactor,
-      expectancy: data.signalTypeBreakdown.trend.expectancy,
+      type: 'TREND_PULLBACK', label: 'Trend PB',
+      trades:       data.signalTypeBreakdown.trendPullback?.count        ?? 0,
+      winRate:      data.signalTypeBreakdown.trendPullback?.winRate      ?? 0,
+      avgPnL:       data.signalTypeBreakdown.trendPullback?.avgPnlPct    ?? 0,
+      profitFactor: data.signalTypeBreakdown.trendPullback?.profitFactor ?? 0,
+      expectancy:   data.signalTypeBreakdown.trendPullback?.expectancy   ?? 0,
+      color: 'green' as SigColor,
+    },
+    {
+      type: 'TREND_ZLE05', label: 'Trend ZLE',
+      trades:       data.signalTypeBreakdown.trendZLE05?.count        ?? 0,
+      winRate:      data.signalTypeBreakdown.trendZLE05?.winRate      ?? 0,
+      avgPnL:       data.signalTypeBreakdown.trendZLE05?.avgPnlPct    ?? 0,
+      profitFactor: data.signalTypeBreakdown.trendZLE05?.profitFactor ?? 0,
+      expectancy:   data.signalTypeBreakdown.trendZLE05?.expectancy   ?? 0,
       color: 'green' as SigColor,
     },
     ...(data.signalTypeBreakdown.emaReclaim.count > 0 ? [{

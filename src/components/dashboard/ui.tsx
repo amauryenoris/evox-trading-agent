@@ -85,13 +85,15 @@ export function SignalBadge({ signal, size = 'sm' }: SignalBadgeProps) {
     TP:             { tone: 'green',  label: 'TP' },
     ZLE:            { tone: 'amber',  label: 'ZLE' },
     EMA:            { tone: 'purple', label: 'EMA' },
-    TREND:          { tone: 'green',  label: 'TREND' },
-    TREND_PULLBACK: { tone: 'green',  label: 'TREND PB' },
-    TREND_ZLE05:    { tone: 'amber',  label: 'TREND ZLE' },
-    TREND_ZGT05:    { tone: 'amber',  label: 'TREND ZGT' },
-    EMA_RECLAIM:    { tone: 'purple', label: 'EMA RECLAIM' },
-    NEWS_FILTER:    { tone: 'purple', label: 'NEWS' },
-    NO_SETUP:       { tone: 'ghost',  label: 'NO SETUP' },
+    TREND:           { tone: 'green',  label: 'Trend PB' },
+    TREND_FOLLOWING: { tone: 'green',  label: 'Trend PB' },
+    PULLBACK_EMA50:  { tone: 'green',  label: 'Trend PB' },
+    TREND_PULLBACK:  { tone: 'green',  label: 'Trend PB' },
+    TREND_ZLE05:     { tone: 'green',  label: 'Trend ZLE' },
+    TREND_ZGT05:     { tone: 'amber',  label: 'TREND ZGT' },
+    EMA_RECLAIM:     { tone: 'purple', label: 'EMA RECLAIM' },
+    NEWS_FILTER:     { tone: 'purple', label: 'NEWS' },
+    NO_SETUP:        { tone: 'ghost',  label: 'NO SETUP' },
   }
   const m = map[signal] ?? { tone: 'neutral' as BadgeTone, label: signal }
   return <Badge tone={m.tone} size={size}>{m.label}</Badge>
