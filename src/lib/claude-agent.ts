@@ -941,6 +941,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   let legacySignals = 0
   let expandedSignals = 0
   let trendZLE05Rejected = 0
+  let trendPullbackBlockedMacd = 0
 
   for (const symbol of watchlist) {
     if (INSTRUMENT_BLACKLIST.has(symbol)) {
@@ -1065,6 +1066,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const meanReversionSetup = zScore <= effectiveThreshold
 
       // TREND_PULLBACK: uptrend structure, z-score <= 0, momentum + quality confirmed
+      const trendPullbackMacdFloor = -2.0
+      const trendPullbackMomentumOk =
+        macdHistogram !== null &&
+        macdHistogram > trendPullbackMacdFloor
+
       const trendSetup =
         ema50Value > 0 &&
         ema200Value > 0 &&
@@ -1072,7 +1078,55 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ema50Value > ema200Value &&
         zScore <= 0 &&
         momentumOk &&
+        trendQualityOk &&
+        trendPullbackMomentumOk
+
+      const wouldPassWithoutMacdFloor =
+        ema50Value > 0 &&
+        ema200Value > 0 &&
+        indicators.currentPrice > ema50Value &&
+        ema50Value > ema200Value &&
+        zScore <= 0 &&
+        momentumOk &&
         trendQualityOk
+
+      // TEMP LOGGING — remove ~2026-06-17
+      const zBucket =
+        Number.isFinite(zScore)
+          ? zScore <= -1.0
+            ? 'deep_pullback'
+            : zScore <= -0.5
+              ? 'standard_pullback'
+              : 'shallow_pullback'
+          : 'invalid_z'
+
+      if (!trendSetup && wouldPassWithoutMacdFloor && !trendPullbackMomentumOk) {
+        trendPullbackBlockedMacd++
+        console.log(
+          `[TREND_PULLBACK_BLOCKED_MACD] symbol=${symbol}` +
+          ` macd=${macdHistogram?.toFixed(2)}` +
+          ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
+          ` adx=${adxValue} regime=${indicators.marketRegime}`
+        )
+      }
+
+      if (trendSetup) {
+        console.log(
+          `[TREND_PULLBACK_ENTRY] symbol=${symbol}` +
+          ` macd=${macdHistogram?.toFixed(2)}` +
+          ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
+          ` adx=${adxValue} regime=${indicators.marketRegime}`
+        )
+      }
+
+      if (trendSetup && indicators.marketRegime === 'HIGH_VOLATILITY') {
+        console.log(
+          `[TREND_PULLBACK_HIGH_VOL] symbol=${symbol}` +
+          ` macd=${macdHistogram?.toFixed(2)}` +
+          ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
+          ` adx=${adxValue}`
+        )
+      }
 
       if (adxValue === null && zScore > 0 && zScore <= 1.25 && macdHistogram !== null && macdHistogram > 0) {
         console.log(`[TREND_ZLE05] ${symbol} blocked — ADX null`)
@@ -1524,6 +1578,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   }
 
   console.log(`[TREND_ZLE05_STATS] signals=${trendZLE05Signals} legacy=${legacySignals} expanded=${expandedSignals} rejectedZ=${trendZLE05Rejected}`)
+  console.log(`[TREND_PULLBACK_STATS] blockedMacd=${trendPullbackBlockedMacd}`)
 
   // Ranking phase — when only 1 slot was available, pick best candidate by signal strength
   if (buyQueue.length > 0) {
