@@ -154,7 +154,7 @@ INSTRUMENT_BLACKLIST            // Inverse + leveraged ETFs — never trade
 |--------|-----------|------|
 | `MEAN_REVERSION` | Ranging market, z-score ≤ -1.3, RSI < 45, %B < 0.2 | z-score ≥ -0.8 (reverted to fair value) |
 | `TREND_PULLBACK` | Uptrend (price > EMA50 > EMA200), z-score ≤ 0, momentum + ADX ≥ 20, EMA50 slope rising | Price falls below EMA50 |
-| `TREND_ZLE05` | Same uptrend, z-score 0–0.5, positive MACD histogram, EMA50 slope rising | Price falls below EMA50 |
+| `TREND_ZLE05` | Same uptrend, z-score 0–1.25, positive MACD histogram, EMA50 slope rising | Price falls below EMA50 |
 | `EMA_RECLAIM` | Price crossed above EMA50 from below (confirmed by prior day), z-score < 0, momentum confirmed | Price falls back below EMA50 |
 
 Universal exits (all signal types):

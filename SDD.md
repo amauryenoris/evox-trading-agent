@@ -105,7 +105,7 @@ Persist AgentLogEntry → agent_log (Supabase)
 |--------|-----------------|----------------|
 | `MEAN_REVERSION` | `RANGING` regime, z-score ≤ effectiveThreshold (base: -1.3), RSI < 45, %B < 0.2 | z-score ≥ -0.8 |
 | `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, EMA50 slope rising, ADX ≥ 20, momentum ok | price < EMA50 |
-| `TREND_ZLE05` | price > EMA50 > EMA200, 0 < z-score ≤ 0.5, EMA50 slope rising, ADX ≥ 20, MACD histogram > 0 | price < EMA50 |
+| `TREND_ZLE05` | price > EMA50 > EMA200, 0 < z-score ≤ 1.25, EMA50 slope rising, ADX ≥ 18 (or ≥ 15 with MACD > 0.25), MACD histogram > 0 | price < EMA50 |
 | `EMA_RECLAIM` | price crossed above EMA50 from below (prev day ≤ ema50Prev), z-score < 0, distance > 0.2%, momentum ok | price < EMA50 |
 
 All signals share universal exits: +10% profit target, 20-day time stop, -5% stop loss (dual-layer), trailing stop.

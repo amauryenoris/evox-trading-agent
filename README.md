@@ -235,7 +235,7 @@ The bot uses four entry signals:
 |---|---|
 | `MEAN_REVERSION` | Z-score below `-1.3` in a ranging market |
 | `TREND_PULLBACK` | Price in uptrend (above EMA50 > EMA200), z-score ≤ 0 |
-| `TREND_ZLE05` | Same trend, z-score between 0 and 0.5 |
+| `TREND_ZLE05` | Same trend, z-score between 0 and 1.25 |
 | `EMA_RECLAIM` | Price reclaims EMA50 from below (sized at 0.75x) |
 
 ---

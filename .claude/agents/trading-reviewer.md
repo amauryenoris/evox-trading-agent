@@ -51,7 +51,7 @@ If a diff touches config.ts, flag it immediately as CRITICAL and ask Amaury to c
 |--------|----------------|------|
 | `MEAN_REVERSION` | Ranging, z-score ≤ -1.3, RSI < 45, %B < 0.2 | z-score ≥ -0.8 |
 | `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, ADX ≥ 20, EMA50 slope rising | Price < EMA50 |
-| `TREND_ZLE05` | Same uptrend, z-score 0–0.5, positive MACD histogram | Price < EMA50 |
+| `TREND_ZLE05` | Same uptrend, z-score 0–1.25, positive MACD histogram, ADX ≥ 18 (or ≥ 15 with MACD > 0.25) | Price < EMA50 |
 | `EMA_RECLAIM` | Price crossed above EMA50 from below (prior day confirmed), z-score < 0 | Price < EMA50 |
 
 **Universal exits (must always be present):**
