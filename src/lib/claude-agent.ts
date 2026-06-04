@@ -1040,8 +1040,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Shared gate — used by TREND_PULLBACK (unchanged from original)
       const adxOk = adxValue === null || adxValue >= 20
 
-      // ZLE05-specific gate — tighter: null rejected, floor raised to 25
-      const adxOkZLE05 = adxValue !== null && adxValue >= 25
+      const macdHistogram = indicators.macd?.histogram ?? null
+
+      const lowAdxMacdBoost = 0.25
+
+      const adxOkZLE05 =
+        adxValue !== null &&
+        (
+          adxValue >= 18 ||
+          (adxValue >= 15 && macdHistogram !== null && macdHistogram > lowAdxMacdBoost)
+        )
 
       const trendQualityOk     = ema50SlopeOk && adxOk       // TREND_PULLBACK
       const trendQualityOkZLE05 = ema50SlopeOk && adxOkZLE05 // TREND_ZLE05 only
@@ -1065,10 +1073,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         zScore <= 0 &&
         momentumOk &&
         trendQualityOk
-
-      // TREND_ZLE05: same trend structure, z-score 0–1.25, momentum + quality confirmed
-      // Requires positive MACD histogram — price slightly above fair value needs bullish momentum confirmation
-      const macdHistogram = indicators.macd?.histogram ?? null
 
       if (adxValue === null && zScore > 0 && zScore <= 1.25 && macdHistogram !== null && macdHistogram > 0) {
         console.log(`[TREND_ZLE05] ${symbol} blocked — ADX null`)
@@ -1102,12 +1106,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         const zBucket = zScore <= 0.5 ? 'legacy' : 'expanded'
         if (zBucket === 'legacy') legacySignals++
         else expandedSignals++
-        console.log(`[TREND_ZLE05_ENTRY] bucket=${zBucket} symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)}`)
+        const adxBucket = adxValue >= 18 ? 'normal' : 'low_adx_boost'
+        console.log(`[TREND_ZLE05_ENTRY] bucket=${adxBucket} symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)}`)
       }
 
       if (!trendZLE05Setup && zScore > 1.25 && zScore <= 2.5 && wouldPassWithoutZ) {
         trendZLE05Rejected++
-        console.log(`[TREND_ZLE05_REJECTED_Z] symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)} regime=${indicators.marketRegime}`)
+        console.log(`[TREND_ZLE05_REJECTED_Z] symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)} adxOkZle=${adxOkZLE05} regime=${indicators.marketRegime}`)
       }
 
       // ── EMA RECLAIM setup ──
