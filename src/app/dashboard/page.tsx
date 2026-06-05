@@ -20,7 +20,7 @@ import { DashboardTabs } from '@/components/dashboard/DashboardTabs'
 import { SystemStatusBar } from '@/components/dashboard/SystemStatusBar'
 // ADAPTED: cookies forwarded so auth-protected API routes work server-side
 import { cookies } from 'next/headers'
-import type { PortfolioSummary, PositionDisplay, AgentLogEntry, AlpacaOrder, TradingPattern } from '@/lib/types'
+import type { PortfolioSummary, PositionDisplay, AgentLogEntry, TradeEvaluation, TradingPattern } from '@/lib/types'
 import type { WeeklyReportRecord } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -59,7 +59,7 @@ export default async function DashboardPage() {
       fetchJSON<PortfolioSummary | null>('/api/portfolio', null),
       fetchJSON<PositionDisplay[]>('/api/positions', []),
       fetchJSON<AgentLogEntry[]>('/api/agent-log', []),
-      fetchJSON<AlpacaOrder[]>('/api/trades', []),
+      fetchJSON<TradeEvaluation[]>('/api/trades', []),
       fetchJSON<TradingPattern[]>('/api/patterns', []),
       fetchJSON<WeeklyReportRecord[]>('/api/reports', []),
       // ADAPTED: PortfolioHistory shape — not a flat PortfolioHistoryPoint[], matches PnLChart prop
@@ -114,7 +114,7 @@ export default async function DashboardPage() {
         <AgentReasoningLog entries={agentLog} />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <PatternLibraryCard patterns={patterns} />
-          <TradeHistoryTable orders={trades} />
+          <TradeHistoryTable trades={trades} />
         </div>
       </div>
     ),
