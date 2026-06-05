@@ -731,6 +731,10 @@ async function enforceStopLosses(positions: AlpacaPosition[]): Promise<void> {
   }
 }
 
+const COOLDOWN_UNKNOWN_EXIT_REASON = false
+// Set true to also cooldown symbols with unmapped exit reasons.
+// Default false to avoid blocking valid re-entries from unknown exits.
+
 // ============================================================
 // MAIN AGENT CYCLE
 // ============================================================
@@ -869,7 +873,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   // 4e. Enforce deterministic exit rules (z-score reversion, profit target, time stop)
   // Runs after indicators cache is built — needs z-scores to evaluate exits
-  const { decisions: exitRuleEntries } = await (async () => {
+  const { decisions: exitRuleEntries, exitReasons } = await (async () => {
     try {
       const openCtxs = await getAllOpenPositionContexts()
       return await enforceExitRules(positions, indicatorsCache, openCtxs, account)
@@ -967,6 +971,38 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // Prevent same-cycle re-entry after GTC stop loss
   const closedThisCycle = new Set(closedContexts.map(ctx => ctx.symbol))
 
+  // MUST run AFTER enforceExitRules() and BEFORE BUY symbol evaluation.
+  // Otherwise same-cycle re-entry protection breaks.
+
+  // NOTE 1: cooldownSymbols is in-memory only.
+  // GitHub Actions creates a new process per run — cooldown does not
+  // persist between runs. Cross-run re-entry is NOT solved by this fix.
+  // Fase 2: Supabase symbol_cooldowns table with per-reason durations.
+
+  // NOTE 2: Cooldown activates on SELL decision generation, not broker
+  // execution confirmation. A rejected Alpaca SELL may still create
+  // cooldown state.
+  const cooldownSymbols = new Set<string>()
+
+  for (const [symbol, reason] of exitReasons.entries()) {
+    if (reason === 'UNKNOWN') {
+      console.warn(`[EXIT_COOLDOWN_UNKNOWN_REASON] symbol=${symbol}`)
+      if (COOLDOWN_UNKNOWN_EXIT_REASON) {
+        cooldownSymbols.add(symbol)
+        console.log(`[EXIT_COOLDOWN_ADD] symbol=${symbol} reason=UNKNOWN`)
+      }
+      continue
+    }
+    if (reason !== 'TIME_STOP') {
+      cooldownSymbols.add(symbol)
+      console.log(`[EXIT_COOLDOWN_ADD] symbol=${symbol} reason=${reason}`)
+    }
+  }
+  // TIME_STOP → no cooldown (thesis expired naturally)
+  // UNKNOWN → warn; cooldown only if COOLDOWN_UNKNOWN_EXIT_REASON=true
+
+  console.log(`[EXIT_COOLDOWN_READY] total=${cooldownSymbols.size}`)
+
   // TEMP LOGGING — remove ~2026-06-17
   let trendZLE05Signals = 0
   let legacySignals = 0
@@ -985,8 +1021,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       continue
     }
 
-    if (closedThisCycle.has(symbol)) {
-      console.log(`[AGENT] ${symbol} skipped — closed by GTC this cycle, cooldown`)
+    const skipReason =
+      closedThisCycle.has(symbol) ? 'GTC_STOP' :
+      cooldownSymbols.has(symbol) ? (exitReasons.get(symbol) ?? 'UNKNOWN') :
+      null
+
+    if (skipReason) {
+      console.log(`[AGENT] ${symbol} skipped — cooldown: ${skipReason}`)
       continue
     }
 
@@ -1610,6 +1651,24 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   console.log(`[TREND_ZLE05_STATS] signals=${trendZLE05Signals} legacy=${legacySignals} expanded=${expandedSignals} rejectedZ=${trendZLE05Rejected}`)
   console.log(`[TREND_PULLBACK_STATS] blockedMacd=${trendPullbackBlockedMacd}`)
+
+  const activeBreakdown = [...cooldownSymbols]
+    .map(sym => `${sym}:${exitReasons.get(sym) ?? 'UNKNOWN'}`)
+    .join(',')
+
+  const excludedBreakdown = [...exitReasons.entries()]
+    .filter(([, reason]) =>
+      reason === 'TIME_STOP' || reason === 'UNKNOWN'
+    )
+    .map(([sym, reason]) => `${sym}:${reason}`)
+    .join(',')
+
+  console.log(
+    `[EXIT_COOLDOWN_STATS]` +
+    ` total=${cooldownSymbols.size}` +
+    ` active=${activeBreakdown || 'none'}` +
+    ` excluded=${excludedBreakdown || 'none'}`
+  )
 
   // Ranking phase — when only 1 slot was available, pick best candidate by signal strength
   if (buyQueue.length > 0) {
