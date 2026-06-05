@@ -35,7 +35,7 @@ export async function runExitOnly(): Promise<void> {
 
   const openContexts = await getOpenPositionContexts()
 
-  await enforceExitRules(positions, indicatorsCache, openContexts, account)
+  const { decisions: _exitDecisions } = await enforceExitRules(positions, indicatorsCache, openContexts, account)
 
   console.log('[EXIT-ONLY] Complete')
 }

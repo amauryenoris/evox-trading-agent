@@ -46,6 +46,8 @@ import type {
   TradeEvaluation,
   ThresholdMap,
   LearnContext,
+  ExitReason,
+  EnforceExitResult,
 } from './types'
 
 // ============================================================
@@ -102,9 +104,25 @@ export async function enforceExitRules(
   indicatorsCache: Map<string, TechnicalIndicators>,
   openContexts: OpenPositionContext[],
   account: AlpacaAccount,
-): Promise<AgentLogEntry[]> {
+): Promise<EnforceExitResult> {
   const exitEntries: AgentLogEntry[] = []
+  const exitReasons = new Map<string, ExitReason>()
   const timestamp = new Date().toISOString()
+
+  function toExitReason(reason?: string | null): ExitReason {
+    if (!reason?.trim()) {
+      console.warn(`[EXIT_REASON_EMPTY] raw="${String(reason)}"`)
+      return 'UNKNOWN'
+    }
+    const r = reason.trim().toUpperCase().replace(/[-\s]/g, '_')
+    if (r.includes('PROFIT_TARGET'))    return 'PROFIT_TARGET'
+    if (r.includes('TIME_STOP'))        return 'TIME_STOP'
+    if (r.includes('FAIR_VALUE'))       return 'Z_SCORE_EXIT'
+    if (r.includes('FELL_BELOW_EMA50')) return 'EMA_FAILURE'
+    if (r.includes('TRAILING_STOP'))    return 'TRAILING_STOP'
+    console.warn(`[EXIT_REASON_UNMATCHED] raw="${reason}"`)
+    return 'UNKNOWN'
+  }
 
   for (const position of positions) {
     const ind = indicatorsCache.get(position.symbol)
@@ -278,6 +296,18 @@ export async function enforceExitRules(
         error: undefined,
       })
 
+      if (!exitReasons.has(position.symbol)) {
+        const mapped = toExitReason(exitReason)
+        exitReasons.set(position.symbol, mapped)
+        console.log(`[EXIT_COOLDOWN] symbol=${position.symbol} reason=${mapped}`)
+      } else {
+        console.error(
+          `[EXIT_REASON_CONFLICT] symbol=${position.symbol}` +
+          ` existing=${exitReasons.get(position.symbol)}` +
+          ` attemptedRaw="${exitReason}"`
+        )
+      }
+
       if (ctx) {
         try {
           const sellOrder = await getLatestSellOrder(position.symbol, ctx.buyTimestamp)
@@ -301,7 +331,7 @@ export async function enforceExitRules(
     }
   }
 
-  return exitEntries
+  return { decisions: exitEntries, exitReasons: new Map(exitReasons) }
 }
 
 // ============================================================
@@ -839,13 +869,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   // 4e. Enforce deterministic exit rules (z-score reversion, profit target, time stop)
   // Runs after indicators cache is built — needs z-scores to evaluate exits
-  const exitRuleEntries = await (async () => {
+  const { decisions: exitRuleEntries } = await (async () => {
     try {
       const openCtxs = await getAllOpenPositionContexts()
       return await enforceExitRules(positions, indicatorsCache, openCtxs, account)
     } catch (err) {
       console.error('[EXIT-RULES] enforceExitRules failed:', err)
-      return [] as AgentLogEntry[]
+      return { decisions: [] as AgentLogEntry[], exitReasons: new Map<string, ExitReason>() }
     }
   })()
 

@@ -330,3 +330,21 @@ export interface NearMissEntry {
 
 // Keys: symbol tickers + '__MACRO__' | Values: adjusted z-score threshold (default -1.5)
 export type ThresholdMap = Record<string, number>
+
+// ============================================================
+// EXIT REASON TYPES
+// ============================================================
+
+export type ExitReason =
+  | 'Z_SCORE_EXIT'
+  | 'TRAILING_STOP'
+  | 'PROFIT_TARGET'
+  | 'STOP_LOSS'
+  | 'TIME_STOP'
+  | 'EMA_FAILURE'
+  | 'UNKNOWN'
+
+export type EnforceExitResult = {
+  decisions: AgentLogEntry[]
+  exitReasons: ReadonlyMap<string, ExitReason>
+}

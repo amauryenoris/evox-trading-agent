@@ -52,7 +52,7 @@ describe('GET /api/portfolio-history — pagination', () => {
       .mockResolvedValueOnce({ data: page1, error: null })
 
     // Act
-    const result = await GET() as { history: Array<{ date: string; equity: number }> }
+    const result = await GET() as unknown as { history: Array<{ date: string; equity: number }> }
 
     // Assert — two pages were fetched with correct offsets
     expect(mockRange).toHaveBeenCalledTimes(2)
@@ -69,7 +69,7 @@ describe('GET /api/portfolio-history — pagination', () => {
     mockRange.mockResolvedValueOnce({ data: [], error: null })
 
     // Act
-    const result = await GET() as { history: Array<{ date: string; equity: number }> }
+    const result = await GET() as unknown as { history: Array<{ date: string; equity: number }> }
 
     // Assert
     expect(mockRange).toHaveBeenCalledTimes(1)
