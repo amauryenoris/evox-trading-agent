@@ -1172,6 +1172,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
               : 'shallow_pullback'
           : 'invalid_z'
 
+      const populationBucket =
+        zScore >= 1.0 ? 'CONTINUATION' :
+        zScore >= 0   ? 'CHOP' :
+                        'PULLBACK'
+
       if (!trendSetup && wouldPassWithoutMacdFloor && !trendPullbackMomentumOk) {
         trendPullbackBlockedMacd++
         console.log(
@@ -1185,6 +1190,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       if (trendSetup) {
         console.log(
           `[TREND_PULLBACK_ENTRY] symbol=${symbol}` +
+          ` population=${populationBucket}` +
           ` macd=${macdHistogram?.toFixed(2)}` +
           ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
           ` adx=${adxValue} regime=${indicators.marketRegime}`
