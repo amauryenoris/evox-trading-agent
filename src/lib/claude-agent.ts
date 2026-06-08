@@ -37,7 +37,7 @@ import {
   markWatchlistTriggered,
 } from './watchlist-monitor'
 import { getActiveNearMissForSymbol } from './db'
-import { upsertSymbolCooldown } from './db-cooldowns'
+import { upsertSymbolCooldown, getActiveCooldowns, cleanExpiredCooldowns } from './db-cooldowns'
 import type {
   AgentDecision,
   AgentLogEntry,
@@ -1071,7 +1071,35 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // TIME_STOP → no cooldown (thesis expired naturally)
   // UNKNOWN → warn; cooldown only if COOLDOWN_UNKNOWN_EXIT_REASON=true
 
-  console.log(`[EXIT_COOLDOWN_READY] total=${cooldownSymbols.size}`)
+  const inMemoryCooldownCount = cooldownSymbols.size
+  let restoredCount = 0
+
+  const persistentCooldowns = await getActiveCooldowns()
+  for (const row of persistentCooldowns) {
+    if (cooldownSymbols.has(row.symbol)) {
+      console.log(
+        `[COOLDOWN_RESTORE_SKIP] symbol=${row.symbol}` +
+        ` reason=${row.exit_reason}` +
+        ` source=in_memory`
+      )
+    } else {
+      cooldownSymbols.add(row.symbol)
+      restoredCount++
+      console.log(
+        `[COOLDOWN_RESTORE] symbol=${row.symbol}` +
+        ` reason=${row.exit_reason}` +
+        ` until=${row.cooldown_until}`
+      )
+    }
+  }
+
+  console.log(
+    `[EXIT_COOLDOWN_READY]` +
+    ` inMemory=${inMemoryCooldownCount}` +
+    ` persistent=${persistentCooldowns.length}` +
+    ` restored=${restoredCount}` +
+    ` total=${cooldownSymbols.size}`
+  )
 
   // TEMP LOGGING — remove ~2026-06-17
   let trendZLE05Signals = 0
@@ -1793,6 +1821,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     ` active=${activeBreakdown || 'none'}` +
     ` excluded=${excludedBreakdown || 'none'}`
   )
+
+  try {
+    await cleanExpiredCooldowns()
+  } catch (err) {
+    console.error('[COOLDOWN_CLEAN_FATAL]', err)
+  }
 
   // Ranking phase — when only 1 slot was available, pick best candidate by signal strength
   if (buyQueue.length > 0) {
