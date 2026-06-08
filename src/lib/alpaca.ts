@@ -309,3 +309,47 @@ export async function getLatestSellOrder(symbol: string, afterTimestamp: string)
   // Return the most recent one
   return sellOrders.sort((a, b) => (b.filled_at! > a.filled_at! ? 1 : -1))[0]
 }
+
+// Returns midnight UTC of the Nth next trading day after fromDate.
+// Midnight UTC is sufficient precision for day-level cooldown comparisons.
+export async function getNextTradingDay(
+  fromDate: Date,
+  daysAhead: number = 1
+): Promise<Date> {
+  const startStr = fromDate.toISOString().split('T')[0]
+  const endDate = new Date(fromDate)
+  endDate.setDate(endDate.getDate() + daysAhead * 7)
+  const endStr = endDate.toISOString().split('T')[0]
+
+  try {
+    const url = new URL(`${baseUrl()}/v2/calendar`)
+    url.searchParams.set('start', startStr)
+    url.searchParams.set('end', endStr)
+    const calendar = await alpacaFetch<Array<{ date: string; open: string }>>(
+      url.toString()
+    )
+
+    const tradingDays = (calendar ?? []).filter(day => day.date > startStr)
+
+    if (tradingDays.length < daysAhead) {
+      console.warn(
+        `[CALENDAR_FALLBACK] insufficient trading days returned,` +
+        ` using +${daysAhead} calendar days`
+      )
+      const fallback = new Date(fromDate)
+      fallback.setDate(fallback.getDate() + daysAhead)
+      return new Date(`${fallback.toISOString().split('T')[0]}T00:00:00Z`)
+    }
+
+    const targetDateStr = tradingDays[daysAhead - 1].date
+    return new Date(`${targetDateStr}T00:00:00Z`)
+  } catch (err) {
+    console.warn(
+      `[CALENDAR_FALLBACK] API error — using +${daysAhead} calendar days`,
+      err
+    )
+    const fallback = new Date(fromDate)
+    fallback.setDate(fallback.getDate() + daysAhead)
+    return new Date(`${fallback.toISOString().split('T')[0]}T00:00:00Z`)
+  }
+}
