@@ -1266,6 +1266,53 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           indicators.ema50!) > 0.002 &&
         momentumOk
 
+      const fmt = (v?: number | null): string =>
+        typeof v === 'number' ? v.toFixed(2) : 'NA'
+
+      const emaReclaimEma50GtEma200 =
+        ema50Value > 0 && ema200Value > 0 && ema50Value > ema200Value
+
+      const emaReclaimMacdBucket =
+        macdHistogram === null  ? 'NO_DATA' :
+        macdHistogram > 0       ? 'POSITIVE' :
+        macdHistogram > -2.0    ? 'MODERATE_NEG' :
+                                  'DEEP_NEG'
+
+      // riskFactors = observability dimensions only, NOT active gates.
+      // Named "riskFactors" deliberately — hypotheses for future analysis.
+      const emaReclaimRiskFactors = [
+        !emaReclaimEma50GtEma200 ? 'EMA_STRUCTURE' : null,
+        macdHistogram !== null && macdHistogram <= 0 ? 'MACD_NON_POSITIVE' : null,
+        adxValue !== null && adxValue < 20 ? 'LOW_ADX' : null,
+      ].filter((v): v is string => Boolean(v))
+       .join('|') || 'NONE'
+
+      if (emaReclaimSetup) {
+        console.log(
+          `[EMA_RECLAIM_ENTRY] symbol=${symbol}` +
+          ` z=${fmt(zScore)}` +
+          ` macd=${fmt(macdHistogram)}` +
+          ` macdBucket=${emaReclaimMacdBucket}` +
+          ` adx=${fmt(adxValue)}` +
+          ` ema50GtEma200=${emaReclaimEma50GtEma200}` +
+          ` regime=${indicators.marketRegime}` +
+          ` riskFactors=${emaReclaimRiskFactors}`
+        )
+      }
+
+      if (hasPrevData && !emaReclaimSetup) {
+        console.log(
+          `[EMA_RECLAIM_BLOCKED] symbol=${symbol}` +
+          ` z=${fmt(zScore)}` +
+          ` macd=${fmt(macdHistogram)}` +
+          ` macdBucket=${emaReclaimMacdBucket}` +
+          ` adx=${fmt(adxValue)}` +
+          ` ema50GtEma200=${emaReclaimEma50GtEma200}` +
+          ` regime=${indicators.marketRegime}` +
+          ` riskFactors=${emaReclaimRiskFactors}`
+        )
+      }
+
       const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || trendZLE05Setup || emaReclaimSetup
       if (isAutoEntry && !meanReversionSetup && !trendSetup && !trendZLE05Setup && !emaReclaimSetup) {
         console.log(`[WATCHLIST] ${symbol}: auto-entry bypassing setup gate (monitored from near-miss watchlist)`)
