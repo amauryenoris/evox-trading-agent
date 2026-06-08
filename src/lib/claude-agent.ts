@@ -13,6 +13,7 @@ import {
   getMacroNews,
   getNewsForSymbols,
   getQuote,
+  getNextTradingDay,
   type AlpacaNewsArticle,
 } from './alpaca'
 import { calculateAllIndicators } from './indicators'
@@ -36,6 +37,7 @@ import {
   markWatchlistTriggered,
 } from './watchlist-monitor'
 import { getActiveNearMissForSymbol } from './db'
+import { upsertSymbolCooldown } from './db-cooldowns'
 import type {
   AgentDecision,
   AgentLogEntry,
@@ -97,6 +99,33 @@ function getTradingDaysOpen(buyTimestamp: string): number {
   const calendarDays = elapsed / msPerDay
   // Approximate: 5/7 of calendar days are trading days
   return Math.floor(calendarDays * (5 / 7))
+}
+
+// NOTE: Market close uses fixed 21:00 UTC approximation (EDT).
+// EST (winter) drifts by ~1h — acceptable for cooldown purposes.
+// Precision goal: prevent same-day re-entry, not exact exchange timing.
+// Fase 3: replace with proper timezone library if precision required.
+function computeCooldownUntil(
+  reason: ExitReason,
+  endOfTradingDay: Date,
+  nextTradingDay1: Date,
+  nextTradingDay3: Date
+): Date | null {
+  switch (reason) {
+    case 'Z_SCORE_EXIT':
+    case 'PROFIT_TARGET':
+      return endOfTradingDay
+    case 'TRAILING_STOP':
+    case 'EMA_FAILURE':
+      return nextTradingDay1
+    case 'STOP_LOSS':
+      return nextTradingDay3
+    case 'TIME_STOP':
+    case 'UNKNOWN':
+      return null
+    default:
+      return null
+  }
 }
 
 export async function enforceExitRules(
@@ -884,6 +913,45 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       return { decisions: [] as AgentLogEntry[], exitReasons: new Map<string, ExitReason>() }
     }
   })()
+
+  // Write persistent cooldowns — Fase 2b
+  // Calendar fetched once per cycle — avoids duplicate API calls
+  try {
+    const nowUTC = new Date()
+
+    const marketCloseUTC = new Date(nowUTC)
+    marketCloseUTC.setUTCHours(21, 0, 0, 0)
+
+    const [nextTradingDay1, nextTradingDay3] = await Promise.all([
+      getNextTradingDay(nowUTC, 1),
+      getNextTradingDay(nowUTC, 3),
+    ])
+
+    const endOfTradingDay =
+      nowUTC < marketCloseUTC ? marketCloseUTC : nextTradingDay1
+
+    await Promise.all(
+      [...exitReasons.entries()].map(async ([symbol, reason]) => {
+        const cooldownUntil = computeCooldownUntil(
+          reason,
+          endOfTradingDay,
+          nextTradingDay1,
+          nextTradingDay3
+        )
+        if (cooldownUntil !== null) {
+          await upsertSymbolCooldown(symbol, reason, cooldownUntil)
+          console.log(
+            `[COOLDOWN_PERSIST] symbol=${symbol}` +
+            ` reason=${reason}` +
+            ` until=${cooldownUntil.toISOString()}` +
+            ` source=enforceExitRules`
+          )
+        }
+      })
+    )
+  } catch (err) {
+    console.error('[COOLDOWN_PERSIST_ERROR]', err)
+  }
 
   // 5. Evaluate closed positions (learning loop)
   const evaluations: TradeEvaluation[] = []
