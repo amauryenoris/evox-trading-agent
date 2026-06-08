@@ -569,9 +569,11 @@ Edge: EMA50 > EMA200 (trend intact), z-score <= 0 (near fair value), ADX >= 20 (
 Key indicators: trend structure, pullback depth, momentum recovery.` : ''}${signalType === 'TREND_ZLE05' ? `TREND_ZLE05: Trend continuation with price moderately above fair value.
 Edge: EMA50 > EMA200, 0 < z-score <= 1.25, MACD histogram > 0, ADX >= 18 (or >= 15 with strong MACD > 0.25), EMA50 slope rising.
 Key indicators: MACD momentum, trend strength, z-score proximity.
-Note: z 0.5–1.25 is the expanded bucket — valid continuation signal when ADX and MACD confirm trend quality.` : ''}${signalType === 'EMA_RECLAIM' ? `EMA_RECLAIM: Price just crossed above EMA50 from below.
-Edge: Recent cross of EMA50 with z-score below fair value.
-Key indicators: cross confirmation, z-score, EMA50 slope.` : ''}
+Note: z 0.5–1.25 is the expanded bucket — valid continuation signal when ADX and MACD confirm trend quality.` : ''}${signalType === 'EMA_RECLAIM' ? `EMA_RECLAIM: Trend reclaim setup — price was below EMA50 yesterday and crossed above it today, recovering a key trend level.
+This is NOT mean-reversion. This is trend resumption after a pullback.
+Edge: Confirmed EMA50 cross from below (prevClose <= ema50Prev, currentPrice > ema50), price below fair value (z < 0), EMA50 slope rising, minimum 0.2% distance above EMA50.
+Key indicators: cross confirmation, EMA50 slope direction, z-score proximity to fair value, momentum recovery.
+Note: best setups have EMA50 > EMA200 (structural uptrend intact).` : ''}
 
 Your analysis should focus on whether the conditions supporting this specific setup are strong or weak.` : 'No specific setup was detected — analyze why.'}
 
@@ -1252,15 +1254,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // Requires prior day data — without it the cross cannot be confirmed
       const hasPrevData =
         indicators.prevClose != null &&
-        indicators.ema50Prev != null
+        indicators.ema50Prev != null &&
+        indicators.ema50 != null
 
       const emaReclaimSetup =
         hasPrevData &&
-        indicators.currentPrice > (indicators.ema50 ?? 0) &&
+        indicators.currentPrice > indicators.ema50! &&
         indicators.prevClose! <= indicators.ema50Prev! &&
         zScore < 0 &&
-        ((indicators.currentPrice - (indicators.ema50 ?? 0)) /
-          (indicators.ema50 ?? 1)) > 0.002 &&
+        ((indicators.currentPrice - indicators.ema50!) /
+          indicators.ema50!) > 0.002 &&
         momentumOk
 
       const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || trendZLE05Setup || emaReclaimSetup
