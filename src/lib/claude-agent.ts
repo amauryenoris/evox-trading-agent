@@ -1044,10 +1044,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // MUST run AFTER enforceExitRules() and BEFORE BUY symbol evaluation.
   // Otherwise same-cycle re-entry protection breaks.
 
-  // NOTE 1: cooldownSymbols is in-memory only.
-  // GitHub Actions creates a new process per run — cooldown does not
-  // persist between runs. Cross-run re-entry is NOT solved by this fix.
-  // Fase 2: Supabase symbol_cooldowns table with per-reason durations.
+  // NOTE 1: cooldownSymbols is in-memory only (same-process scope).
+  // Cross-run persistence is handled by Supabase symbol_cooldowns table
+  // (Fase 2 — fully implemented). getActiveCooldowns() merges DB state
+  // into this Set at cycle start; upsertSymbolCooldown() writes on SELL.
 
   // NOTE 2: Cooldown activates on SELL decision generation, not broker
   // execution confirmation. A rejected Alpaca SELL may still create
