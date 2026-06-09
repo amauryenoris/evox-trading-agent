@@ -1053,8 +1053,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // execution confirmation. A rejected Alpaca SELL may still create
   // cooldown state.
   const cooldownSymbols = new Set<string>()
+  const cooldownReasons = new Map<string, ExitReason>()
 
   for (const [symbol, reason] of exitReasons.entries()) {
+    cooldownReasons.set(symbol, reason)
     if (reason === 'UNKNOWN') {
       console.warn(`[EXIT_COOLDOWN_UNKNOWN_REASON] symbol=${symbol}`)
       if (COOLDOWN_UNKNOWN_EXIT_REASON) {
@@ -1084,6 +1086,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       )
     } else {
       cooldownSymbols.add(row.symbol)
+      cooldownReasons.set(row.symbol, row.exit_reason as ExitReason)
       restoredCount++
       console.log(
         `[COOLDOWN_RESTORE] symbol=${row.symbol}` +
@@ -1121,7 +1124,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
     const skipReason =
       closedThisCycle.has(symbol) ? 'GTC_STOP' :
-      cooldownSymbols.has(symbol) ? (exitReasons.get(symbol) ?? 'UNKNOWN') :
+      cooldownSymbols.has(symbol) ? (cooldownReasons.get(symbol) ?? 'UNKNOWN') :
       null
 
     if (skipReason) {
@@ -1805,7 +1808,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   console.log(`[TREND_PULLBACK_STATS] blockedMacd=${trendPullbackBlockedMacd}`)
 
   const activeBreakdown = [...cooldownSymbols]
-    .map(sym => `${sym}:${exitReasons.get(sym) ?? 'UNKNOWN'}`)
+    .map(sym => `${sym}:${cooldownReasons.get(sym) ?? 'UNKNOWN'}`)
     .join(',')
 
   const excludedBreakdown = [...exitReasons.entries()]
