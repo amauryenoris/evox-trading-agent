@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { upsertSymbolCooldown, getActiveCooldowns, cleanExpiredCooldowns } from '../db'
 
-const { mockRpc, mockFrom, mockSelect, mockGt, mockDelete, mockLte } = vi.hoisted(() => ({
+const { mockRpc, mockFrom, mockSelect, mockGt, mockLimit, mockDelete, mockLte } = vi.hoisted(() => ({
   mockRpc:    vi.fn(),
   mockFrom:   vi.fn(),
   mockSelect: vi.fn(),
   mockGt:     vi.fn(),
+  mockLimit:  vi.fn(),
   mockDelete: vi.fn(),
   mockLte:    vi.fn(),
 }))
@@ -66,7 +67,8 @@ describe('getActiveCooldowns', () => {
     const rows = [
       { symbol: 'NVDA', exit_reason: 'STOP_LOSS', cooldown_until: '2026-06-20T00:00:00Z' },
     ]
-    mockGt.mockResolvedValue({ data: rows, error: null })
+    mockLimit.mockResolvedValue({ data: rows, error: null })
+    mockGt.mockReturnValue({ limit: mockLimit })
     mockSelect.mockReturnValue({ gt: mockGt })
     mockFrom.mockReturnValue({ select: mockSelect })
 
@@ -77,12 +79,14 @@ describe('getActiveCooldowns', () => {
     expect(mockFrom).toHaveBeenCalledWith('symbol_cooldowns')
     expect(mockSelect).toHaveBeenCalledWith('symbol, exit_reason, cooldown_until')
     expect(mockGt).toHaveBeenCalledWith('cooldown_until', expect.any(String))
+    expect(mockLimit).toHaveBeenCalledWith(100)
     expect(result).toEqual(rows)
   })
 
   it('logs [COOLDOWN_READ_ERROR] and returns [] on DB error', async () => {
     // Arrange
-    mockGt.mockResolvedValue(err)
+    mockLimit.mockResolvedValue(err)
+    mockGt.mockReturnValue({ limit: mockLimit })
     mockSelect.mockReturnValue({ gt: mockGt })
     mockFrom.mockReturnValue({ select: mockSelect })
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -98,7 +102,8 @@ describe('getActiveCooldowns', () => {
 
   it('returns [] when data is null (no active cooldowns)', async () => {
     // Arrange
-    mockGt.mockResolvedValue({ data: null, error: null })
+    mockLimit.mockResolvedValue({ data: null, error: null })
+    mockGt.mockReturnValue({ limit: mockLimit })
     mockSelect.mockReturnValue({ gt: mockGt })
     mockFrom.mockReturnValue({ select: mockSelect })
 
