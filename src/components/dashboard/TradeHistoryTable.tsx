@@ -40,7 +40,7 @@ export function TradeHistoryTable({ trades }: Props) {
                       timeZone: 'America/New_York',
                     })
                   : '—'
-                const pnlPct = t.pnlPct * 100
+                const pnlPct = t.pnlPct
                 const isProfit = pnlPct > 0
                 const isLoss   = pnlPct < 0
 
