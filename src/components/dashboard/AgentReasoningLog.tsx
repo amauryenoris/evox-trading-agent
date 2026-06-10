@@ -14,6 +14,7 @@ type EntryKind =
   | 'NO_SETUP'
   | 'TREND_REJECTED'
   | 'ALREADY_HOLDING'
+  | 'GATE_BLOCKED'
   | 'OTHER'
 
 type SignalKind = 'MR' | 'TP' | 'ZLE' | 'EMA' | 'TREND' | string | null
@@ -89,6 +90,8 @@ function detectKind(entry: AgentLogEntry): EntryKind {
   if (/trend_zgt05|trend_quality_fail/i.test(err))              return 'TREND_REJECTED'
   if (/setup\s*gate|no[\s_-]?setup/i.test(err))                return 'NO_SETUP'
   if (/exit_rules_check|exit_rules_skip/i.test(err))           return 'HOLDING'
+  if (/correlation\s*gate|cooldown|spread|max[\s_]buys|max[\s_]positions|risk[\s_]check/i.test(err)) return 'GATE_BLOCKED'
+  if (entry.decision.action === 'HOLD' && err.length > 0)       return 'GATE_BLOCKED'
   if (entry.decision.action === 'HOLD')                         return 'NO_SETUP'
   return 'OTHER'
 }
@@ -186,7 +189,7 @@ function CardShell({
   accent, glyph, title, symbol, signal, timeRel,
   expandable, expanded, onToggle, body, reasoning,
 }: {
-  accent: 'green' | 'red' | 'slate' | 'blue' | 'amber' | 'purple'
+  accent: 'green' | 'red' | 'slate' | 'blue' | 'amber' | 'purple' | 'orange'
   glyph: string
   title: string
   symbol: string
@@ -198,8 +201,8 @@ function CardShell({
   body: ReactNode
   reasoning?: string | null
 }) {
-  const accentBar  = { green: 'bg-[#00B386]', red: 'bg-[#FF4444]', slate: 'bg-slate-600', blue: 'bg-blue-500', amber: 'bg-amber-500', purple: 'bg-[#7C3AED]' }[accent]
-  const accentText = { green: 'text-[#00B386]', red: 'text-[#FF4444]', slate: 'text-slate-400', blue: 'text-blue-400', amber: 'text-amber-400', purple: 'text-[#A78BFA]' }[accent]
+  const accentBar  = { green: 'bg-[#00B386]', red: 'bg-[#FF4444]', slate: 'bg-slate-600', blue: 'bg-blue-500', amber: 'bg-amber-500', purple: 'bg-[#7C3AED]', orange: 'bg-orange-500' }[accent]
+  const accentText = { green: 'text-[#00B386]', red: 'text-[#FF4444]', slate: 'text-slate-400', blue: 'text-blue-400', amber: 'text-amber-400', purple: 'text-[#A78BFA]', orange: 'text-orange-400' }[accent]
 
   return (
     <div className="relative bg-[#12121A] border border-[#1E1E2E] rounded-lg overflow-hidden">
@@ -451,6 +454,36 @@ function NoSetupCard({ entry, parsed }: { entry: AgentLogEntry; parsed: ParsedEn
   )
 }
 
+/* ─── Gate blocked ─── */
+
+function GateBlockedCard({ entry }: { entry: AgentLogEntry }) {
+  const zScore = entry.indicators?.kalman?.zScore
+  const regime = entry.indicators?.marketRegime
+
+  return (
+    <CardShell
+      accent="orange"
+      glyph="⊘"
+      title="Gate Blocked"
+      symbol={entry.symbol}
+      timeRel={relativeTime(entry.timestamp)}
+      body={
+        <div className="space-y-1.5 text-[12px]">
+          <div className="text-orange-300 font-mono">{entry.error}</div>
+          {zScore != null && (
+            <div className="font-mono tabular-nums text-slate-400">
+              z-score <span className="text-slate-200">{zScore >= 0 ? '+' : ''}{zScore.toFixed(3)}</span>
+            </div>
+          )}
+          {regime && (
+            <div className="text-slate-500">Regime<span className="ml-1.5 text-slate-300">{regime}</span></div>
+          )}
+        </div>
+      }
+    />
+  )
+}
+
 /* ─── TYPE 5 — Trend rejected ─── */
 
 function TrendRejectedCard({ entry, parsed }: { entry: AgentLogEntry; parsed: ParsedEntry }) {
@@ -567,7 +600,7 @@ export function AgentReasoningLog({ entries, title = 'Agent Decisions' }: Props)
     if (filter === 'ALL')      return enriched
     if (filter === 'TRADES')   return enriched.filter(x => x.kind === 'BUY_EXECUTED' || x.kind === 'SELL_EXECUTED')
     if (filter === 'HOLDING')  return enriched.filter(x => x.kind === 'HOLDING' || x.kind === 'ALREADY_HOLDING')
-    if (filter === 'REJECTED') return enriched.filter(x => x.kind === 'NO_SETUP' || x.kind === 'TREND_REJECTED')
+    if (filter === 'REJECTED') return enriched.filter(x => x.kind === 'NO_SETUP' || x.kind === 'TREND_REJECTED' || x.kind === 'GATE_BLOCKED')
     return enriched
   }, [enriched, filter])
 
@@ -647,6 +680,7 @@ export function AgentReasoningLog({ entries, title = 'Agent Decisions' }: Props)
                   case 'SELL_EXECUTED':   return <SellCard          key={id} entry={entry} parsed={parsed} expanded={isOpen} onToggle={() => toggle(id)} />
                   case 'HOLDING':         return <HoldingCard       key={id} entry={entry} parsed={parsed} />
                   case 'NO_SETUP':        return <NoSetupCard       key={id} entry={entry} parsed={parsed} />
+                  case 'GATE_BLOCKED':    return <GateBlockedCard   key={id} entry={entry} />
                   case 'TREND_REJECTED':  return <TrendRejectedCard key={id} entry={entry} parsed={parsed} />
                   case 'ALREADY_HOLDING': return <AlreadyHoldingCard key={id} entry={entry} parsed={parsed} />
                   default:                return <OtherCard         key={id} entry={entry} />
