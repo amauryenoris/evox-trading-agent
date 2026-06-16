@@ -100,7 +100,7 @@
   ```
 
 - [x] T-08: Implement STEP 2 — compute date range and bulk-fetch SPY bars:
-  - `earliestDate` = earliest `buy_timestamp` minus 250 calendar days (ISO date string)
+  - `earliestDate` = earliest `buy_timestamp` minus 400 calendar days (ISO date string)
   - `latestDate` = latest `buy_timestamp` plus 5 calendar days (ISO date string)
   - URL: `${DATA_URL}/v2/stocks/SPY/bars`
   - Params: `timeframe=1Day`, `start=earliestDate`, `end=latestDate`, `limit=1000`, `sort=asc`, `feed=iex`
@@ -151,7 +151,7 @@
   ```
   Must print `[BACKFILL_DRY_DONE] wouldUpdate=N wouldSkip=0`
 
-- [ ] T-15: Wait for Amaury's approval of the dry-run output before proceeding to Phase 3.
+- [X] T-15: Wait for Amaury's approval of the dry-run output before proceeding to Phase 3.
 
 ---
 
@@ -186,9 +186,9 @@
 
 ## Post-Implementation
 
-- [ ] Run `/review backfill-spx-regime` to verify implementation matches spec
-- [ ] Confirm no file in `src/` was modified
-- [ ] Confirm only `trade_evaluations` rows with NULL `spx_price` were written
+- [x] Run `/review backfill-spx-regime` to verify implementation matches spec
+- [x] Confirm no file in `src/` was modified
+- [x] Confirm only `trade_evaluations` rows with NULL `spx_price` were written
 
 ---
 

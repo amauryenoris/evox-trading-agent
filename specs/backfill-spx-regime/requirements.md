@@ -4,7 +4,7 @@
 
 FR-01: The system shall query `trade_evaluations` for rows where `spx_price IS NULL` AND `buy_timestamp >= '2026-04-20'`, ordered by `buy_timestamp ASC`, to build the backfill candidate list.
 
-FR-02: The system shall compute the SPY bar date range as: `earliestBuyDate − 250 calendar days` through `latestBuyDate + 5 calendar days`.
+FR-02: The system shall compute the SPY bar date range as: `earliestBuyDate − 400 calendar days` through `latestBuyDate + 5 calendar days`.
 
 FR-03: The system shall fetch SPY daily bars from Alpaca in a single bulk HTTP request covering the computed date range.
 

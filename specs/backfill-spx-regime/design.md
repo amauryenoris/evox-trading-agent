@@ -15,7 +15,7 @@ STEP 1: Supabase SELECT
         │ trades[] = [{ id, symbol, buy_timestamp }]
         ▼
 STEP 2: Alpaca GET /v2/stocks/SPY/bars
-  timeframe=1Day, start=(earliest-250d), end=(latest+5d), limit=1000, sort=asc, feed=iex
+  timeframe=1Day, start=(earliest-400d), end=(latest+5d), limit=1000, sort=asc, feed=iex
         │ bars[] = [{ date:'YYYY-MM-DD', close:number }], closes:number[]
         ▼
 For each trade:

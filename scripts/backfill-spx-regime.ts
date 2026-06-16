@@ -56,8 +56,14 @@ async function main() {
     process.exit(1)
   }
 
+  const isLive = process.env.RUN_BACKFILL === 'true'
+
   if (!trades || trades.length === 0) {
-    console.log('[BACKFILL_DRY_DONE] wouldUpdate=0 wouldSkip=0')
+    if (isLive) {
+      console.log('[BACKFILL_DONE] updated=0 skipped=0 failed=0')
+    } else {
+      console.log('[BACKFILL_DRY_DONE] wouldUpdate=0 wouldSkip=0')
+    }
     return
   }
 
@@ -95,7 +101,6 @@ async function main() {
   }
 
   const closes = bars.map(b => b.close)
-  const isLive = process.env.RUN_BACKFILL === 'true'
   let updated = 0
   let skipped = 0
   let failed = 0
