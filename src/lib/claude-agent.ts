@@ -1110,6 +1110,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   let expandedSignals = 0
   let trendZLE05Rejected = 0
   let trendPullbackBlockedMacd = 0
+  const mrBlockedRangingAdxSymbols = new Set<string>()
 
   for (const symbol of watchlist) {
     if (INSTRUMENT_BLACKLIST.has(symbol)) {
@@ -1236,7 +1237,28 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const isZLE05Candidate = isTrendStructure && zScore > 0 && zScore <= 1.25 && momentumOk && trendQualityOkZLE05
 
       // ── Setup detection ──
-      const meanReversionSetup = zScore <= effectiveThreshold
+      // MR signal — z-score only, no gate
+      const meanReversionSignal = zScore <= effectiveThreshold
+
+      // MR Ranging ADX gate — temporary until MR Policy layer (Macro-B/C)
+      // Disable by setting enableMrRangingAdxGate = false
+      const enableMrRangingAdxGate = true
+      const mrRangingAdxFloor = 18
+
+      // Fail-open on invalid ADX data — do not block setups due to indicator corruption
+      const hasValidAdx =
+        typeof adxValue === 'number' &&
+        Number.isFinite(adxValue)
+
+      const mrRangingAdxGateOk =
+        !enableMrRangingAdxGate ||
+        !(
+          indicators.marketRegime === 'RANGING' &&
+          hasValidAdx &&
+          adxValue < mrRangingAdxFloor
+        )
+
+      const meanReversionSetup = meanReversionSignal && mrRangingAdxGateOk
 
       // TREND_PULLBACK: uptrend structure, z-score <= 0, momentum + quality confirmed
       const trendPullbackMacdFloor = -2.0
@@ -1285,6 +1307,19 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           ` macd=${macdHistogram?.toFixed(2)}` +
           ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
           ` adx=${adxValue} regime=${indicators.marketRegime}`
+        )
+      }
+
+      if (!meanReversionSetup && meanReversionSignal && !mrRangingAdxGateOk) {
+        mrBlockedRangingAdxSymbols.add(symbol)
+        console.log(
+          `[MR_BLOCKED_RANGING_ADX] symbol=${symbol}` +
+          ` adx=${adxValue?.toFixed(2)}` +
+          ` adxFloor=${mrRangingAdxFloor}` +
+          ` z=${zScore.toFixed(2)}` +
+          ` regime=${indicators.marketRegime}` +
+          ` macd=${macdHistogram?.toFixed(2)}` +
+          ` dist_ema50=${indicators.distanceToEma50Pct?.toFixed(1)}`
         )
       }
 
@@ -1805,7 +1840,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   }
 
   console.log(`[TREND_ZLE05_STATS] signals=${trendZLE05Signals} legacy=${legacySignals} expanded=${expandedSignals} rejectedZ=${trendZLE05Rejected}`)
-  console.log(`[TREND_PULLBACK_STATS] blockedMacd=${trendPullbackBlockedMacd}`)
+  console.log(`[TREND_PULLBACK_STATS] blockedMacd=${trendPullbackBlockedMacd} mrBlockedRangingAdx=${mrBlockedRangingAdxSymbols.size}`)
 
   const activeBreakdown = [...cooldownSymbols]
     .map(sym => `${sym}:${cooldownReasons.get(sym) ?? 'UNKNOWN'}`)
