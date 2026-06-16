@@ -328,7 +328,6 @@ export async function enforceExitRules(
       if (!exitReasons.has(position.symbol)) {
         const mapped = toExitReason(exitReason)
         exitReasons.set(position.symbol, mapped)
-        console.log(`[EXIT_COOLDOWN] symbol=${position.symbol} reason=${mapped}`)
       } else {
         console.error(
           `[EXIT_REASON_CONFLICT] symbol=${position.symbol}` +
@@ -1061,13 +1060,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       console.warn(`[EXIT_COOLDOWN_UNKNOWN_REASON] symbol=${symbol}`)
       if (COOLDOWN_UNKNOWN_EXIT_REASON) {
         cooldownSymbols.add(symbol)
-        console.log(`[EXIT_COOLDOWN_ADD] symbol=${symbol} reason=UNKNOWN`)
       }
       continue
     }
     if (reason !== 'TIME_STOP') {
       cooldownSymbols.add(symbol)
-      console.log(`[EXIT_COOLDOWN_ADD] symbol=${symbol} reason=${reason}`)
     }
   }
   // TIME_STOP → no cooldown (thesis expired naturally)
@@ -1104,11 +1101,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     ` total=${cooldownSymbols.size}`
   )
 
-  // TEMP LOGGING — remove ~2026-06-17
-  let trendZLE05Signals = 0
-  let legacySignals = 0
-  let expandedSignals = 0
-  let trendZLE05Rejected = 0
   let trendPullbackBlockedMacd = 0
   const mrBlockedRangingAdxSymbols = new Set<string>()
 
@@ -1285,27 +1277,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         momentumOk &&
         trendQualityOk
 
-      // TEMP LOGGING — remove ~2026-06-17
-      const zBucket =
-        Number.isFinite(zScore)
-          ? zScore <= -1.0
-            ? 'deep_pullback'
-            : zScore <= -0.5
-              ? 'standard_pullback'
-              : 'shallow_pullback'
-          : 'invalid_z'
-
-      const populationBucket =
-        zScore >= 1.0 ? 'CONTINUATION' :
-        zScore >= 0   ? 'CHOP' :
-                        'PULLBACK'
-
       if (!trendSetup && wouldPassWithoutMacdFloor && !trendPullbackMomentumOk) {
         trendPullbackBlockedMacd++
         console.log(
           `[TREND_PULLBACK_BLOCKED_MACD] symbol=${symbol}` +
           ` macd=${macdHistogram?.toFixed(2)}` +
-          ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
+          ` z=${zScore.toFixed(2)}` +
           ` adx=${adxValue} regime=${indicators.marketRegime}`
         )
       }
@@ -1321,29 +1298,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           ` macd=${macdHistogram?.toFixed(2)}` +
           ` dist_ema50=${indicators.distanceToEma50Pct?.toFixed(1)}`
         )
-      }
-
-      if (trendSetup) {
-        console.log(
-          `[TREND_PULLBACK_ENTRY] symbol=${symbol}` +
-          ` population=${populationBucket}` +
-          ` macd=${macdHistogram?.toFixed(2)}` +
-          ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
-          ` adx=${adxValue} regime=${indicators.marketRegime}`
-        )
-      }
-
-      if (trendSetup && indicators.marketRegime === 'HIGH_VOLATILITY') {
-        console.log(
-          `[TREND_PULLBACK_HIGH_VOL] symbol=${symbol}` +
-          ` macd=${macdHistogram?.toFixed(2)}` +
-          ` z=${zScore.toFixed(2)} zBucket=${zBucket}` +
-          ` adx=${adxValue}`
-        )
-      }
-
-      if (adxValue === null && zScore > 0 && zScore <= 1.25 && macdHistogram !== null && macdHistogram > 0) {
-        console.log(`[TREND_ZLE05] ${symbol} blocked — ADX null`)
       }
 
       const trendZLE05Setup =
@@ -1368,20 +1322,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         trendQualityOkZLE05 &&
         macdHistogram !== null &&
         macdHistogram > 0
-
-      if (trendZLE05Setup) {
-        trendZLE05Signals++
-        const zBucket = zScore <= 0.5 ? 'legacy' : 'expanded'
-        if (zBucket === 'legacy') legacySignals++
-        else expandedSignals++
-        const adxBucket = adxValue >= 18 ? 'normal' : 'low_adx_boost'
-        console.log(`[TREND_ZLE05_ENTRY] bucket=${adxBucket} symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)}`)
-      }
-
-      if (!trendZLE05Setup && zScore > 1.25 && zScore <= 2.5 && wouldPassWithoutZ) {
-        trendZLE05Rejected++
-        console.log(`[TREND_ZLE05_REJECTED_Z] symbol=${symbol} z=${zScore.toFixed(2)} adx=${adxValue} macd=${macdHistogram?.toFixed(3)} adxOkZle=${adxOkZLE05} regime=${indicators.marketRegime}`)
-      }
 
       // ── EMA RECLAIM setup ──
       // Price crosses above EMA50 from below, below fair value, with momentum confirmation
@@ -1839,26 +1779,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     }
   }
 
-  console.log(`[TREND_ZLE05_STATS] signals=${trendZLE05Signals} legacy=${legacySignals} expanded=${expandedSignals} rejectedZ=${trendZLE05Rejected}`)
   console.log(`[TREND_PULLBACK_STATS] blockedMacd=${trendPullbackBlockedMacd} mrBlockedRangingAdx=${mrBlockedRangingAdxSymbols.size}`)
-
-  const activeBreakdown = [...cooldownSymbols]
-    .map(sym => `${sym}:${cooldownReasons.get(sym) ?? 'UNKNOWN'}`)
-    .join(',')
-
-  const excludedBreakdown = [...exitReasons.entries()]
-    .filter(([, reason]) =>
-      reason === 'TIME_STOP' || reason === 'UNKNOWN'
-    )
-    .map(([sym, reason]) => `${sym}:${reason}`)
-    .join(',')
-
-  console.log(
-    `[EXIT_COOLDOWN_STATS]` +
-    ` total=${cooldownSymbols.size}` +
-    ` active=${activeBreakdown || 'none'}` +
-    ` excluded=${excludedBreakdown || 'none'}`
-  )
 
   try {
     await cleanExpiredCooldowns()
