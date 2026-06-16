@@ -1104,6 +1104,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   let trendPullbackBlockedMacd = 0
   const mrBlockedRangingAdxSymbols = new Set<string>()
 
+  const getTrendPullbackPopulationBucket = (z: number): string =>
+    z >= 1.0 ? 'CONTINUATION'
+    : z >= 0  ? 'CHOP'
+    : 'PULLBACK'
+
   for (const symbol of watchlist) {
     if (INSTRUMENT_BLACKLIST.has(symbol)) {
       console.log(`[AGENT] ${symbol} skipped — blacklisted instrument`)
@@ -1701,12 +1706,23 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
                       // Save buy context for future learning
                       const entryLogId = randomUUID()
+                      const indicatorsAtBuy = {
+                        ...indicators,
+                      } as TechnicalIndicators & Record<string, unknown>
+
+                      if (signalType === 'TREND_PULLBACK') {
+                        const tpZ = typeof zScore === 'number' ? zScore : null
+                        indicatorsAtBuy.tp_population_bucket =
+                          tpZ !== null ? getTrendPullbackPopulationBucket(tpZ) : null
+                        indicatorsAtBuy.tp_zscore = tpZ
+                      }
+
                       await saveOpenPositionContext({
                         symbol,
                         buyTimestamp: timestamp,
                         buyPrice: indicators.currentPrice,
                         quantity: qty,
-                        indicators,
+                        indicators: indicatorsAtBuy,
                         claudeReasoning: decision.reasoning,
                         patternIdsUsed: [],
                         stopOrderId,
@@ -1831,12 +1847,27 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         }
 
         const entryLogId = randomUUID()
+        const bestIndicatorsAtBuy = {
+          ...best.indicators,
+        } as TechnicalIndicators & Record<string, unknown>
+
+        if (best.signalType === 'TREND_PULLBACK') {
+          const rawBestZ = typeof best.zScore === 'number'
+            ? best.zScore
+            : typeof best.indicators.kalman?.zScore === 'number'
+              ? best.indicators.kalman.zScore
+              : null
+          bestIndicatorsAtBuy.tp_population_bucket =
+            rawBestZ !== null ? getTrendPullbackPopulationBucket(rawBestZ) : null
+          bestIndicatorsAtBuy.tp_zscore = rawBestZ
+        }
+
         await saveOpenPositionContext({
           symbol: best.symbol,
           buyTimestamp: timestamp,
           buyPrice: best.indicators.currentPrice,
           quantity: best.qty,
-          indicators: best.indicators,
+          indicators: bestIndicatorsAtBuy,
           claudeReasoning: best.decision.reasoning,
           patternIdsUsed: [],
           stopOrderId,
