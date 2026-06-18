@@ -776,6 +776,46 @@ export interface AgentCycleResult {
   timestamp: string
 }
 
+function computeSpxSnapshot(bars: { t: string; c: number }[]): {
+  spx_price: number | null
+  spx_sma50: number | null
+  spx_sma200: number | null
+  spx_regime: string | null
+} {
+  if (bars.length < 2) {
+    return { spx_price: null, spx_sma50: null, spx_sma200: null, spx_regime: null }
+  }
+
+  // bars.length - 2 = previous confirmed close (no lookahead bias)
+  // bars.length - 1 = current day partial bar (excluded)
+  const refIndex = bars.length - 2
+  const spx_price = bars[refIndex].c
+
+  function smaAt(
+    arr: { c: number }[],
+    idx: number,
+    period: number
+  ): number | null {
+    if (idx < period - 1) return null
+    const slice = arr.slice(idx - period + 1, idx + 1)
+    return slice.reduce((a, b) => a + b.c, 0) / period
+  }
+
+  const spx_sma50  = smaAt(bars, refIndex, 50)
+  const spx_sma200 = smaAt(bars, refIndex, 200)
+
+  if (spx_sma50 === null || spx_sma200 === null) {
+    return { spx_price, spx_sma50: null, spx_sma200: null, spx_regime: null }
+  }
+
+  const spx_regime =
+    spx_price > spx_sma200 ? 'BULL'
+    : spx_price > spx_sma50 ? 'CAUTION'
+    : 'BEAR'
+
+  return { spx_price, spx_sma50, spx_sma200, spx_regime }
+}
+
 export async function runAgentCycle(): Promise<AgentCycleResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set')
@@ -785,11 +825,28 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const client = new Anthropic({ apiKey })
 
   // 1. Load portfolio state and market status
-  const [account, positions, clock] = await Promise.all([
+  const [account, positions, clock, spyBars] = await Promise.all([
     getAccount(),
     getPositions(),
     getClock(),
+    getBars('SPY', '1Day', 260).catch((err: unknown) => {
+      console.error('[MACRO_SPX] SPY fetch failed:', err)
+      return []
+    }),
   ])
+
+  const spxSnapshot = computeSpxSnapshot(spyBars)
+
+  if (spxSnapshot.spx_price !== null) {
+    console.log(
+      `[MACRO_SPX] price=${spxSnapshot.spx_price}` +
+      ` sma50=${spxSnapshot.spx_sma50?.toFixed(2) ?? 'null'}` +
+      ` sma200=${spxSnapshot.spx_sma200?.toFixed(2) ?? 'null'}` +
+      ` regime=${spxSnapshot.spx_regime ?? 'null'}`
+    )
+  } else {
+    console.log('[MACRO_SPX] unavailable')
+  }
 
   // 2. Dynamic stock selection — fallback to static watchlist if screener unavailable
   let watchlist: string[]
@@ -1710,6 +1767,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                         ...indicators,
                       } as TechnicalIndicators & Record<string, unknown>
 
+                      indicatorsAtBuy.spx_price  = spxSnapshot.spx_price
+                      indicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
+                      indicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
+                      indicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
+
                       if (signalType === 'TREND_PULLBACK') {
                         const tpZ = typeof zScore === 'number' ? zScore : null
                         indicatorsAtBuy.tp_population_bucket =
@@ -1850,6 +1912,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         const bestIndicatorsAtBuy = {
           ...best.indicators,
         } as TechnicalIndicators & Record<string, unknown>
+
+        bestIndicatorsAtBuy.spx_price  = spxSnapshot.spx_price
+        bestIndicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
+        bestIndicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
+        bestIndicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
 
         if (best.signalType === 'TREND_PULLBACK') {
           const rawBestZ = typeof best.zScore === 'number'
