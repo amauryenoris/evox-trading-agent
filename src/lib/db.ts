@@ -242,6 +242,11 @@ export async function insertTradeEvaluation(evaluation: TradeEvaluation): Promis
     outcome: evaluation.outcome,
     lessons: evaluation.lessonsLearned,
     signal_type: evaluation.signal_type ?? null,
+    spx_price:         evaluation.spxPrice         ?? null,
+    spx_sma50:         evaluation.spxSma50         ?? null,
+    spx_sma200:        evaluation.spxSma200        ?? null,
+    spx_regime:        evaluation.spxRegime        ?? null,
+    state_fingerprint: evaluation.stateFingerprint ?? null,
   })
   if (error) throw new Error(`Failed to insert trade evaluation: ${error.message}`)
 }
