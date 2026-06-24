@@ -867,7 +867,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     getAccount(),
     getPositions(),
     getClock(),
-    getBars('SPY', '1Day', 260).catch((err: unknown) => {
+    getBars('SPY', '1Day', 400).catch((err: unknown) => {
       console.error('[MACRO_SPX] SPY fetch failed:', err)
       return []
     }),
