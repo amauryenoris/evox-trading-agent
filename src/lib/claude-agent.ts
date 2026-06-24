@@ -776,6 +776,44 @@ export interface AgentCycleResult {
   timestamp: string
 }
 
+function getAdxBucket(adx: number | null): string | null {
+  if (adx === null || !Number.isFinite(adx)) return null
+  if (adx < 18) return 'LOW'
+  if (adx < 25) return 'MID'
+  return 'HIGH'
+}
+
+function getMacdBucket(macd: number | null): string | null {
+  if (macd === null || !Number.isFinite(macd)) return null
+  if (macd > 0) return 'POSITIVE'
+  if (macd < -2) return 'DEEP_NEGATIVE'
+  return 'NEGATIVE'
+}
+
+function getZBucket(
+  z: number | null,
+  signalType:
+    | 'MEAN_REVERSION'
+    | 'TREND_PULLBACK'
+    | 'TREND_ZLE05'
+    | 'EMA_RECLAIM'
+    | null
+): string | null {
+  if (z === null || !Number.isFinite(z)) return null
+  if (signalType === 'MEAN_REVERSION') {
+    if (z < -1.5) return 'DEEP'
+    if (z < -1.2) return 'STANDARD'
+    return 'SHALLOW'
+  }
+  if (signalType === 'TREND_PULLBACK' || signalType === 'TREND_ZLE05') {
+    if (z > 1.25) return 'BREAKOUT'
+    if (z >= 1.0) return 'CONTINUATION'
+    if (z >= 0) return 'CHOP'
+    return 'PULLBACK'
+  }
+  return null
+}
+
 function computeSpxSnapshot(bars: { t: string; c: number }[]): {
   spx_price: number | null
   spx_sma50: number | null
@@ -1772,6 +1810,15 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       indicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
                       indicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
 
+                      indicatorsAtBuy.state_fingerprint = {
+                        signal_type:   signalType,
+                        spx_regime:    spxSnapshot.spx_regime,
+                        market_regime: indicators.marketRegime ?? null,
+                        adx_bucket:    getAdxBucket(adxValue),
+                        z_bucket:      getZBucket(typeof zScore === 'number' ? zScore : null, signalType),
+                        macd_bucket:   getMacdBucket(macdHistogram),
+                      }
+
                       if (signalType === 'TREND_PULLBACK') {
                         const tpZ = typeof zScore === 'number' ? zScore : null
                         indicatorsAtBuy.tp_population_bucket =
@@ -1917,6 +1964,24 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         bestIndicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
         bestIndicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
         bestIndicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
+
+        const bestAdxValue = typeof best.indicators.adx === 'number' ? best.indicators.adx : null
+        const bestMacdHist = typeof best.indicators.macd?.histogram === 'number' ? best.indicators.macd.histogram : null
+        const bestZForFingerprint = typeof best.zScore === 'number'
+          ? best.zScore
+          : typeof best.indicators.kalman?.zScore === 'number'
+            ? best.indicators.kalman.zScore
+            : null
+        const bestSignalType = best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+
+        bestIndicatorsAtBuy.state_fingerprint = {
+          signal_type:   bestSignalType,
+          spx_regime:    spxSnapshot.spx_regime,
+          market_regime: best.indicators.marketRegime ?? null,
+          adx_bucket:    getAdxBucket(bestAdxValue),
+          z_bucket:      getZBucket(bestZForFingerprint, bestSignalType),
+          macd_bucket:   getMacdBucket(bestMacdHist),
+        }
 
         if (best.signalType === 'TREND_PULLBACK') {
           const rawBestZ = typeof best.zScore === 'number'
