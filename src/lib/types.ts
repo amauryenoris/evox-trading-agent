@@ -202,6 +202,18 @@ export interface TradeEvaluation {
   pnlPct: number
   holdingDays: number
   signal_type?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+  spxPrice?:  number | null
+  spxSma50?:  number | null
+  spxSma200?: number | null
+  spxRegime?: 'BULL' | 'CAUTION' | 'BEAR' | null
+  stateFingerprint?: {
+    signal_type:   string | null
+    spx_regime:    string | null
+    market_regime: string | null
+    adx_bucket:    string | null
+    z_bucket:      string | null
+    macd_bucket:   string | null
+  } | null
   buyIndicators: TechnicalIndicators
   claudePostMortem: string
   lessonsLearned: string[]

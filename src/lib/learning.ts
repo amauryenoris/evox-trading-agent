@@ -71,6 +71,37 @@ export async function evaluateClosedTrade(
     pnlPct > 0.1 ? 'profit' : pnlPct < -0.1 ? 'loss' : 'breakeven'
 
   const ind = closedCtx.indicators
+  const rawInd = ind as unknown as Record<string, unknown>
+
+  const spxPrice =
+    typeof rawInd.spx_price === 'number' ? rawInd.spx_price : null
+
+  const spxSma50 =
+    typeof rawInd.spx_sma50 === 'number' ? rawInd.spx_sma50 : null
+
+  const spxSma200 =
+    typeof rawInd.spx_sma200 === 'number' ? rawInd.spx_sma200 : null
+
+  const spxRegime =
+    typeof rawInd.spx_regime === 'string' &&
+    (rawInd.spx_regime === 'BULL' ||
+     rawInd.spx_regime === 'CAUTION' ||
+     rawInd.spx_regime === 'BEAR')
+      ? (rawInd.spx_regime as 'BULL' | 'CAUTION' | 'BEAR')
+      : null
+
+  const stateFingerprint =
+    rawInd.state_fingerprint &&
+    typeof rawInd.state_fingerprint === 'object'
+      ? (rawInd.state_fingerprint as {
+          signal_type:   string | null
+          spx_regime:    string | null
+          market_regime: string | null
+          adx_bucket:    string | null
+          z_bucket:      string | null
+          macd_bucket:   string | null
+        })
+      : null
 
   const postMortemPrompt = `You are a quantitative trading AI performing a post-mortem analysis of a completed trade.
 
@@ -142,6 +173,11 @@ TASK: Analyze this trade and respond ONLY with valid JSON (no markdown):
     lessonsLearned: parsed.lessonsLearned,
     outcome,
     signal_type: closedCtx.signalType ?? null,
+    spxPrice,
+    spxSma50,
+    spxSma200,
+    spxRegime,
+    stateFingerprint,
   }
 
   await insertTradeEvaluation(evaluation)
