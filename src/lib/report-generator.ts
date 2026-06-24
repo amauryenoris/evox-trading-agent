@@ -221,6 +221,8 @@ function calculateDiagnostics(
       gate2Hours++
     } else if (err.includes('Overtrading gate')) {
       gate3Overtrading++
+    } else if (err.includes('MR_RANGING_ADX_GATE')) {
+      noSetupDetected++
     } else if (err.includes('gate') || err.includes('Gate') || err.includes('Market closed')) {
       gate4Portfolio++
     } else if (err.includes('Already in position')) {
