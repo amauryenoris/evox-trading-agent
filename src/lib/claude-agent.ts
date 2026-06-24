@@ -1564,6 +1564,24 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       }
 
       if (!setup_detected) {
+        const mrGateBlocked = meanReversionSignal && !mrRangingAdxGateOk
+
+        if (mrGateBlocked) {
+          const gateError = `MR_RANGING_ADX_GATE: z-score ${zScore.toFixed(3)} met entry threshold ${effectiveThreshold.toFixed(2)}, blocked — regime=RANGING, ADX=${adxValue !== null ? adxValue.toFixed(1) : 'null'} < ${mrRangingAdxFloor}`
+          console.log(`[SETUP-GATE] ${symbol}: ${gateError}`)
+          decisions.push({
+            id: randomUUID(),
+            timestamp,
+            symbol,
+            decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Mean reversion signal triggered (z-score ${zScore.toFixed(3)} <= ${effectiveThreshold.toFixed(2)}) but blocked by RANGING+low-ADX gate (ADX ${adxValue !== null ? adxValue.toFixed(1) : 'null'} < ${mrRangingAdxFloor})`, confidence: 0 },
+            indicators,
+            portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+            orderExecuted: false,
+            error: gateError,
+          })
+          continue
+        }
+
         console.log(`[SETUP-GATE] ${symbol}: no setup (z-score=${zScore.toFixed(3)}, price=${indicators.currentPrice.toFixed(2)}, ema50=${ema50Value > 0 ? ema50Value.toFixed(2) : 'N/A'}) — HOLD`)
         decisions.push({
           id: randomUUID(),

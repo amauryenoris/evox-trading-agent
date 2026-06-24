@@ -88,6 +88,7 @@ function detectKind(entry: AgentLogEntry): EntryKind {
   const err = entry.error ?? ''
   if (/already\s+in\s+position|already_in_position/i.test(err)) return 'ALREADY_HOLDING'
   if (/trend_zgt05|trend_quality_fail/i.test(err))              return 'TREND_REJECTED'
+  if (/mr_ranging_adx_gate/i.test(err))                        return 'GATE_BLOCKED'
   if (/setup\s*gate|no[\s_-]?setup/i.test(err))                return 'NO_SETUP'
   if (/exit_rules_check|exit_rules_skip/i.test(err))           return 'HOLDING'
   if (/correlation\s*gate|cooldown|spread|max[\s_]buys|max[\s_]positions|risk[\s_]check/i.test(err)) return 'GATE_BLOCKED'
