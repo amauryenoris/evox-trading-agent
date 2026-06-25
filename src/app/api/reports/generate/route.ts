@@ -1,15 +1,36 @@
 import { NextResponse } from 'next/server'
 import { generateAndSaveReport } from '@/lib/report-generator'
+import { isDateRangeIncomplete, isDateRangeInverted } from '@/lib/report-validation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    const report = await generateAndSaveReport()
+    const body = await req.json().catch(() => ({}))
+    const { weekStart, weekEnd } = body as { weekStart?: string; weekEnd?: string }
+
+    if (isDateRangeIncomplete(weekStart, weekEnd)) {
+      return NextResponse.json(
+        { success: false, error: 'Both start and end dates must be provided together' },
+        { status: 400 }
+      )
+    }
+
+    if (weekStart && weekEnd && isDateRangeInverted(weekStart, weekEnd)) {
+      return NextResponse.json(
+        { success: false, error: 'Start date must be before or equal to end date' },
+        { status: 400 }
+      )
+    }
+
+    const report = await generateAndSaveReport(weekStart, weekEnd)
     return NextResponse.json({ success: true, reportId: report.id, report })
   } catch (err) {
     console.error('[reports/generate]:', err)
+    if (err instanceof Error && err.message.includes('Invalid date format')) {
+      return NextResponse.json({ success: false, error: err.message }, { status: 400 })
+    }
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
