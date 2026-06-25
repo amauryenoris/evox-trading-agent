@@ -3,11 +3,11 @@ import {
   getAgentLog,
   getTradeEvaluations,
   getPatternLibrary,
-  insertWeeklyReport,
+  insertReport,
   getWeeklyNewsStats,
   getWeeklyWatchlistStats,
-  type WeeklyReportRecord,
-  type WeeklyReportSummary,
+  type ReportRecord,
+  type ReportSummary,
 } from './db'
 import { createClient } from '@supabase/supabase-js'
 import type { AgentLogEntry, TradeEvaluation, TradingPattern } from './types'
@@ -48,7 +48,16 @@ interface TableRow {
 // WEEK RANGE HELPERS
 // ============================================================
 
-function getWeekRange(): { weekStart: Date; weekEnd: Date } {
+function getDateRange(
+  customStart?: string,
+  customEnd?: string
+): { rangeStart: Date; rangeEnd: Date } {
+  if (customStart && customEnd) {
+    const rangeStart = new Date(customStart + 'T00:00:00')
+    const rangeEnd = new Date(customEnd + 'T23:59:59.999')
+    return { rangeStart, rangeEnd }
+  }
+
   const now = new Date()
   const dayOfWeek = now.getDay() // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
@@ -60,7 +69,7 @@ function getWeekRange(): { weekStart: Date; weekEnd: Date } {
   friday.setDate(monday.getDate() + 4)
   friday.setHours(23, 59, 59, 999)
 
-  return { weekStart: monday, weekEnd: friday }
+  return { rangeStart: monday, rangeEnd: friday }
 }
 
 function toDateString(d: Date): string {
@@ -137,7 +146,7 @@ function calculateSummary(
   evaluations: TradeEvaluation[],
   weekStart: Date,
   weekEnd: Date
-): WeeklyReportSummary {
+): ReportSummary {
   const weekEntries = agentLog.filter((e) => {
     const t = new Date(e.timestamp)
     return t >= weekStart && t <= weekEnd
@@ -390,7 +399,7 @@ function drawHeader(doc: PDFKit.PDFDocument, weekStart: Date, weekEnd: Date): vo
   doc.y = 110
 }
 
-function drawKPIBoxes(doc: PDFKit.PDFDocument, summary: WeeklyReportSummary): void {
+function drawKPIBoxes(doc: PDFKit.PDFDocument, summary: ReportSummary): void {
   const BOX_W  = 117
   const BOX_H  = 58
   const GAP    = 8
@@ -566,7 +575,7 @@ type WeeklyNewsStats = Awaited<ReturnType<typeof getWeeklyNewsStats>>
 type WeeklyWatchlistStats = Awaited<ReturnType<typeof getWeeklyWatchlistStats>>
 
 function generatePDF(
-  summary: WeeklyReportSummary,
+  summary: ReportSummary,
   agentLog: AgentLogEntry[],
   evaluations: TradeEvaluation[],
   patterns: TradingPattern[],
@@ -927,17 +936,20 @@ function generatePDF(
 // MAIN: generate, upload, and save report record
 // ============================================================
 
-export async function generateAndSaveReport(): Promise<WeeklyReportRecord> {
+export async function generateAndSaveReport(
+  customStart?: string,
+  customEnd?: string
+): Promise<ReportRecord> {
   const supabaseUrl = process.env.SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !serviceKey) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
   }
 
-  const { weekStart, weekEnd } = getWeekRange()
+  const { rangeStart, rangeEnd } = getDateRange(customStart, customEnd)
 
-  const weekStartStr = toDateString(weekStart)
-  const weekEndStr = toDateString(weekEnd)
+  const weekStartStr = toDateString(rangeStart)
+  const weekEndStr = toDateString(rangeEnd)
 
   const [agentLog, evaluations, patterns, newsStats, watchlistStats] = await Promise.all([
     getAgentLog(2000),
@@ -947,10 +959,10 @@ export async function generateAndSaveReport(): Promise<WeeklyReportRecord> {
     getWeeklyWatchlistStats(weekStartStr, weekEndStr).catch(() => undefined),
   ])
 
-  const summary = calculateSummary(agentLog, evaluations, weekStart, weekEnd)
-  const diagnostics = calculateDiagnostics(agentLog, evaluations, weekStart, weekEnd)
+  const summary = calculateSummary(agentLog, evaluations, rangeStart, rangeEnd)
+  const diagnostics = calculateDiagnostics(agentLog, evaluations, rangeStart, rangeEnd)
   const pdfBuffer = await generatePDF(
-    summary, agentLog, evaluations, patterns, weekStart, weekEnd, diagnostics, newsStats, watchlistStats
+    summary, agentLog, evaluations, patterns, rangeStart, rangeEnd, diagnostics, newsStats, watchlistStats
   )
 
   const filename = `report-${weekStartStr}_${weekEndStr}.pdf`
@@ -961,7 +973,7 @@ export async function generateAndSaveReport(): Promise<WeeklyReportRecord> {
 
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`)
 
-  const record = await insertWeeklyReport({
+  const record = await insertReport({
     weekStart: weekStartStr,
     weekEnd: weekEndStr,
     storagePath: filename,

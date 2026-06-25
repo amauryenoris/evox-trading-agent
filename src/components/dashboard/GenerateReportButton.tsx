@@ -7,6 +7,8 @@ export function GenerateReportButton() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [generated, setGenerated] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [weekStart, setWeekStart] = useState('')
+  const [weekEnd, setWeekEnd] = useState('')
   const router = useRouter()
 
   async function handleGenerate() {
@@ -14,7 +16,12 @@ export function GenerateReportButton() {
     setGenerated(false)
     setError(null)
     try {
-      const res = await fetch('/api/reports/generate', { method: 'POST' })
+      const body = weekStart && weekEnd ? { weekStart, weekEnd } : {}
+      const res = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
       const data = await res.json()
       if (data.success) {
         setGenerated(true)
@@ -37,6 +44,18 @@ export function GenerateReportButton() {
       {error && (
         <span className="text-xs text-red-400">Error: {error}</span>
       )}
+      <input
+        type="date"
+        value={weekStart}
+        onChange={(e) => setWeekStart(e.target.value)}
+        className="bg-[#13131a] border border-[#1e1e2e] text-slate-300 text-sm px-2.5 py-2 rounded-lg focus:outline-none focus:border-slate-600"
+      />
+      <input
+        type="date"
+        value={weekEnd}
+        onChange={(e) => setWeekEnd(e.target.value)}
+        className="bg-[#13131a] border border-[#1e1e2e] text-slate-300 text-sm px-2.5 py-2 rounded-lg focus:outline-none focus:border-slate-600"
+      />
       <button
         onClick={handleGenerate}
         disabled={isGenerating}

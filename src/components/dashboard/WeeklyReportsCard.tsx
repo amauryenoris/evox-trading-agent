@@ -1,16 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import type { WeeklyReportRecord } from '@/lib/db'
+import type { ReportRecord } from '@/lib/db'
 import { Card } from './ui'
 
 const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
 
-// ADAPTED: pnlPct from WeeklyReportSummary is a 0–1 decimal; multiplied by 100 for display
+// ADAPTED: pnlPct from ReportSummary is a 0–1 decimal; multiplied by 100 for display
 const fmtPct = (n: number, dp = 2) => (n >= 0 ? '+' : '') + n.toFixed(dp) + '%'
 
 interface Props {
-  reports: WeeklyReportRecord[]
+  reports: ReportRecord[]
 }
 
 export function WeeklyReportsCard({ reports }: Props) {

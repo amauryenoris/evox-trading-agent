@@ -21,7 +21,7 @@ import { SystemStatusBar } from '@/components/dashboard/SystemStatusBar'
 // ADAPTED: cookies forwarded so auth-protected API routes work server-side
 import { cookies } from 'next/headers'
 import type { PortfolioSummary, PositionDisplay, AgentLogEntry, TradeEvaluation, TradingPattern } from '@/lib/types'
-import type { WeeklyReportRecord } from '@/lib/db'
+import type { ReportRecord } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +61,7 @@ export default async function DashboardPage() {
       fetchJSON<AgentLogEntry[]>('/api/agent-log', []),
       fetchJSON<TradeEvaluation[]>('/api/trades', []),
       fetchJSON<TradingPattern[]>('/api/patterns', []),
-      fetchJSON<WeeklyReportRecord[]>('/api/reports', []),
+      fetchJSON<ReportRecord[]>('/api/reports', []),
       // ADAPTED: PortfolioHistory shape — not a flat PortfolioHistoryPoint[], matches PnLChart prop
       fetchJSON<PortfolioHistory | null>('/api/portfolio-history', null),
     ])

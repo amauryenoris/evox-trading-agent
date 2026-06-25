@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getWeeklyReportById, createStorageSignedUrl } from '@/lib/db'
+import { getReportById, createStorageSignedUrl } from '@/lib/db'
 
 export async function GET(
   _req: Request,
@@ -7,7 +7,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const report = await getWeeklyReportById(id)
+    const report = await getReportById(id)
     if (!report) {
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }

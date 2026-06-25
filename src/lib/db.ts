@@ -448,7 +448,7 @@ export async function getTodayBuyExecutions(): Promise<number> {
 // WEEKLY REPORTS
 // ============================================================
 
-export interface WeeklyReportSummary {
+export interface ReportSummary {
   equityStart: number
   equityEnd: number
   pnlUSD: number
@@ -464,30 +464,31 @@ export interface WeeklyReportSummary {
   profitFactor: number
 }
 
-export interface WeeklyReportRecord {
+export interface ReportRecord {
   id: string
   createdAt: string
   weekStart: string
   weekEnd: string
   storagePath: string
-  summary: WeeklyReportSummary
+  summary: ReportSummary
 }
 
-export async function insertWeeklyReport(
-  record: Omit<WeeklyReportRecord, 'id' | 'createdAt'>
-): Promise<WeeklyReportRecord> {
+export async function insertReport(
+  record: Omit<ReportRecord, 'id' | 'createdAt'>
+): Promise<ReportRecord> {
   const db = getServiceClient()
   const { data, error } = await db
-    .from('weekly_reports')
-    .insert({
+    .from('reports')
+    .upsert({
       week_start: record.weekStart,
       week_end: record.weekEnd,
       storage_path: record.storagePath,
       summary: record.summary,
-    })
+    }, { onConflict: 'week_start,week_end' })
     .select()
     .single()
-  if (error) throw new Error(`Failed to insert weekly report: ${error.message}`)
+  if (error) throw new Error(`Failed to insert report: ${error.message}`)
+  if (!data) throw new Error('Upsert returned no row for reports')
   return {
     id: data.id,
     createdAt: data.created_at,
@@ -498,14 +499,14 @@ export async function insertWeeklyReport(
   }
 }
 
-export async function getWeeklyReports(limit = 20): Promise<WeeklyReportRecord[]> {
+export async function getReports(limit = 20): Promise<ReportRecord[]> {
   const db = getClient()
   const { data, error } = await db
-    .from('weekly_reports')
+    .from('reports')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit)
-  if (error) throw new Error(`Failed to fetch weekly reports: ${error.message}`)
+  if (error) throw new Error(`Failed to fetch reports: ${error.message}`)
   return (data ?? []).map((row) => ({
     id: row.id,
     createdAt: row.created_at,
@@ -516,10 +517,10 @@ export async function getWeeklyReports(limit = 20): Promise<WeeklyReportRecord[]
   }))
 }
 
-export async function getWeeklyReportById(id: string): Promise<WeeklyReportRecord | null> {
+export async function getReportById(id: string): Promise<ReportRecord | null> {
   const db = getClient()
   const { data, error } = await db
-    .from('weekly_reports')
+    .from('reports')
     .select('*')
     .eq('id', id)
     .single()
