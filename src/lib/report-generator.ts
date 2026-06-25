@@ -48,6 +48,17 @@ interface TableRow {
 // WEEK RANGE HELPERS
 // ============================================================
 
+function assertNoCalendarRollover(dateStr: string, parsed: Date): void {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  if (
+    parsed.getFullYear() !== y ||
+    parsed.getMonth() !== m - 1 ||
+    parsed.getDate() !== d
+  ) {
+    throw new Error('Invalid date: day/month out of range for customStart/customEnd')
+  }
+}
+
 function getDateRange(
   customStart?: string,
   customEnd?: string
@@ -58,6 +69,8 @@ function getDateRange(
     if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())) {
       throw new Error('Invalid date format for customStart/customEnd')
     }
+    assertNoCalendarRollover(customStart, rangeStart)
+    assertNoCalendarRollover(customEnd, rangeEnd)
     return { rangeStart, rangeEnd }
   }
 

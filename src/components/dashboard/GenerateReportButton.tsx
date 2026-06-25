@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { isDateRangeIncomplete, isDateRangeInverted } from '@/lib/report-validation'
 
 export function GenerateReportButton() {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -15,8 +16,13 @@ export function GenerateReportButton() {
     setGenerated(false)
     setError(null)
 
-    if ((weekStart && !weekEnd) || (!weekStart && weekEnd)) {
+    if (isDateRangeIncomplete(weekStart, weekEnd)) {
       setError('Both start and end dates must be provided together')
+      return
+    }
+
+    if (weekStart && weekEnd && isDateRangeInverted(weekStart, weekEnd)) {
+      setError('Start date must be before or equal to end date')
       return
     }
 

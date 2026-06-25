@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { generateAndSaveReport } from '@/lib/report-generator'
+import { isDateRangeIncomplete, isDateRangeInverted } from '@/lib/report-validation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -9,14 +10,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const { weekStart, weekEnd } = body as { weekStart?: string; weekEnd?: string }
 
-    if ((weekStart && !weekEnd) || (!weekStart && weekEnd)) {
+    if (isDateRangeIncomplete(weekStart, weekEnd)) {
       return NextResponse.json(
         { success: false, error: 'Both start and end dates must be provided together' },
         { status: 400 }
       )
     }
 
-    if (weekStart && weekEnd && new Date(weekStart) > new Date(weekEnd)) {
+    if (weekStart && weekEnd && isDateRangeInverted(weekStart, weekEnd)) {
       return NextResponse.json(
         { success: false, error: 'Start date must be before or equal to end date' },
         { status: 400 }
