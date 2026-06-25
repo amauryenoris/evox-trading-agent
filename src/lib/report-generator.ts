@@ -55,6 +55,9 @@ function getDateRange(
   if (customStart && customEnd) {
     const rangeStart = new Date(customStart + 'T00:00:00')
     const rangeEnd = new Date(customEnd + 'T23:59:59.999')
+    if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())) {
+      throw new Error('Invalid date format for customStart/customEnd')
+    }
     return { rangeStart, rangeEnd }
   }
 

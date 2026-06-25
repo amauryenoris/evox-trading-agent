@@ -12,9 +12,15 @@ export function GenerateReportButton() {
   const router = useRouter()
 
   async function handleGenerate() {
-    setIsGenerating(true)
     setGenerated(false)
     setError(null)
+
+    if ((weekStart && !weekEnd) || (!weekStart && weekEnd)) {
+      setError('Both start and end dates must be provided together')
+      return
+    }
+
+    setIsGenerating(true)
     try {
       const body = weekStart && weekEnd ? { weekStart, weekEnd } : {}
       const res = await fetch('/api/reports/generate', {
@@ -48,12 +54,14 @@ export function GenerateReportButton() {
         type="date"
         value={weekStart}
         onChange={(e) => setWeekStart(e.target.value)}
+        aria-label="Report start date"
         className="bg-[#13131a] border border-[#1e1e2e] text-slate-300 text-sm px-2.5 py-2 rounded-lg focus:outline-none focus:border-slate-600"
       />
       <input
         type="date"
         value={weekEnd}
         onChange={(e) => setWeekEnd(e.target.value)}
+        aria-label="Report end date"
         className="bg-[#13131a] border border-[#1e1e2e] text-slate-300 text-sm px-2.5 py-2 rounded-lg focus:outline-none focus:border-slate-600"
       />
       <button

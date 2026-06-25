@@ -27,6 +27,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, reportId: report.id, report })
   } catch (err) {
     console.error('[reports/generate]:', err)
+    if (err instanceof Error && err.message.includes('Invalid date format')) {
+      return NextResponse.json({ success: false, error: err.message }, { status: 400 })
+    }
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
