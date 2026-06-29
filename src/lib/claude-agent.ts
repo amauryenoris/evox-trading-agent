@@ -1844,6 +1844,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                         indicatorsAtBuy.tp_zscore = tpZ
                       }
 
+                      if (signalType === 'TREND_ZLE05') {
+                        const zle05Z = typeof zScore === 'number' ? zScore : null
+                        indicatorsAtBuy.zle05_population_bucket =
+                          zle05Z !== null ? getZBucket(zle05Z, 'TREND_ZLE05') : null
+                        indicatorsAtBuy.zle05_zscore = zle05Z
+                      }
+
                       await saveOpenPositionContext({
                         symbol,
                         buyTimestamp: timestamp,
@@ -2010,6 +2017,17 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           bestIndicatorsAtBuy.tp_population_bucket =
             rawBestZ !== null ? getTrendPullbackPopulationBucket(rawBestZ) : null
           bestIndicatorsAtBuy.tp_zscore = rawBestZ
+        }
+
+        if (best.signalType === 'TREND_ZLE05') {
+          const rawBestZle05Z = typeof best.zScore === 'number'
+            ? best.zScore
+            : typeof best.indicators.kalman?.zScore === 'number'
+              ? best.indicators.kalman.zScore
+              : null
+          bestIndicatorsAtBuy.zle05_population_bucket =
+            rawBestZle05Z !== null ? getZBucket(rawBestZle05Z, 'TREND_ZLE05') : null
+          bestIndicatorsAtBuy.zle05_zscore = rawBestZle05Z
         }
 
         await saveOpenPositionContext({
