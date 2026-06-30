@@ -171,6 +171,27 @@ export async function checkAutoEntry(
       ? regime === 'RANGING'
       : true  // TREND_PULLBACK and EMA_RECLAIM work in any regime
 
+    // mrRangingAdxFloor must stay in sync with claude-agent.ts's mrRangingAdxFloor (= 18)
+    const adxValue = currentIndicators[entry.symbol]?.adx ?? null
+    const mrRangingAdxBlocked =
+      entry.signal_type === 'MEAN_REVERSION' &&
+      regime === 'RANGING' &&
+      typeof adxValue === 'number' &&
+      Number.isFinite(adxValue) &&
+      adxValue < 18
+
+    const nullSignalTypeBlocked = entry.signal_type === null
+
+    if (mrRangingAdxBlocked) {
+      console.log(`[AUTO-ENTRY] ${entry.symbol}: skipped — MR_RANGING_ADX_GATE (ADX=${adxValue} < 18, regime=RANGING)`)
+      continue
+    }
+
+    if (nullSignalTypeBlocked) {
+      console.log(`[AUTO-ENTRY] ${entry.symbol}: skipped — signal_type is null, no named setup`)
+      continue
+    }
+
     // Auto-entry conditions: z-score crossed threshold, regime ok, portfolio has room
     if (currentZScore <= threshold && regimeOk && openPositionsCount < maxPositions) {
       console.log(
