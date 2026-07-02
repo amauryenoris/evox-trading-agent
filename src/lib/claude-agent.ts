@@ -854,6 +854,41 @@ function computeSpxSnapshot(bars: { t: string; c: number }[]): {
   return { spx_price, spx_sma50, spx_sma200, spx_regime }
 }
 
+// ============================================================
+// IOC FILL — error label constants (greppable in agent_log)
+// ============================================================
+
+export const IOC_NOT_FILLED    = 'IOC_NOT_FILLED'
+export const STOP_SUBMIT_FAILED = 'STOP_SUBMIT_FAILED'
+
+// Submits a GTC stop order and retries once on failure.
+// Returns the stop order ID on success, or a failureReason on double failure.
+// The position context is always saved by the caller — a naked position
+// is real and must be tracked even without stop protection.
+export async function submitStopWithRetry(
+  symbol: string,
+  filledQty: number,
+  stopPrice: number,
+  retryDelayMs = 3000
+): Promise<{ stopOrderId: string | undefined; failureReason: string | undefined }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const stopOrder = await submitStopOrder(symbol, filledQty, stopPrice)
+      return { stopOrderId: stopOrder.id, failureReason: undefined }
+    } catch (err) {
+      if (attempt === 0) {
+        console.warn(`[STOP] First attempt failed for ${symbol} — retrying in ${retryDelayMs}ms:`, err)
+        await new Promise(r => setTimeout(r, retryDelayMs))
+      } else {
+        const reason = (err as Error).message ?? String(err)
+        console.error(`[STOP] Retry also failed for ${symbol} — position is NAKED:`, reason)
+        return { stopOrderId: undefined, failureReason: reason }
+      }
+    }
+  }
+  return { stopOrderId: undefined, failureReason: 'unreachable' }
+}
+
 export async function runAgentCycle(): Promise<AgentCycleResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set')
@@ -1796,76 +1831,83 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       decision.action = 'BUY'
                       const limitPrice = quote.ask
                       const order = await submitLimitOrder(symbol, qty, 'buy', limitPrice)
-                      console.log(`[ORDER] ${symbol} limit IOC BUY @ $${limitPrice} status: ${order.status} spread: ${quote.spreadBps}bps`)
-                      if (order.status === 'canceled') {
-                        console.log(`[ORDER] ${symbol} IOC not filled — no liquidity at ask $${limitPrice}`)
-                      }
-                      orderId = order.id
-                      orderExecuted = true
-                      decision.quantity = qty
-                      openPositionsCount++
-                      buysToday++
+                      const filledQty = parseInt(order.filled_qty, 10)
+                      console.log(`[ORDER] ${symbol} limit IOC BUY @ $${limitPrice} status: ${order.status} filled: ${filledQty}/${qty} spread: ${quote.spreadBps}bps`)
 
-                      // Submit GTC stop order immediately (Capa A protection)
-                      const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
-                      const stopPrice = indicators.currentPrice * (1 - stopLossPct)
-                      let stopOrderId: string | undefined
-                      try {
-                        const stopOrder = await submitStopOrder(symbol, qty, stopPrice)
-                        stopOrderId = stopOrder.id
-                      } catch (stopErr) {
-                        console.warn(`Failed to submit stop order for ${symbol}:`, stopErr)
-                      }
+                      if (filledQty === 0) {
+                        console.log(`[ORDER] ${symbol} IOC not filled — 0 shares filled at $${limitPrice}`)
+                        error = `${IOC_NOT_FILLED}: limit buy canceled, 0 shares filled at $${limitPrice}`
+                        decision.action = 'HOLD'
+                      } else {
+                        if (filledQty < qty) {
+                          console.log(`[ORDER] ${symbol} IOC_PARTIAL_FILL: requested ${qty}, filled ${filledQty}`)
+                        }
 
-                      // Save buy context for future learning
-                      const entryLogId = randomUUID()
-                      const indicatorsAtBuy = {
-                        ...indicators,
-                      } as TechnicalIndicators & Record<string, unknown>
+                        orderId = order.id
+                        orderExecuted = true
+                        decision.quantity = filledQty
+                        openPositionsCount++
+                        buysToday++
 
-                      indicatorsAtBuy.spx_price  = spxSnapshot.spx_price
-                      indicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
-                      indicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
-                      indicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
+                        // Submit GTC stop order immediately (Capa A protection)
+                        const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+                        const stopPrice = indicators.currentPrice * (1 - stopLossPct)
+                        const stopResult = await submitStopWithRetry(symbol, filledQty, stopPrice)
+                        const stopOrderId = stopResult.stopOrderId
+                        if (stopResult.failureReason) {
+                          error = `${STOP_SUBMIT_FAILED}: ${stopResult.failureReason}`
+                        }
 
-                      indicatorsAtBuy.state_fingerprint = {
-                        signal_type:   signalType,
-                        spx_regime:    spxSnapshot.spx_regime,
-                        market_regime: indicators.marketRegime ?? null,
-                        adx_bucket:    getAdxBucket(adxValue),
-                        z_bucket:      getZBucket(typeof zScore === 'number' ? zScore : null, signalType),
-                        macd_bucket:   getMacdBucket(macdHistogram),
-                      }
+                        // Save buy context for future learning
+                        const entryLogId = randomUUID()
+                        const indicatorsAtBuy = {
+                          ...indicators,
+                        } as TechnicalIndicators & Record<string, unknown>
 
-                      if (signalType === 'TREND_PULLBACK') {
-                        const tpZ = typeof zScore === 'number' ? zScore : null
-                        indicatorsAtBuy.tp_population_bucket =
-                          tpZ !== null ? getTrendPullbackPopulationBucket(tpZ) : null
-                        indicatorsAtBuy.tp_zscore = tpZ
-                      }
+                        indicatorsAtBuy.spx_price  = spxSnapshot.spx_price
+                        indicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
+                        indicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
+                        indicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
 
-                      if (signalType === 'TREND_ZLE05') {
-                        const zle05Z = typeof zScore === 'number' ? zScore : null
-                        indicatorsAtBuy.zle05_population_bucket =
-                          zle05Z !== null ? getZBucket(zle05Z, 'TREND_ZLE05') : null
-                        indicatorsAtBuy.zle05_zscore = zle05Z
-                      }
+                        indicatorsAtBuy.state_fingerprint = {
+                          signal_type:   signalType,
+                          spx_regime:    spxSnapshot.spx_regime,
+                          market_regime: indicators.marketRegime ?? null,
+                          adx_bucket:    getAdxBucket(adxValue),
+                          z_bucket:      getZBucket(typeof zScore === 'number' ? zScore : null, signalType),
+                          macd_bucket:   getMacdBucket(macdHistogram),
+                        }
 
-                      await saveOpenPositionContext({
-                        symbol,
-                        buyTimestamp: timestamp,
-                        buyPrice: indicators.currentPrice,
-                        quantity: qty,
-                        indicators: indicatorsAtBuy,
-                        claudeReasoning: decision.reasoning,
-                        patternIdsUsed: [],
-                        stopOrderId,
-                        signalType,
-                      })
+                        if (signalType === 'TREND_PULLBACK') {
+                          const tpZ = typeof zScore === 'number' ? zScore : null
+                          indicatorsAtBuy.tp_population_bucket =
+                            tpZ !== null ? getTrendPullbackPopulationBucket(tpZ) : null
+                          indicatorsAtBuy.tp_zscore = tpZ
+                        }
 
-                      // If this BUY came from the Near-Miss Watchlist, link the log entry
-                      if (isAutoEntry) {
-                        await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
+                        if (signalType === 'TREND_ZLE05') {
+                          const zle05Z = typeof zScore === 'number' ? zScore : null
+                          indicatorsAtBuy.zle05_population_bucket =
+                            zle05Z !== null ? getZBucket(zle05Z, 'TREND_ZLE05') : null
+                          indicatorsAtBuy.zle05_zscore = zle05Z
+                        }
+
+                        await saveOpenPositionContext({
+                          symbol,
+                          buyTimestamp: timestamp,
+                          buyPrice: indicators.currentPrice,
+                          quantity: filledQty,
+                          indicators: indicatorsAtBuy,
+                          claudeReasoning: decision.reasoning,
+                          patternIdsUsed: [],
+                          stopOrderId,
+                          signalType,
+                        })
+
+                        // If this BUY came from the Near-Miss Watchlist, link the log entry
+                        if (isAutoEntry) {
+                          await markWatchlistTriggered(symbol, entryLogId).catch(() => {})
+                        }
                       }
                     }
                   } else {
@@ -1958,95 +2000,102 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         const rankingQuote = await getQuote(best.symbol)
         if (!rankingQuote) throw new Error('Spread gate: no quote at ranking execution')
         const order = await submitLimitOrder(best.symbol, best.qty, 'buy', rankingQuote.ask)
-        console.log(`[ORDER] ${best.symbol} limit IOC BUY @ $${rankingQuote.ask} status: ${order.status} spread: ${rankingQuote.spreadBps}bps`)
-        if (order.status === 'canceled') {
-          console.log(`[ORDER] ${best.symbol} IOC not filled — no liquidity at ask $${rankingQuote.ask}`)
-        }
-        best.entry.orderId = order.id
-        best.entry.orderExecuted = true
-        best.decision.action = 'BUY'
-        best.decision.quantity = best.qty
-        best.entry.error = undefined
-        openPositionsCount++
-        buysToday++
+        const filledQty = parseInt(order.filled_qty, 10)
+        console.log(`[ORDER] ${best.symbol} limit IOC BUY @ $${rankingQuote.ask} status: ${order.status} filled: ${filledQty}/${best.qty} spread: ${rankingQuote.spreadBps}bps`)
 
-        const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
-        const stopPrice = best.indicators.currentPrice * (1 - stopLossPct)
-        let stopOrderId: string | undefined
-        try {
-          const stopOrder = await submitStopOrder(best.symbol, best.qty, stopPrice)
-          stopOrderId = stopOrder.id
-        } catch (stopErr) {
-          console.warn(`[RANKING] Stop order failed for ${best.symbol}:`, stopErr)
-        }
+        if (filledQty === 0) {
+          console.log(`[ORDER] ${best.symbol} IOC not filled — 0 shares filled at $${rankingQuote.ask}`)
+          best.entry.error = `${IOC_NOT_FILLED}: limit buy canceled, 0 shares filled at $${rankingQuote.ask}`
+          decisions.push(best.entry)
+        } else {
+          if (filledQty < best.qty) {
+            console.log(`[ORDER] ${best.symbol} IOC_PARTIAL_FILL: requested ${best.qty}, filled ${filledQty}`)
+          }
 
-        const entryLogId = randomUUID()
-        const bestIndicatorsAtBuy = {
-          ...best.indicators,
-        } as TechnicalIndicators & Record<string, unknown>
+          best.entry.orderId = order.id
+          best.entry.orderExecuted = true
+          best.decision.action = 'BUY'
+          best.decision.quantity = filledQty
+          best.entry.error = undefined
+          openPositionsCount++
+          buysToday++
 
-        bestIndicatorsAtBuy.spx_price  = spxSnapshot.spx_price
-        bestIndicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
-        bestIndicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
-        bestIndicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
+          const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+          const stopPrice = best.indicators.currentPrice * (1 - stopLossPct)
+          const stopResult = await submitStopWithRetry(best.symbol, filledQty, stopPrice)
+          const stopOrderId = stopResult.stopOrderId
+          if (stopResult.failureReason) {
+            best.entry.error = `${STOP_SUBMIT_FAILED}: ${stopResult.failureReason}`
+          }
 
-        const bestAdxValue = typeof best.indicators.adx === 'number' ? best.indicators.adx : null
-        const bestMacdHist = typeof best.indicators.macd?.histogram === 'number' ? best.indicators.macd.histogram : null
-        const bestZForFingerprint = typeof best.zScore === 'number'
-          ? best.zScore
-          : typeof best.indicators.kalman?.zScore === 'number'
-            ? best.indicators.kalman.zScore
-            : null
-        const bestSignalType = best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+          const entryLogId = randomUUID()
+          const bestIndicatorsAtBuy = {
+            ...best.indicators,
+          } as TechnicalIndicators & Record<string, unknown>
 
-        bestIndicatorsAtBuy.state_fingerprint = {
-          signal_type:   bestSignalType,
-          spx_regime:    spxSnapshot.spx_regime,
-          market_regime: best.indicators.marketRegime ?? null,
-          adx_bucket:    getAdxBucket(bestAdxValue),
-          z_bucket:      getZBucket(bestZForFingerprint, bestSignalType),
-          macd_bucket:   getMacdBucket(bestMacdHist),
-        }
+          bestIndicatorsAtBuy.spx_price  = spxSnapshot.spx_price
+          bestIndicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
+          bestIndicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
+          bestIndicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
 
-        if (best.signalType === 'TREND_PULLBACK') {
-          const rawBestZ = typeof best.zScore === 'number'
+          const bestAdxValue = typeof best.indicators.adx === 'number' ? best.indicators.adx : null
+          const bestMacdHist = typeof best.indicators.macd?.histogram === 'number' ? best.indicators.macd.histogram : null
+          const bestZForFingerprint = typeof best.zScore === 'number'
             ? best.zScore
             : typeof best.indicators.kalman?.zScore === 'number'
               ? best.indicators.kalman.zScore
               : null
-          bestIndicatorsAtBuy.tp_population_bucket =
-            rawBestZ !== null ? getTrendPullbackPopulationBucket(rawBestZ) : null
-          bestIndicatorsAtBuy.tp_zscore = rawBestZ
+          const bestSignalType = best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+
+          bestIndicatorsAtBuy.state_fingerprint = {
+            signal_type:   bestSignalType,
+            spx_regime:    spxSnapshot.spx_regime,
+            market_regime: best.indicators.marketRegime ?? null,
+            adx_bucket:    getAdxBucket(bestAdxValue),
+            z_bucket:      getZBucket(bestZForFingerprint, bestSignalType),
+            macd_bucket:   getMacdBucket(bestMacdHist),
+          }
+
+          if (best.signalType === 'TREND_PULLBACK') {
+            const rawBestZ = typeof best.zScore === 'number'
+              ? best.zScore
+              : typeof best.indicators.kalman?.zScore === 'number'
+                ? best.indicators.kalman.zScore
+                : null
+            bestIndicatorsAtBuy.tp_population_bucket =
+              rawBestZ !== null ? getTrendPullbackPopulationBucket(rawBestZ) : null
+            bestIndicatorsAtBuy.tp_zscore = rawBestZ
+          }
+
+          if (best.signalType === 'TREND_ZLE05') {
+            const rawBestZle05Z = typeof best.zScore === 'number'
+              ? best.zScore
+              : typeof best.indicators.kalman?.zScore === 'number'
+                ? best.indicators.kalman.zScore
+                : null
+            bestIndicatorsAtBuy.zle05_population_bucket =
+              rawBestZle05Z !== null ? getZBucket(rawBestZle05Z, 'TREND_ZLE05') : null
+            bestIndicatorsAtBuy.zle05_zscore = rawBestZle05Z
+          }
+
+          await saveOpenPositionContext({
+            symbol: best.symbol,
+            buyTimestamp: timestamp,
+            buyPrice: best.indicators.currentPrice,
+            quantity: filledQty,
+            indicators: bestIndicatorsAtBuy,
+            claudeReasoning: best.decision.reasoning,
+            patternIdsUsed: [],
+            stopOrderId,
+            signalType: best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null,
+          })
+
+          if (best.isAutoEntry) {
+            await markWatchlistTriggered(best.symbol, entryLogId).catch(() => {})
+          }
+
+          decisions.push(best.entry)
         }
-
-        if (best.signalType === 'TREND_ZLE05') {
-          const rawBestZle05Z = typeof best.zScore === 'number'
-            ? best.zScore
-            : typeof best.indicators.kalman?.zScore === 'number'
-              ? best.indicators.kalman.zScore
-              : null
-          bestIndicatorsAtBuy.zle05_population_bucket =
-            rawBestZle05Z !== null ? getZBucket(rawBestZle05Z, 'TREND_ZLE05') : null
-          bestIndicatorsAtBuy.zle05_zscore = rawBestZle05Z
-        }
-
-        await saveOpenPositionContext({
-          symbol: best.symbol,
-          buyTimestamp: timestamp,
-          buyPrice: best.indicators.currentPrice,
-          quantity: best.qty,
-          indicators: bestIndicatorsAtBuy,
-          claudeReasoning: best.decision.reasoning,
-          patternIdsUsed: [],
-          stopOrderId,
-          signalType: best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null,
-        })
-
-        if (best.isAutoEntry) {
-          await markWatchlistTriggered(best.symbol, entryLogId).catch(() => {})
-        }
-
-        decisions.push(best.entry)
       }
     } catch (execErr) {
       best.entry.error = String(execErr)
