@@ -52,6 +52,10 @@ export async function getOrders(status = 'filled', limit = 50): Promise<AlpacaOr
   return alpacaFetch<AlpacaOrder[]>(url.toString())
 }
 
+export async function getOrder(orderId: string): Promise<AlpacaOrder> {
+  return alpacaFetch<AlpacaOrder>(`${baseUrl()}/v2/orders/${orderId}`)
+}
+
 export async function getClock(): Promise<AlpacaClock> {
   return alpacaFetch<AlpacaClock>(`${baseUrl()}/v2/clock`)
 }

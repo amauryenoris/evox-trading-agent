@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { submitStopWithRetry, IOC_NOT_FILLED, STOP_SUBMIT_FAILED } from '../claude-agent'
+import {
+  submitStopWithRetry,
+  resolveIocFinalState,
+  IOC_NOT_FILLED,
+  STOP_SUBMIT_FAILED,
+  IOC_LATE_FILL,
+} from '../claude-agent'
+import type { AlpacaOrder } from '../types'
 
-const { mockSubmitStopOrder } = vi.hoisted(() => ({
+const { mockSubmitStopOrder, mockGetOrder } = vi.hoisted(() => ({
   mockSubmitStopOrder: vi.fn(),
+  mockGetOrder: vi.fn(),
 }))
 
 vi.mock('../alpaca', async (importOriginal) => {
@@ -10,6 +18,7 @@ vi.mock('../alpaca', async (importOriginal) => {
   return {
     ...actual,
     submitStopOrder: mockSubmitStopOrder,
+    getOrder: mockGetOrder,
   }
 })
 
@@ -77,6 +86,124 @@ describe('IOC_NOT_FILLED and STOP_SUBMIT_FAILED constants', () => {
 
   it('STOP_SUBMIT_FAILED is the literal string STOP_SUBMIT_FAILED', () => {
     expect(STOP_SUBMIT_FAILED).toBe('STOP_SUBMIT_FAILED')
+  })
+})
+
+function makeOrder(overrides: Partial<AlpacaOrder> & { id: string; symbol: string }): AlpacaOrder {
+  return {
+    client_order_id: 'client-' + overrides.id,
+    created_at: '2026-07-06T16:53:00Z',
+    updated_at: '2026-07-06T16:53:00Z',
+    submitted_at: '2026-07-06T16:53:00Z',
+    filled_at: null,
+    asset_class: 'us_equity',
+    notional: null,
+    qty: '82',
+    filled_qty: '0',
+    filled_avg_price: null,
+    order_class: 'simple',
+    order_type: 'limit',
+    type: 'limit',
+    side: 'buy',
+    time_in_force: 'ioc',
+    limit_price: '10.00',
+    stop_price: null,
+    status: 'new',
+    ...overrides,
+  }
+}
+
+describe('resolveIocFinalState', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('returns sync order immediately when status=filled and filled_qty>0 — no re-fetch', async () => {
+    // Arrange
+    const syncOrder = makeOrder({ id: 'ord-1', symbol: 'AAPL', status: 'filled', filled_qty: '82' })
+
+    // Act
+    const result = await resolveIocFinalState(syncOrder, 0)
+
+    // Assert
+    expect(mockGetOrder).not.toHaveBeenCalled()
+    expect(result).toBe(syncOrder)
+    expect(parseInt(result.filled_qty, 10)).toBe(82)
+  })
+
+  it('re-fetches after delay when sync returns 0; logs IOC_LATE_FILL when re-fetch shows fill', async () => {
+    // Arrange
+    const syncOrder = makeOrder({ id: 'ord-2', symbol: 'INTC', status: 'new', filled_qty: '0' })
+    const resolvedOrder = makeOrder({ id: 'ord-2', symbol: 'INTC', status: 'filled', filled_qty: '82' })
+    mockGetOrder.mockResolvedValueOnce(resolvedOrder)
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    // Act
+    const resultPromise = resolveIocFinalState(syncOrder, 0)
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    // Assert
+    expect(mockGetOrder).toHaveBeenCalledOnce()
+    expect(mockGetOrder).toHaveBeenCalledWith('ord-2')
+    expect(parseInt(result.filled_qty, 10)).toBe(82)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining(IOC_LATE_FILL))
+    consoleSpy.mockRestore()
+  })
+
+  it('re-fetches when sync returns 0; returns 0 and does NOT log IOC_LATE_FILL when re-fetch also 0', async () => {
+    // Arrange
+    const syncOrder = makeOrder({ id: 'ord-3', symbol: 'WULF', status: 'canceled', filled_qty: '0' })
+    const resolvedOrder = makeOrder({ id: 'ord-3', symbol: 'WULF', status: 'canceled', filled_qty: '0' })
+    mockGetOrder.mockResolvedValueOnce(resolvedOrder)
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    // Act
+    const resultPromise = resolveIocFinalState(syncOrder, 0)
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    // Assert
+    expect(parseInt(result.filled_qty, 10)).toBe(0)
+    expect(consoleSpy).not.toHaveBeenCalledWith(expect.stringContaining(IOC_LATE_FILL))
+    consoleSpy.mockRestore()
+  })
+
+  it('logs IOC_STATE_UNRESOLVED when re-fetched status is neither filled nor canceled', async () => {
+    // Arrange
+    const syncOrder = makeOrder({ id: 'ord-4', symbol: 'XOM', status: 'new', filled_qty: '0' })
+    const resolvedOrder = makeOrder({ id: 'ord-4', symbol: 'XOM', status: 'pending_new', filled_qty: '0' })
+    mockGetOrder.mockResolvedValueOnce(resolvedOrder)
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    // Act
+    const resultPromise = resolveIocFinalState(syncOrder, 0)
+    await vi.runAllTimersAsync()
+    await resultPromise
+
+    // Assert
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('IOC_STATE_UNRESOLVED'))
+    consoleSpy.mockRestore()
+  })
+
+  it('returns re-fetched partially_filled qty when sync returned 0 and re-fetch shows partial fill', async () => {
+    // Arrange
+    const syncOrder = makeOrder({ id: 'ord-5', symbol: 'COP', status: 'new', filled_qty: '0' })
+    const resolvedOrder = makeOrder({ id: 'ord-5', symbol: 'COP', status: 'filled', filled_qty: '40' })
+    mockGetOrder.mockResolvedValueOnce(resolvedOrder)
+
+    // Act
+    const resultPromise = resolveIocFinalState(syncOrder, 0)
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    // Assert
+    expect(parseInt(result.filled_qty, 10)).toBe(40)
   })
 })
 
