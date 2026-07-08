@@ -51,6 +51,7 @@ Never ignore the `error` field. Never return raw `data` without a null fallback.
 | `selection_history` | `id` (uuid) | Stock selector decisions |
 | `selection_evaluations` | `id` (uuid) | Selector outcome tracking |
 | `weekly_reports` | `id` (uuid) | PDF report metadata |
+| `position_health_snapshots` | `id` (uuid) | Observability-only re-evaluation history for open positions — no gate/score/action fields |
 
 ## Upsert pattern (open_position_contexts)
 
@@ -65,7 +66,17 @@ if (error) throw error
 
 ## Timestamps
 
-Always use `new Date().toISOString()` for timestamps. Supabase stores them as `timestamptz`.
+Always use `new Date().toISOString()` in application code. Business-domain timestamp
+columns are stored as `text` (the ISO-8601 string as-is) — **not** `timestamptz` —
+verified live against the schema: `open_position_contexts.buy_timestamp`,
+`trade_evaluations.buy_timestamp`/`sell_timestamp`, `agent_log.timestamp`, and
+`position_health_snapshots.position_buy_timestamp`/`snapshot_timestamp` are all `text`.
+
+`timestamptz` is reserved for auto-generated `created_at` audit columns only
+(`trade_evaluations.created_at`, `agent_log.created_at`) — these are DB-populated via
+`DEFAULT now()`, not written by application code. When adding a new table or column for
+an application-supplied timestamp, use `text` to match this project's actual convention;
+only use `timestamptz` for a new DB-generated `created_at`-style audit column.
 
 ## RLS
 
