@@ -11,7 +11,8 @@
     "lint": "eslint",
     "cycle": "tsx scripts/run-cycle.ts",
     "exit-only": "tsx src/scripts/exit-only.ts",
-    "report": "tsx scripts/generate-weekly-report.ts"
+    "report": "tsx scripts/generate-weekly-report.ts",
+    "health-check": "tsx scripts/position-health-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
