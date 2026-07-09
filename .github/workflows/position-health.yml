@@ -1,0 +1,39 @@
+name: Position Health Check
+
+on:
+  schedule:
+    - cron: "45 13 * * 1-5"   # 9:45 AM ET
+    - cron: "10 20 * * 1-5"   # 4:10 PM ET
+  workflow_dispatch:
+
+concurrency:
+  group: position-health
+  cancel-in-progress: false
+
+jobs:
+  position-health:
+    name: Position Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+      ALPACA_DATA_URL: ${{ secrets.ALPACA_DATA_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      RUN_HEALTH_CHECK: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - name: Security audit
+        run: npm audit --audit-level=critical
+      - run: npm run health-check
