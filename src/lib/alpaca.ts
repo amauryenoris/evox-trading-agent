@@ -297,21 +297,35 @@ export async function getMacroNews(hoursBack = 12, limit = 8): Promise<AlpacaNew
 }
 
 /**
+ * Alpaca's filled_at is a raw RFC-3339 string with variable, sometimes
+ * trailing-zero-trimmed fractional-second precision (3 to 9 digits observed
+ * live). Text comparison across differing precisions can misorder two
+ * timestamps that share an identical prefix — normalize to a fixed 3-digit
+ * millisecond width before comparing.
+ */
+export function normalizeTimestampPrecision(iso: string): string {
+  return new Date(iso).toISOString()
+}
+
+/**
  * Returns the most recent filled sell order for a symbol after a given timestamp.
  * Used to find the exit price when a position is detected as closed.
  */
 export async function getLatestSellOrder(symbol: string, afterTimestamp: string): Promise<AlpacaOrder | null> {
   const orders = await getOrders('filled', 100)
+  const normalizedAfter = normalizeTimestampPrecision(afterTimestamp)
   const sellOrders = orders.filter(
     (o) =>
       o.symbol === symbol &&
       o.side === 'sell' &&
       o.filled_at !== null &&
-      o.filled_at > afterTimestamp
+      normalizeTimestampPrecision(o.filled_at) > normalizedAfter
   )
   if (sellOrders.length === 0) return null
   // Return the most recent one
-  return sellOrders.sort((a, b) => (b.filled_at! > a.filled_at! ? 1 : -1))[0]
+  return sellOrders.sort((a, b) =>
+    normalizeTimestampPrecision(b.filled_at!) > normalizeTimestampPrecision(a.filled_at!) ? 1 : -1
+  )[0]
 }
 
 // Returns midnight UTC of the Nth next trading day after fromDate.

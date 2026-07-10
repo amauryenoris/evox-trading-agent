@@ -10,6 +10,7 @@ import {
   getOrder,
   closePosition,
   getLatestSellOrder,
+  normalizeTimestampPrecision,
   getMarketMovers,
   getMacroNews,
   getNewsForSymbols,
@@ -1057,7 +1058,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const sellPrice = sellOrder?.filled_avg_price
         ? parseFloat(sellOrder.filled_avg_price)
         : ctx.buyPrice
-      const sellTimestamp = sellOrder?.filled_at ?? timestamp
+      const sellTimestamp = normalizeTimestampPrecision(sellOrder?.filled_at ?? timestamp)
 
       const evaluation = await evaluateClosedTrade(ctx, sellPrice, sellTimestamp)
       evaluations.push(evaluation)
