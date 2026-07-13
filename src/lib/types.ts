@@ -153,6 +153,7 @@ export interface AgentDecision {
   learning_note?: string
   near_miss_score?: number
   what_would_trigger?: string
+  self_flagged_disqualifying_risk?: boolean
 }
 
 export interface AgentLogEntry {

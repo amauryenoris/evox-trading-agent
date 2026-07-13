@@ -90,8 +90,16 @@ RESPONSE SCHEMA (strict JSON):
   "confidence": 0.0,
   "learning_note": "what this case teaches about the setup",
   "near_miss_score": 0,
-  "what_would_trigger": "what specific condition would strengthen the signal"
-}`
+  "what_would_trigger": "what specific condition would strengthen the signal",
+  "self_flagged_disqualifying_risk": false
+}
+
+SELF_FLAGGED_DISQUALIFYING_RISK — how to set this field:
+- Set to TRUE only when your reasoning explicitly names either (i) a specific prior loss for this symbol or an analogous setup, with a percentage, or (ii) an aggregate negative historical outcome statistic (e.g. "0% win rate", "has not been sufficient to generate profitable entries") for the same setup shape.
+- Set to FALSE when your reasoning does not explicitly identify one of these two disqualifying patterns. Do not infer this from general caution, market uncertainty, or elevated-risk language alone (e.g. high ATR, negative MACD) unless tied to a specific named historical loss or negative statistic as described above.
+- Do NOT set true merely because your reasoning cites historical evidence in general — a trade that cites a POSITIVE precedent (a past win for this setup/symbol) is not a disqualifying-risk case, even if it also mentions a loss elsewhere for contrast; only set true if the negative/disqualifying pattern is what your reasoning is actually weighing as a reason for concern.
+- Determine this value after you have formed your reasoning and conclusion — it should reflect what your finished analysis actually relied on, not a prediction made before reasoning it through.
+- This field is for logging/learning only — it does not block or approve the trade.`
 
 // ============================================================
 // EXIT RULES — deterministic exits run before Claude analysis
@@ -621,6 +629,7 @@ Include these fields in your JSON response:
 - "learning_note": string — what this case teaches about the setup
 - "near_miss_score": number (1-10) — setup quality score
 - "what_would_trigger": string — what specific condition needs to change for a BUY
+- "self_flagged_disqualifying_risk": boolean — see SELF_FLAGGED_DISQUALIFYING_RISK criteria above
 =====================================` : ''}`
 }
 
@@ -1886,6 +1895,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       }
 
       // Merge learning fields + news threshold into indicators jsonb so dashboard can read them
+      const selfFlaggedRisk =
+        typeof decision.self_flagged_disqualifying_risk === 'boolean'
+          ? decision.self_flagged_disqualifying_risk
+          : undefined
       const indicatorsWithLearning = {
         ...indicators,
         effectiveThreshold,
@@ -1893,6 +1906,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ...(decision.learning_note !== undefined && { learning_note: decision.learning_note }),
         ...(decision.near_miss_score !== undefined && { near_miss_score: decision.near_miss_score }),
         ...(decision.what_would_trigger !== undefined && { what_would_trigger: decision.what_would_trigger }),
+        ...(selfFlaggedRisk !== undefined && { self_flagged_disqualifying_risk: selfFlaggedRisk }),
       }
 
       const entry: AgentLogEntry = {
