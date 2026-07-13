@@ -32,6 +32,7 @@ interface AgentDecision {
   learning_note: string       // what this case teaches
   near_miss_score: number     // 1-10 setup quality
   what_would_trigger: string  // what condition would strengthen the signal
+  self_flagged_disqualifying_risk?: boolean  // optional, observability-only — see claude-agent.ts SYSTEM_PROMPT
   action?: string             // overridden to 'HOLD' by system after parsing
   quantity?: number
   symbol?: string

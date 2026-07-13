@@ -48,7 +48,8 @@ Claude's output schema (strict JSON — no markdown):
   "confidence": 0.0,
   "learning_note": "what this case teaches about the setup",
   "near_miss_score": 0,
-  "what_would_trigger": "what specific condition would strengthen the signal"
+  "what_would_trigger": "what specific condition would strengthen the signal",
+  "self_flagged_disqualifying_risk": false
 }
 ```
 
