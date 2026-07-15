@@ -310,7 +310,13 @@ export async function getTradeEvaluations(limit = 200, startDate?: string): Prom
     signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],
-    outcome: row.outcome ?? 'breakeven',
+    outcome: (() => {
+      if (row.outcome != null) return row.outcome
+      console.warn(`[db] trade_evaluations row ${row.id} has NULL outcome — deriving from pnl_pct`)
+      const pnlPct = row.pnl_pct ?? null
+      if (pnlPct === null) return 'breakeven'
+      return pnlPct > 0 ? 'profit' : pnlPct < 0 ? 'loss' : 'breakeven'
+    })(),
   }))
 }
 

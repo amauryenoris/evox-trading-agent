@@ -68,7 +68,7 @@ export async function evaluateClosedTrade(
       (1000 * 60 * 60 * 24)
   )
   const outcome: TradeEvaluation['outcome'] =
-    pnlPct > 0.1 ? 'profit' : pnlPct < -0.1 ? 'loss' : 'breakeven'
+    pnlPct > 0 ? 'profit' : pnlPct < 0 ? 'loss' : 'breakeven'
 
   const ind = closedCtx.indicators
   const rawInd = ind as unknown as Record<string, unknown>
