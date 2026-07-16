@@ -194,3 +194,85 @@ describe('T-12 regression — XOM 2026-07-14-style same-day re-entry now blocked
     expect(skipReason).toBe('STOP_LOSS')
   })
 })
+
+// ── ghost-close overwrite prevention (fix-cooldown-ghost-close-overwrite) ──
+// Replicates the new `existingCooldowns` guard added to the ghost-close
+// STOP_LOSS write at claude-agent.ts — same "replicate, don't import"
+// convention as the rest of this file.
+
+function shouldWriteGhostCloseCooldown(
+  pnlPct: number,
+  existingCooldowns: Map<string, string>,
+  symbol: string
+): boolean {
+  return pnlPct < 0 && !existingCooldowns.has(symbol)
+}
+
+describe('ghost-close STOP_LOSS write — existing active cooldown is not overwritten', () => {
+  it('a loss with no existing cooldown for the symbol still writes STOP_LOSS (no regression)', () => {
+    // Arrange
+    const pnlPct = -0.0079
+    const existingCooldowns = new Map<string, string>()
+
+    // Act
+    const shouldWrite = shouldWriteGhostCloseCooldown(pnlPct, existingCooldowns, 'XOM')
+
+    // Assert
+    expect(shouldWrite).toBe(true)
+  })
+
+  it('a loss with an existing active cooldown for the symbol (any reason) skips the write', () => {
+    // Arrange — symbol already has a Z_SCORE_EXIT cooldown from enforceExitRules() earlier
+    // this cycle; the ghost-close path must defer to it instead of overwriting with STOP_LOSS
+    const pnlPct = -0.0079
+    const existingCooldowns = new Map<string, string>([['XOM', 'Z_SCORE_EXIT']])
+
+    // Act
+    const shouldWrite = shouldWriteGhostCloseCooldown(pnlPct, existingCooldowns, 'XOM')
+
+    // Assert
+    expect(shouldWrite).toBe(false)
+  })
+
+  it('an existing cooldown for a different symbol does not block this symbol\'s write', () => {
+    // Arrange
+    const pnlPct = -0.0079
+    const existingCooldowns = new Map<string, string>([['AAPL', 'TRAILING_STOP']])
+
+    // Act
+    const shouldWrite = shouldWriteGhostCloseCooldown(pnlPct, existingCooldowns, 'XOM')
+
+    // Assert
+    expect(shouldWrite).toBe(true)
+  })
+
+  it('a non-negative pnlPct still writes nothing regardless of existing cooldown state', () => {
+    // Arrange / Act / Assert
+    expect(shouldWriteGhostCloseCooldown(0, new Map(), 'XOM')).toBe(false)
+    expect(shouldWriteGhostCloseCooldown(0.01, new Map(), 'XOM')).toBe(false)
+  })
+})
+
+describe('hoisted existing-cooldowns lookup — queried once, reused for every closed position', () => {
+  it('getActiveCooldowns is called exactly once per cycle regardless of closedContexts size', async () => {
+    // Arrange
+    const getActiveCooldowns = vi.fn().mockResolvedValue([
+      { symbol: 'XOM', exit_reason: 'Z_SCORE_EXIT', cooldown_until: '2026-07-20T00:00:00Z' },
+    ])
+    const closedContexts = [{ symbol: 'XOM' }, { symbol: 'AAPL' }, { symbol: 'MSFT' }]
+
+    async function buildExistingCooldownsOnce(): Promise<Map<string, string>> {
+      const rows: Array<{ symbol: string; exit_reason: string }> = await getActiveCooldowns()
+      return new Map(rows.map((row) => [row.symbol, row.exit_reason]))
+    }
+
+    // Act — simulate the hoist: one call before the loop, reused for every closed position
+    const existingCooldowns = await buildExistingCooldownsOnce()
+    for (const ctx of closedContexts) {
+      shouldWriteGhostCloseCooldown(-0.01, existingCooldowns, ctx.symbol)
+    }
+
+    // Assert
+    expect(getActiveCooldowns).toHaveBeenCalledTimes(1)
+  })
+})

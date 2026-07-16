@@ -1069,6 +1069,12 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const evaluations: TradeEvaluation[] = []
   const closedContexts = await detectClosedPositions(positions)
 
+  // Hoisted once per cycle — prevents the ghost-close STOP_LOSS write below from
+  // overwriting a symbol's already-correct cooldown from an earlier exit reason
+  const existingCooldowns = new Map(
+    (await getActiveCooldowns()).map((row) => [row.symbol, row.exit_reason])
+  )
+
   for (const ctx of closedContexts) {
     try {
       const alreadyEvaluated = await tradeEvaluationExists(ctx.symbol, ctx.buyTimestamp)
@@ -1122,12 +1128,18 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         error: 'ghost_close',
       }).catch((err) => console.error(`[GHOST-CLOSE] Failed to insert agent_log for ${ctx.symbol}:`, err))
 
-      if (pnlPct < 0 && cooldownDates !== null) {
+      if (pnlPct < 0 && cooldownDates !== null && !existingCooldowns.has(ctx.symbol)) {
         await upsertSymbolCooldown(ctx.symbol, 'STOP_LOSS', cooldownDates.nextTradingDay3)
         console.log(
           `[COOLDOWN_PERSIST] symbol=${ctx.symbol}` +
           ` reason=STOP_LOSS` +
           ` until=${cooldownDates.nextTradingDay3.toISOString()}` +
+          ` source=ghost_close`
+        )
+      } else if (pnlPct < 0 && cooldownDates !== null) {
+        console.log(
+          `[COOLDOWN_SKIP] symbol=${ctx.symbol}` +
+          ` reason=already_has_active_cooldown` +
           ` source=ghost_close`
         )
       }
