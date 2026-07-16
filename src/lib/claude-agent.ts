@@ -746,7 +746,7 @@ function calculateBuyQuantity(
 // STOP LOSS ENFORCEMENT (Capa B — manual safety check each cycle)
 // ============================================================
 
-async function enforceStopLosses(positions: AlpacaPosition[]): Promise<void> {
+async function enforceStopLosses(positions: AlpacaPosition[], nextTradingDay3: Date | null): Promise<void> {
   const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
   let openContexts
   try {
@@ -767,6 +767,15 @@ async function enforceStopLosses(positions: AlpacaPosition[]): Promise<void> {
       console.warn(`[enforceStopLosses] Stop triggered: ${ctx.symbol} @ $${currentPrice.toFixed(2)} <= stop $${stopPrice.toFixed(2)}`)
       try {
         await closePosition(ctx.symbol)
+        if (nextTradingDay3 !== null) {
+          await upsertSymbolCooldown(ctx.symbol, 'STOP_LOSS', nextTradingDay3)
+          console.log(
+            `[COOLDOWN_PERSIST] symbol=${ctx.symbol}` +
+            ` reason=STOP_LOSS` +
+            ` until=${nextTradingDay3.toISOString()}` +
+            ` source=enforceStopLosses`
+          )
+        }
       } catch (err) {
         console.error(`[enforceStopLosses] Failed to close ${ctx.symbol}:`, err)
       }
@@ -921,8 +930,26 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     console.log('[AGENT] Market closed — running exit evaluation only')
   }
 
+  // 2b. Compute trading-day dates for cooldown persistence — fetched once per cycle,
+  // shared by enforceStopLosses(), the ghost-close handler, and enforceExitRules()'s
+  // own cooldown-write block below.
+  let cooldownDates: { endOfTradingDay: Date; nextTradingDay1: Date; nextTradingDay3: Date } | null = null
+  try {
+    const nowUTC = new Date()
+    const marketCloseUTC = new Date(nowUTC)
+    marketCloseUTC.setUTCHours(21, 0, 0, 0)
+    const [nextTradingDay1, nextTradingDay3] = await Promise.all([
+      getNextTradingDay(nowUTC, 1),
+      getNextTradingDay(nowUTC, 3),
+    ])
+    const endOfTradingDay = nowUTC < marketCloseUTC ? marketCloseUTC : nextTradingDay1
+    cooldownDates = { endOfTradingDay, nextTradingDay1, nextTradingDay3 }
+  } catch (err) {
+    console.error('[COOLDOWN_DATES_ERROR]', err)
+  }
+
   // 3. Enforce stop losses — close any positions that fell through Alpaca's stop order
-  await enforceStopLosses(positions)
+  await enforceStopLosses(positions, cooldownDates?.nextTradingDay3 ?? null)
 
   // 4. Fetch macro news once — shared across all symbol analyses in this cycle
   const macroNews = await getMacroNews(12, 8).catch(() => [] as AlpacaNewsArticle[])
@@ -1012,21 +1039,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   })()
 
   // Write persistent cooldowns — Fase 2b
-  // Calendar fetched once per cycle — avoids duplicate API calls
-  try {
-    const nowUTC = new Date()
-
-    const marketCloseUTC = new Date(nowUTC)
-    marketCloseUTC.setUTCHours(21, 0, 0, 0)
-
-    const [nextTradingDay1, nextTradingDay3] = await Promise.all([
-      getNextTradingDay(nowUTC, 1),
-      getNextTradingDay(nowUTC, 3),
-    ])
-
-    const endOfTradingDay =
-      nowUTC < marketCloseUTC ? marketCloseUTC : nextTradingDay1
-
+  // Dates hoisted earlier in the cycle (see cooldownDates) — reused here, not recomputed
+  if (cooldownDates !== null) {
+    const { endOfTradingDay, nextTradingDay1, nextTradingDay3 } = cooldownDates
     await Promise.all(
       [...exitReasons.entries()].map(async ([symbol, reason]) => {
         const cooldownUntil = computeCooldownUntil(
@@ -1046,8 +1061,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         }
       })
     )
-  } catch (err) {
-    console.error('[COOLDOWN_PERSIST_ERROR]', err)
+  } else {
+    console.error('[COOLDOWN_PERSIST_ERROR] skipped — cooldown dates unavailable this cycle')
   }
 
   // 5. Evaluate closed positions (learning loop)
@@ -1057,25 +1072,26 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   for (const ctx of closedContexts) {
     try {
       const alreadyEvaluated = await tradeEvaluationExists(ctx.symbol, ctx.buyTimestamp)
-      if (alreadyEvaluated) {
-        console.log(`[DETECT-CLOSED] ${ctx.symbol}: already evaluated by enforceExitRules() — removing context only`)
-        await removeOpenPositionContext(ctx.symbol)
-        continue
-      }
 
       const sellOrder = await getLatestSellOrder(ctx.symbol, ctx.buyTimestamp)
       const sellPrice = sellOrder?.filled_avg_price
         ? parseFloat(sellOrder.filled_avg_price)
         : ctx.buyPrice
       const sellTimestamp = normalizeTimestampPrecision(sellOrder?.filled_at ?? timestamp)
+      const pnlPct = (sellPrice - ctx.buyPrice) / ctx.buyPrice
 
-      const evaluation = await evaluateClosedTrade(ctx, sellPrice, sellTimestamp)
-      evaluations.push(evaluation)
+      if (alreadyEvaluated) {
+        console.log(`[DETECT-CLOSED] ${ctx.symbol}: already evaluated by enforceExitRules() — logging audit trail only`)
+      } else {
+        const evaluation = await evaluateClosedTrade(ctx, sellPrice, sellTimestamp)
+        evaluations.push(evaluation)
+        await recordSelectionOutcome(ctx.symbol, evaluation)
+      }
+
       await removeOpenPositionContext(ctx.symbol)
-      await recordSelectionOutcome(ctx.symbol, evaluation)
 
       // Log ghost close to agent_log so it appears in Agent Decisions dashboard
-      const pnlPct = (sellPrice - ctx.buyPrice) / ctx.buyPrice
+      // — runs even when alreadyEvaluated, so this closure always leaves an audit trail
       const daysOpen = getTradingDaysOpen(ctx.buyTimestamp)
       await insertAgentLogEntry({
         id: randomUUID(),
@@ -1105,6 +1121,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         orderExecuted: true,
         error: 'ghost_close',
       }).catch((err) => console.error(`[GHOST-CLOSE] Failed to insert agent_log for ${ctx.symbol}:`, err))
+
+      if (pnlPct < 0 && cooldownDates !== null) {
+        await upsertSymbolCooldown(ctx.symbol, 'STOP_LOSS', cooldownDates.nextTradingDay3)
+        console.log(
+          `[COOLDOWN_PERSIST] symbol=${ctx.symbol}` +
+          ` reason=STOP_LOSS` +
+          ` until=${cooldownDates.nextTradingDay3.toISOString()}` +
+          ` source=ghost_close`
+        )
+      }
     } catch (err) {
       console.error(`Failed to evaluate closed trade for ${ctx.symbol}:`, err)
     }
