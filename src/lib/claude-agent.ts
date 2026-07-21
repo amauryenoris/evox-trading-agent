@@ -294,6 +294,7 @@ export async function enforceExitRules(
 
       // PASO 5 — Evaluate exit
       if (
+        !exitReason &&
         trailingActivated &&
         !justActivated &&
         !madeNewHigh &&
