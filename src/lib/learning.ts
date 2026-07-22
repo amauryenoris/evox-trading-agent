@@ -190,6 +190,8 @@ TASK: Analyze this trade and respond ONLY with valid JSON (no markdown):
 // PATTERN LIBRARY
 // ============================================================
 
+export const MIN_PATTERN_SAMPLE_SIZE = 5
+
 export async function readPatternLibrary(): Promise<TradingPattern[]> {
   return getPatternLibrary()
 }
@@ -267,7 +269,8 @@ export async function getRelevantPatterns(
   indicators: TechnicalIndicators,
   limit = 5
 ): Promise<TradingPattern[]> {
-  const library = await getPatternLibrary()
+  const rawLibrary = await getPatternLibrary()
+  const library = rawLibrary.filter((p) => p.sampleCount >= MIN_PATTERN_SAMPLE_SIZE)
   const matching = library.filter((p) => matchesConditions(p, indicators))
   const topGeneral = library.filter((p) => !matching.includes(p)).slice(0, limit - matching.length)
   return [...matching, ...topGeneral].slice(0, limit)

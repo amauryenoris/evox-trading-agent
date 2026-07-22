@@ -1,4 +1,5 @@
 import type { TradingPattern } from '@/lib/types'
+import { MIN_PATTERN_SAMPLE_SIZE } from '@/lib/learning'
 import { Card, Badge, SignalBadge, Progress } from './ui'
 
 const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
@@ -32,6 +33,7 @@ export function PatternLibraryCard({ patterns }: Props) {
             const isGood   = winPct >= 50
             // ADAPTED: avgPnLPct is a percent value (e.g. 2.3 for 2.3%)
             const avgLabel = p.avgPnLPct >= 0 ? '+' + p.avgPnLPct.toFixed(1) + '%' : p.avgPnLPct.toFixed(1) + '%'
+            const hasEnoughSamples = p.sampleCount >= MIN_PATTERN_SAMPLE_SIZE
 
             return (
               <div key={p.id} className="px-6 py-4 hover:bg-white/[0.015] transition">
@@ -53,13 +55,19 @@ export function PatternLibraryCard({ patterns }: Props) {
 
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <div className="flex items-center justify-between text-[10px] tracking-wider uppercase text-muted mb-1">
-                      <span>Win Rate</span>
-                      <span className={cx('num', isGood ? 'text-green' : 'text-red')}>
-                        {winPct.toFixed(0)}%
-                      </span>
-                    </div>
-                    <Progress value={winPct / 100} tone={isGood ? 'green' : 'red'} />
+                    {hasEnoughSamples ? (
+                      <>
+                        <div className="flex items-center justify-between text-[10px] tracking-wider uppercase text-muted mb-1">
+                          <span>Win Rate</span>
+                          <span className={cx('num', isGood ? 'text-green' : 'text-red')}>
+                            {winPct.toFixed(0)}%
+                          </span>
+                        </div>
+                        <Progress value={winPct / 100} tone={isGood ? 'green' : 'red'} />
+                      </>
+                    ) : (
+                      <Badge tone="neutral" size="xs">Insufficient data (n={p.sampleCount})</Badge>
+                    )}
                   </div>
                   <div className="w-20 text-right">
                     <div className="text-[10px] uppercase tracking-wider text-muted">Avg P&L</div>

@@ -11,6 +11,7 @@ import {
 } from './db'
 import { createClient } from '@supabase/supabase-js'
 import type { AgentLogEntry, TradeEvaluation, TradingPattern } from './types'
+import { MIN_PATTERN_SAMPLE_SIZE } from './learning'
 
 // ============================================================
 // DESIGN TOKENS
@@ -902,7 +903,7 @@ function generatePDF(
 
     // ---- Top 5 Patterns ----
     const topPatterns = patterns
-      .filter((p) => p.sampleCount >= 2)
+      .filter((p) => p.sampleCount >= MIN_PATTERN_SAMPLE_SIZE)
       .sort((a, b) => b.winRate - a.winRate)
       .slice(0, 5)
 
