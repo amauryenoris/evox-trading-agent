@@ -243,6 +243,7 @@ export interface TradingPattern {
   winRate: number
   exampleReasoning: string
   signalType?: string | null
+  patternKey?: string | null
 }
 
 // ============================================================

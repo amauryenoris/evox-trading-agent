@@ -337,6 +337,7 @@ export async function upsertPattern(pattern: TradingPattern): Promise<void> {
     win_rate: pattern.winRate,
     example_reasoning: pattern.exampleReasoning,
     signal_type: pattern.signalType ?? null,
+    pattern_key: pattern.patternKey ?? null,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'id' })
   if (error) throw new Error(`Failed to upsert pattern: ${error.message}`)
@@ -362,6 +363,7 @@ export async function getPatternLibrary(): Promise<TradingPattern[]> {
     winRate: row.win_rate ?? 0,
     exampleReasoning: row.example_reasoning ?? '',
     signalType: row.signal_type ?? null,
+    patternKey: row.pattern_key ?? null,
   }))
 }
 

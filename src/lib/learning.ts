@@ -196,6 +196,11 @@ export async function readPatternLibrary(): Promise<TradingPattern[]> {
   return getPatternLibrary()
 }
 
+export function buildPatternKey(fp: TradeEvaluation['stateFingerprint']): string | null {
+  if (!fp) return null
+  return `${fp.signal_type ?? 'null'}|${fp.z_bucket ?? 'null'}|${fp.adx_bucket ?? 'null'}|${fp.macd_bucket ?? 'null'}`
+}
+
 export async function updatePatternLibrary(
   evaluation: TradeEvaluation,
   patternDescription: string,
@@ -204,9 +209,10 @@ export async function updatePatternLibrary(
   const library = await getPatternLibrary()
   const action: 'BUY' | 'SELL' = 'BUY'
   const isWin = evaluation.outcome === 'profit'
+  const key = buildPatternKey(evaluation.stateFingerprint)
 
   const existing = library.find(
-    (p) => p.description === patternDescription && p.action === action
+    (p) => key !== null && p.patternKey === key && p.action === action
   )
 
   const now = new Date().toISOString()
@@ -240,6 +246,7 @@ export async function updatePatternLibrary(
       winRate: isWin ? 1 : 0,
       exampleReasoning: evaluation.claudePostMortem,
       signalType: evaluation.signal_type ?? null,
+      patternKey: key,
     }
   }
 
