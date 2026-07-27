@@ -15,6 +15,9 @@ import {
   getPatternLibrary,
   upsertPattern,
 } from './db'
+import { DIMENSION_IMPORTANCE } from './gate-importance'
+
+type StateFingerprint = NonNullable<TradeEvaluation['stateFingerprint']>
 
 // ============================================================
 // OPEN POSITION CONTEXT
@@ -287,7 +290,80 @@ export async function getRelevantPatterns(
 // BUILD LEARNING CONTEXT STRING
 // ============================================================
 
-export async function buildLearningContext(indicators: TechnicalIndicators): Promise<string> {
+const FINGERPRINT_DIMENSIONS: { key: 'adx' | 'macd' | 'z' | 'regime'; label: string }[] = [
+  { key: 'adx', label: 'ADX' },
+  { key: 'macd', label: 'MACD' },
+  { key: 'z', label: 'Z' },
+  { key: 'regime', label: 'Regime' },
+]
+
+function getFingerprintDimensionValue(fp: StateFingerprint, key: 'adx' | 'macd' | 'z' | 'regime'): string | null {
+  if (key === 'adx') return fp.adx_bucket
+  if (key === 'macd') return fp.macd_bucket
+  if (key === 'z') return fp.z_bucket
+  return fp.market_regime
+}
+
+function compareFingerprints(
+  current: StateFingerprint,
+  historical: StateFingerprint,
+  historicalSymbol: string
+): string | null {
+  const currentImportance = DIMENSION_IMPORTANCE[current.signal_type ?? '']
+  const historicalImportance = DIMENSION_IMPORTANCE[historical.signal_type ?? '']
+  if (!currentImportance || !historicalImportance) return null
+
+  const parts: string[] = []
+  FINGERPRINT_DIMENSIONS.forEach(({ key, label }) => {
+    const currentValue = getFingerprintDimensionValue(current, key)
+    const historicalValue = getFingerprintDimensionValue(historical, key)
+    if (currentValue === null || historicalValue === null) return
+    if (currentValue === historicalValue) {
+      parts.push(`${label} matches (both ${currentValue})`)
+      return
+    }
+    parts.push(
+      `${label} differs (yours: ${currentValue} [${currentImportance[key]} for ${current.signal_type}] · ${historicalSymbol}'s: ${historicalValue} [${historicalImportance[key]} for ${historical.signal_type}])`
+    )
+  })
+
+  return parts.length > 0 ? parts.join(' | ') : null
+}
+
+function buildRecentTradeLessonsLines(
+  evaluations: TradeEvaluation[],
+  currentFingerprint: StateFingerprint | null
+): string[] {
+  const recentEvals = evaluations.slice(0, 5)
+  if (recentEvals.length === 0) return []
+
+  const lines: string[] = ['', 'RECENT TRADE LESSONS (from your own operations):']
+  let hasRenderedComparison = false
+  recentEvals.forEach((e) => {
+    const pnl = e.pnlPct >= 0 ? `+${e.pnlPct.toFixed(1)}%` : `${e.pnlPct.toFixed(1)}%`
+    lines.push(`- ${e.symbol} (${e.buyTimestamp.split('T')[0]}): ${e.outcome.toUpperCase()} ${pnl}`)
+    const comparison = currentFingerprint && e.stateFingerprint
+      ? compareFingerprints(currentFingerprint, e.stateFingerprint, e.symbol)
+      : null
+    if (comparison) {
+      lines.push(`  Context vs. current trade: ${comparison}`)
+      hasRenderedComparison = true
+    }
+    e.lessonsLearned.slice(0, 2).forEach((lesson) => lines.push(`  → ${lesson}`))
+  })
+  if (hasRenderedComparison) {
+    lines.push('')
+    lines.push(
+      'Note: differences in dimensions that are not gated for either setup are generally less informative than differences in dimensions that are hard-gated for one or both setups.'
+    )
+  }
+  return lines
+}
+
+export async function buildLearningContext(
+  indicators: TechnicalIndicators,
+  currentFingerprint: StateFingerprint | null = null
+): Promise<string> {
   const [patterns, evaluations] = await Promise.all([
     getRelevantPatterns(indicators, 5),
     getTradeEvaluations(200),
@@ -306,16 +382,7 @@ export async function buildLearningContext(indicators: TechnicalIndicators): Pro
     })
   }
 
-  const recentEvals = evaluations.slice(0, 5)
-  if (recentEvals.length > 0) {
-    lines.push('')
-    lines.push('RECENT TRADE LESSONS (from your own operations):')
-    recentEvals.forEach((e) => {
-      const pnl = e.pnlPct >= 0 ? `+${e.pnlPct.toFixed(1)}%` : `${e.pnlPct.toFixed(1)}%`
-      lines.push(`- ${e.symbol} (${e.buyTimestamp.split('T')[0]}): ${e.outcome.toUpperCase()} ${pnl}`)
-      e.lessonsLearned.slice(0, 2).forEach((lesson) => lines.push(`  → ${lesson}`))
-    })
-  }
+  lines.push(...buildRecentTradeLessonsLines(evaluations, currentFingerprint))
 
   const allLessons = evaluations.flatMap((e) => e.lessonsLearned)
   if (allLessons.length >= 5) {

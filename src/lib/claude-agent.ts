@@ -1646,7 +1646,15 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       }
 
       // Build learning context (same for all symbols in this cycle — cached reads)
-      const learningContext = await buildLearningContext(indicators)
+      const currentFingerprint = {
+        signal_type: signalType,
+        spx_regime: spxSnapshot.spx_regime,
+        market_regime: indicators.marketRegime ?? null,
+        adx_bucket: getAdxBucket(adxValue),
+        z_bucket: getZBucket(zScore, signalType),
+        macd_bucket: getMacdBucket(macdHistogram),
+      }
+      const learningContext = await buildLearningContext(indicators, currentFingerprint)
 
       // Fetch symbol-specific news
       const symbolNews = await getNewsForSymbols([symbol], 24, 5).catch(() => [] as AlpacaNewsArticle[])

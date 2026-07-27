@@ -308,6 +308,7 @@ export async function getTradeEvaluations(limit = 200, startDate?: string): Prom
       }
     })(),
     signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
+    stateFingerprint: row.state_fingerprint ?? null,
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],
     outcome: (() => {
