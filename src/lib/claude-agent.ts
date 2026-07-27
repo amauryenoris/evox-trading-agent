@@ -56,6 +56,11 @@ import type {
   EnforceExitResult,
 } from './types'
 
+// Gate thresholds shared across signal types — exported for gate-importance.ts
+export const mrRangingAdxFloor = 18
+export const trendPullbackMacdFloor = -2.0
+export const lowAdxMacdBoost = 0.25
+
 // ============================================================
 // SYSTEM PROMPT (static — defines Claude's role)
 // ============================================================
@@ -1351,8 +1356,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       const macdHistogram = indicators.macd?.histogram ?? null
 
-      const lowAdxMacdBoost = 0.25
-
       const adxOkZLE05 =
         adxValue !== null &&
         (
@@ -1377,7 +1380,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       // MR Ranging ADX gate — temporary until MR Policy layer (Macro-B/C)
       // Disable by setting enableMrRangingAdxGate = false
       const enableMrRangingAdxGate = true
-      const mrRangingAdxFloor = 18
 
       // Fail-open on invalid ADX data — do not block setups due to indicator corruption
       const hasValidAdx =
@@ -1395,7 +1397,6 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const meanReversionSetup = meanReversionSignal && mrRangingAdxGateOk
 
       // TREND_PULLBACK: uptrend structure, z-score <= 0, momentum + quality confirmed
-      const trendPullbackMacdFloor = -2.0
       const trendPullbackMomentumOk =
         macdHistogram !== null &&
         macdHistogram > trendPullbackMacdFloor
