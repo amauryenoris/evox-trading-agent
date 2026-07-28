@@ -219,4 +219,20 @@ describe('buildLearningContext() — gate-aware relevance comparison', () => {
     // Assert
     expect(context).not.toContain('Note: differences in dimensions')
   })
+
+  it('compares "Regime" using market_regime, not spx_regime — matches despite differing spx_regime', async () => {
+    // Arrange — market_regime equal on both sides, spx_regime deliberately
+    // different, so this would fail if the comparison ever read spx_regime
+    const currentFingerprint = makeFingerprint({ market_regime: 'RANGING', spx_regime: 'BULL' })
+    const historicalFingerprint = makeFingerprint({ market_regime: 'RANGING', spx_regime: 'BEAR' })
+    mockGetTradeEvaluations.mockResolvedValue([
+      makeEvaluation({ symbol: 'REGIME', stateFingerprint: historicalFingerprint }),
+    ])
+
+    // Act
+    const context = await buildLearningContext(INDICATORS, currentFingerprint)
+
+    // Assert
+    expect(context).toContain('Regime matches (both RANGING)')
+  })
 })
