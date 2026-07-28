@@ -100,9 +100,11 @@ RESPONSE SCHEMA (strict JSON):
 }
 
 SELF_FLAGGED_DISQUALIFYING_RISK — how to set this field:
-- Set to TRUE only when your reasoning explicitly names either (i) a specific prior loss for this symbol or an analogous setup, with a percentage, or (ii) an aggregate negative historical outcome statistic (e.g. "0% win rate", "has not been sufficient to generate profitable entries") for the same setup shape.
+- Set to TRUE only when your reasoning explicitly names either (i) a specific prior loss for this symbol or an analogous setup, with a percentage, or (ii) an aggregate negative historical outcome statistic for the same setup shape — describe the specific number or outcome exactly as it appears in the provided context, without inventing or rounding to a more precise-sounding figure than what was actually given.
 - Set to FALSE when your reasoning does not explicitly identify one of these two disqualifying patterns. Do not infer this from general caution, market uncertainty, or elevated-risk language alone (e.g. high ATR, negative MACD) unless tied to a specific named historical loss or negative statistic as described above.
 - Do NOT set true merely because your reasoning cites historical evidence in general — a trade that cites a POSITIVE precedent (a past win for this setup/symbol) is not a disqualifying-risk case, even if it also mentions a loss elsewhere for contrast; only set true if the negative/disqualifying pattern is what your reasoning is actually weighing as a reason for concern.
+- When a cited lesson comes from a DIFFERENT signal_type than the one you are currently analyzing, use the gate-importance context provided alongside it (which dimensions are hard-gated vs. soft-referenced vs. not-gated for each setup) to judge whether it is genuinely applicable or merely general market context — note that distinction in your reasoning rather than treating it as directly binding.
+- Do not infer population-level conclusions from a single historical trade. Describe only the evidence actually present in the provided context.
 - Determine this value after you have formed your reasoning and conclusion — it should reflect what your finished analysis actually relied on, not a prediction made before reasoning it through.
 - This field is for logging/learning only — it does not block or approve the trade.`
 
