@@ -185,6 +185,7 @@ export interface OpenPositionContext {
   claudeReasoning: string
   patternIdsUsed: string[]
   stopOrderId?: string
+  trailingStopOrderId?: string | null
   signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
   highSinceEntry?: number | null
   trailingStop?: number | null

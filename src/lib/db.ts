@@ -164,6 +164,7 @@ export async function saveOpenPositionContext(ctx: OpenPositionContext): Promise
     reasoning: ctx.claudeReasoning,
     pattern_ids: ctx.patternIdsUsed,
     stop_order_id: ctx.stopOrderId ?? null,
+    trailing_stop_order_id: ctx.trailingStopOrderId ?? null,
     signal_type: ctx.signalType ?? null,
     high_since_entry: ctx.highSinceEntry ?? null,
     trailing_stop: ctx.trailingStop ?? null,
@@ -182,6 +183,7 @@ function mapRowToOpenPositionContext(row: Record<string, unknown>): OpenPosition
     claudeReasoning: (row.reasoning as string) ?? '',
     patternIdsUsed: (row.pattern_ids as string[]) ?? [],
     stopOrderId: (row.stop_order_id as string | null) ?? undefined,
+    trailingStopOrderId: (row.trailing_stop_order_id as string | null) ?? undefined,
     signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
     highSinceEntry: (row.high_since_entry as number | null) ?? null,
     trailingStop: (row.trailing_stop as number | null) ?? null,
@@ -207,9 +209,10 @@ export async function updatePositionContext(
   const db = getClient()
   const { error } = await db.from('open_position_contexts')
     .update({
-      high_since_entry:   updates.highSinceEntry,
-      trailing_stop:      updates.trailingStop,
-      trailing_activated: updates.trailingActivated,
+      high_since_entry:       updates.highSinceEntry,
+      trailing_stop:          updates.trailingStop,
+      trailing_activated:     updates.trailingActivated,
+      trailing_stop_order_id: updates.trailingStopOrderId,
     })
     .eq('symbol', symbol)
   if (error) throw new Error(`Failed to update position context for ${symbol}: ${error.message}`)
