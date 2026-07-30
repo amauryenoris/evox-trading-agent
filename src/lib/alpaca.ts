@@ -168,6 +168,12 @@ export async function closePosition(symbol: string): Promise<AlpacaOrder> {
   })
 }
 
+export async function cancelOrder(orderId: string): Promise<void> {
+  await alpacaFetch<void>(`${baseUrl()}/v2/orders/${orderId}`, {
+    method: 'DELETE',
+  })
+}
+
 interface AlpacaScreenerResponse {
   most_actives: Array<{ symbol: string; volume: number; trade_count: number }>
 }
@@ -248,6 +254,26 @@ export async function submitStopOrder(
       type: 'stop',
       time_in_force: 'gtc',
       stop_price: stopPrice.toFixed(2),
+    }),
+  })
+}
+
+export async function submitStopLimitOrder(
+  symbol: string,
+  qty: number,
+  stopPrice: number,
+  limitPrice: number
+): Promise<AlpacaOrder> {
+  return alpacaFetch<AlpacaOrder>(`${baseUrl()}/v2/orders`, {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      qty: String(qty),
+      side: 'sell',
+      type: 'stop_limit',
+      time_in_force: 'gtc',
+      stop_price: stopPrice.toFixed(2),
+      limit_price: limitPrice.toFixed(2),
     }),
   })
 }
