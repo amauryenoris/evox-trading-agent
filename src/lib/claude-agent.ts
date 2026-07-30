@@ -365,36 +365,6 @@ export async function enforceExitRules(
           const exitTimestamp = sellOrder?.filled_at ?? timestamp
 
           await evaluateClosedTrade(ctx, exitPrice, exitTimestamp)
-
-          await insertAgentLogEntry({
-            id: randomUUID(),
-            timestamp: exitTimestamp,
-            symbol: position.symbol,
-            decision: {
-              action: 'SELL',
-              symbol: position.symbol,
-              quantity: ctx.quantity,
-              reasoning: exitReason,
-              confidence: 1.0,
-            },
-            indicators: {
-              ...ind,
-              entryPrice: ctx.buyPrice,
-              exitPrice,
-              pnlPct: (exitPrice - ctx.buyPrice) / ctx.buyPrice,
-              signalType: ctx.signalType,
-              daysOpen,
-              closedBy: 'deterministic_exit',
-            } as unknown as TechnicalIndicators,
-            portfolioSnapshot: {
-              equity: account.equity,
-              cash: account.cash,
-              positionCount: positions.length,
-            },
-            orderExecuted: true,
-            error: undefined,
-          }).catch((err) => console.error(`[EXIT-RULES] Failed to insert agent_log for ${position.symbol}:`, err))
-
           await removeOpenPositionContext(position.symbol)
 
           console.log(`[EXIT-RULES] Cleanup complete: ${position.symbol}`)
