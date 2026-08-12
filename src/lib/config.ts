@@ -2,6 +2,7 @@
 export const ZSCORE_ENTRY_THRESHOLD = -1.3
 export const MAX_SPREAD_BPS = 100
 export const MAX_QUOTE_AGE_SECONDS = 60
+export const MEAN_REVERSION_EXIT_STD = parseFloat(process.env.MEAN_REVERSION_EXIT_STD ?? '0.8')
 
 export const INSTRUMENT_BLACKLIST = new Set([
   // Inverse ETFs — semiconductor

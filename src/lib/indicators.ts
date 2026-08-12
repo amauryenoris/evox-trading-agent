@@ -1,4 +1,5 @@
 import type { AlpacaBar, TechnicalIndicators, MarketRegime } from './types'
+import { MEAN_REVERSION_EXIT_STD } from './config'
 
 // ============================================================
 // EMA helper (used internally by MACD)
@@ -142,7 +143,7 @@ export function calculateSMA(bars: AlpacaBar[], period: number): number | null {
 export function calculateKalman(
   bars: AlpacaBar[],
   entryStd = 1.3,
-  exitStd = 0.5
+  exitStd = MEAN_REVERSION_EXIT_STD
 ): TechnicalIndicators['kalman'] {
   if (bars.length < 30) return null
 
