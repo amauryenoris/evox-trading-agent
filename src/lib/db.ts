@@ -213,6 +213,7 @@ export async function updatePositionContext(
       trailing_stop:          updates.trailingStop,
       trailing_activated:     updates.trailingActivated,
       trailing_stop_order_id: updates.trailingStopOrderId,
+      stop_order_id:          updates.stopOrderId,
     })
     .eq('symbol', symbol)
   if (error) throw new Error(`Failed to update position context for ${symbol}: ${error.message}`)
