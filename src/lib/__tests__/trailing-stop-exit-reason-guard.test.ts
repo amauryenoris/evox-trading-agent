@@ -14,6 +14,7 @@ interface ExitCycleInput {
   daysOpen: number
   signalType: SignalType
   zScore: number
+  kalmanSignal?: 'MEAN_REVERSION_LONG' | 'EXIT_LONG' | 'NEUTRAL'
   ema50: number | null
   currentPrice: number
   atr: number | null
@@ -44,7 +45,7 @@ function simulateExitCycle(input: ExitCycleInput): ExitCycleResult {
   if (!exitReason && input.daysOpen >= 20) exitReason = 'Exit rule: 20-day time stop'
 
   if (!exitReason && input.signalType === 'MEAN_REVERSION') {
-    if (input.zScore >= -0.8 && !input.ctxTrailingActivated) {
+    if (input.kalmanSignal === 'EXIT_LONG') {
       exitReason = 'Exit rule: z-score reverted to fair value'
     }
   }
@@ -162,14 +163,15 @@ describe('trailing-stop exit reason no longer overwrites an already-set exit rea
     expect(result.exitReason).toBe('Trailing stop triggered')
   })
 
-  it('MEAN_REVERSION with trailing already activated — behavior unchanged (already structurally immune)', () => {
-    // Arrange — z-score exit condition is blocked by !ctx.trailingActivated regardless of this fix;
-    // trailing's own condition independently fires
+  it('MEAN_REVERSION z-score exit fires even when trailing already activated (bug fix — was previously blocked)', () => {
+    // Arrange — kalman signal is EXIT_LONG; trailing is already activated too, but the
+    // z-score exit must no longer be suppressed by that state (the bug this fix removes)
     const input: ExitCycleInput = {
       pnlPct: 0.06,
       daysOpen: 5,
       signalType: 'MEAN_REVERSION',
-      zScore: -0.5, // >= -0.8, would trigger z-score exit if trailing were not already active
+      zScore: -0.5,
+      kalmanSignal: 'EXIT_LONG',
       ema50: null,
       currentPrice: 105,
       atr: 1,
@@ -182,8 +184,8 @@ describe('trailing-stop exit reason no longer overwrites an already-set exit rea
     // Act
     const result = simulateExitCycle(input)
 
-    // Assert — z-score exit never fires (trailingActivated=true blocks it), trailing fires instead
-    expect(result.exitReason).toBe('Trailing stop triggered')
+    // Assert — z-score exit now fires first; trailing's own check is never reached
+    expect(result.exitReason).toBe('Exit rule: z-score reverted to fair value')
   })
 
   it('state-tracking (highSinceEntry/trailingStop/trailingActivated) still persists even when exitReason was already set', () => {

@@ -209,8 +209,8 @@ export async function enforceExitRules(
 
     // Mean Reversion exits
     if (!exitReason && signalType === 'MEAN_REVERSION') {
-      if (zScore >= -0.8 && !ctx?.trailingActivated) {
-        exitReason = `Exit rule: z-score ${zScore.toFixed(3)} >= -0.8 — price reverted to fair value`
+      if (ind.kalman.signal === 'EXIT_LONG') {
+        exitReason = `Exit rule: z-score ${zScore.toFixed(3)} reverted to fair value (kalman signal EXIT_LONG)`
       }
     }
 
