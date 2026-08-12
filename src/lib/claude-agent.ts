@@ -7,6 +7,8 @@ import {
   getBars,
   submitLimitOrder,
   submitStopOrder,
+  submitStopLimitOrder,
+  cancelOrder,
   getOrder,
   closePosition,
   getLatestSellOrder,
@@ -272,6 +274,7 @@ export async function enforceExitRules(
       }
 
       // PASO 4 — Calculate trailing stop (calculate immediately on activation, only rises after)
+      const previousStop = ctx?.trailingStop ?? null
       let trailingStop = ctx?.trailingStop ?? null
 
       if (trailingActivated) {
@@ -288,6 +291,84 @@ export async function enforceExitRules(
         } else {
           trailingStop = Math.max(trailingStop ?? 0, flooredStop)
         }
+
+        // ── TRAILING STOP-LIMIT ORDER REPLACEMENT ──────────────
+        const stopIncreased = trailingStop !== null && (previousStop === null || trailingStop > previousStop)
+        const needsSelfHeal = trailingActivated && !justActivated && !ctx?.trailingStopOrderId
+        const shouldReplaceStopOrder = justActivated || stopIncreased || needsSelfHeal
+        const replacementQty = ctx?.quantity
+
+        if (shouldReplaceStopOrder && trailingStop !== null && replacementQty) {
+          const targetStop = trailingStop
+          const limitPrice = targetStop * (1 - 0.005)
+          const cancellingCapaA = !ctx?.trailingStopOrderId && !!ctx?.stopOrderId
+          const orderIdToCancel = cancellingCapaA ? ctx?.stopOrderId : ctx?.trailingStopOrderId
+
+          let cancelFailed = false
+          let cancelErrorMessage = ''
+          if (orderIdToCancel) {
+            try {
+              await cancelOrder(orderIdToCancel)
+            } catch (err) {
+              cancelFailed = true
+              cancelErrorMessage = (err as Error).message ?? String(err)
+              console.warn(`[TRAILING] Failed to cancel order ${orderIdToCancel} for ${position.symbol}:`, err)
+            }
+          }
+
+          if (cancelFailed) {
+            await insertAgentLogEntry({
+              id: randomUUID(),
+              timestamp,
+              symbol: position.symbol,
+              decision: {
+                action: 'HOLD',
+                symbol: position.symbol,
+                quantity: 0,
+                reasoning: `EXIT-RULES: trailing stop-limit CANCEL FAILED for order ${orderIdToCancel} — new stop $${targetStop.toFixed(2)}/limit $${limitPrice.toFixed(2)} not submitted — error: ${cancelErrorMessage}`,
+                confidence: 0,
+              },
+              indicators: ind,
+              portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+              orderExecuted: false,
+              error: 'trailing_stop_naked',
+            }).catch((err) => console.error(`[EXIT-RULES] Failed to log trailing-stop naked alert for ${position.symbol}:`, err))
+          } else {
+            const replacement = await submitStopLimitWithRetry(position.symbol, replacementQty, targetStop, limitPrice)
+
+            if (replacement.stopOrderId) {
+              const contextUpdates: Partial<OpenPositionContext> = { trailingStopOrderId: replacement.stopOrderId }
+              if (cancellingCapaA) contextUpdates.stopOrderId = null
+              await updatePositionContext(position.symbol, contextUpdates).catch(
+                (err: unknown) => console.error(`[EXIT-RULES] Failed to persist trailing stop-limit order id for ${position.symbol}:`, err)
+              )
+            } else {
+              const contextUpdates: Partial<OpenPositionContext> = { trailingStopOrderId: null }
+              if (cancellingCapaA) contextUpdates.stopOrderId = null
+              await updatePositionContext(position.symbol, contextUpdates).catch(
+                (err: unknown) => console.error(`[EXIT-RULES] Failed to clear naked trailing stop-limit order id for ${position.symbol}:`, err)
+              )
+
+              await insertAgentLogEntry({
+                id: randomUUID(),
+                timestamp,
+                symbol: position.symbol,
+                decision: {
+                  action: 'HOLD',
+                  symbol: position.symbol,
+                  quantity: 0,
+                  reasoning: `EXIT-RULES: trailing stop-limit SUBMIT FAILED after cancelling ${orderIdToCancel ?? 'no prior order'} — attempted stop $${targetStop.toFixed(2)}/limit $${limitPrice.toFixed(2)} — error: ${replacement.failureReason}`,
+                  confidence: 0,
+                },
+                indicators: ind,
+                portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+                orderExecuted: false,
+                error: 'trailing_stop_naked',
+              }).catch((err) => console.error(`[EXIT-RULES] Failed to log trailing-stop naked alert for ${position.symbol}:`, err))
+            }
+          }
+        }
+        // ────────────────────────────────────────────────────────
       }
 
       // Save updated context
@@ -835,6 +916,31 @@ export async function submitStopWithRetry(
       } else {
         const reason = (err as Error).message ?? String(err)
         console.error(`[STOP] Retry also failed for ${symbol} — position is NAKED:`, reason)
+        return { stopOrderId: undefined, failureReason: reason }
+      }
+    }
+  }
+  return { stopOrderId: undefined, failureReason: 'unreachable' }
+}
+
+export async function submitStopLimitWithRetry(
+  symbol: string,
+  filledQty: number,
+  stopPrice: number,
+  limitPrice: number,
+  retryDelayMs = 3000
+): Promise<{ stopOrderId: string | undefined; failureReason: string | undefined }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const order = await submitStopLimitOrder(symbol, filledQty, stopPrice, limitPrice)
+      return { stopOrderId: order.id, failureReason: undefined }
+    } catch (err) {
+      if (attempt === 0) {
+        console.warn(`[TRAILING] First stop-limit attempt failed for ${symbol} — retrying in ${retryDelayMs}ms:`, err)
+        await new Promise(r => setTimeout(r, retryDelayMs))
+      } else {
+        const reason = (err as Error).message ?? String(err)
+        console.error(`[TRAILING] Stop-limit retry also failed for ${symbol} — position is NAKED:`, reason)
         return { stopOrderId: undefined, failureReason: reason }
       }
     }
