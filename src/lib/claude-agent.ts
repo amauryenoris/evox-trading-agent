@@ -22,6 +22,7 @@ import {
 } from './alpaca'
 import { calculateAllIndicators } from './indicators'
 import { getAdxBucket, getMacdBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
+import { computeSectorRotation, formatSectorRotationContext } from './sector-rotation'
 import { appendAgentLogEntries } from './agent-log'
 import {
   detectClosedPositions,
@@ -621,6 +622,7 @@ function buildEnrichedPrompt(
   effectiveThreshold?: number,
   signalType?: string | null,
   learnContext?: LearnContext,
+  sectorRotationContext: string = '',
 ): string {
   const equity = parseFloat(account.equity)
   const maxPositionValue = equity * parseFloat(process.env.MAX_POSITION_SIZE ?? '0.10')
@@ -634,7 +636,10 @@ function buildEnrichedPrompt(
 
 --- MACRO & MARKET CONTEXT (last 12h headlines) ---
 ${macroContext}
-
+${sectorRotationContext ? `
+--- SECTOR ROTATION (20-day relative strength vs SPY) ---
+${sectorRotationContext}
+` : ''}
 --- RECENT NEWS FOR ${symbol} (last 24h) ---
 ${symbolNewsSection}
 
@@ -989,7 +994,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const client = new Anthropic({ apiKey })
 
   // 1. Load portfolio state and market status
-  const [account, positions, clock, spyBars] = await Promise.all([
+  const [account, positions, clock, spyBars, gdxBars, xleBars, xlkBars] = await Promise.all([
     getAccount(),
     getPositions(),
     getClock(),
@@ -997,9 +1002,25 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       console.error('[MACRO_SPX] SPY fetch failed:', err)
       return []
     }),
+    getBars('GDX', '1Day', 400).catch((err: unknown) => {
+      console.error('[SECTOR_ROTATION] GDX fetch failed:', err)
+      return []
+    }),
+    getBars('XLE', '1Day', 400).catch((err: unknown) => {
+      console.error('[SECTOR_ROTATION] XLE fetch failed:', err)
+      return []
+    }),
+    getBars('XLK', '1Day', 400).catch((err: unknown) => {
+      console.error('[SECTOR_ROTATION] XLK fetch failed:', err)
+      return []
+    }),
   ])
 
   const spxSnapshot = computeSpxSnapshot(spyBars)
+
+  const sectorRotation = computeSectorRotation(gdxBars, xleBars, xlkBars, spyBars)
+  const sectorRotationContext = formatSectorRotationContext(sectorRotation)
+  console.log('[SECTOR_ROTATION]', JSON.stringify(sectorRotation))
 
   if (spxSnapshot.spx_price !== null) {
     console.log(
@@ -1792,6 +1813,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         watchlistContext,
         effectiveThreshold,
         signalType,
+        undefined,
+        sectorRotationContext,
       )
 
       // Call Claude (with retry on 429/529)
