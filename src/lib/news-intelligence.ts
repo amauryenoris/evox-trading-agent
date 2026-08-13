@@ -19,7 +19,7 @@ const MAX_NEWS_PER_CYCLE = 10
 const MAX_BULLISH_ADJUSTMENT  =  0.150  // ceiling: max bullish relaxation per cycle/symbol
 const MAX_BEARISH_ADJUSTMENT  = -0.150  // floor: max bearish tightening per cycle/symbol
 
-interface NewsClassification {
+export interface NewsClassification {
   scope: 'MACRO' | 'SYMBOL'
   symbol: string | null
   sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
@@ -136,7 +136,7 @@ Examples:
     const adjustment = getThresholdAdjustment(parsed.sentiment, parsed.impact)
     return {
       scope: parsed.scope,
-      symbol: parsed.symbol ?? symbol,
+      symbol: parsed.scope === 'MACRO' ? null : (parsed.symbol ?? symbol),
       sentiment: parsed.sentiment,
       impact: parsed.impact,
       threshold_adjustment: adjustment,
@@ -265,7 +265,7 @@ function getSymbolAdjustment(newsItems: NewsClassification[]): number {
   return strongestBullish
 }
 
-function buildThresholdMap(symbols: string[], classified: NewsClassification[]): ThresholdMap {
+export function buildThresholdMap(symbols: string[], classified: NewsClassification[]): ThresholdMap {
   const map: ThresholdMap = {}
 
   // Start all symbols at base threshold
