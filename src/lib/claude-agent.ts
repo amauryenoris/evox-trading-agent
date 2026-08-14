@@ -2017,6 +2017,11 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                         indicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
                         indicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
 
+                        indicatorsAtBuy.effectiveThreshold = effectiveThreshold
+                        indicatorsAtBuy.newsAdjustment = newsAdjustment
+                        indicatorsAtBuy.sectorRotation = sectorRotation
+                        indicatorsAtBuy.sectorRotationContext = sectorRotationContext
+
                         indicatorsAtBuy.state_fingerprint = {
                           signal_type:   signalType,
                           spx_regime:    spxSnapshot.spx_regime,
@@ -2191,6 +2196,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           bestIndicatorsAtBuy.spx_sma50  = spxSnapshot.spx_sma50
           bestIndicatorsAtBuy.spx_sma200 = spxSnapshot.spx_sma200
           bestIndicatorsAtBuy.spx_regime = spxSnapshot.spx_regime
+
+          bestIndicatorsAtBuy.sectorRotation = sectorRotation
+          bestIndicatorsAtBuy.sectorRotationContext = sectorRotationContext
+
+          const bestEntryIndicators = best.entry.indicators as TechnicalIndicators & Record<string, unknown>
+          bestIndicatorsAtBuy.effectiveThreshold = bestEntryIndicators.effectiveThreshold
+          bestIndicatorsAtBuy.newsAdjustment = bestEntryIndicators.newsAdjustment
 
           const bestAdxValue = typeof best.indicators.adx === 'number' ? best.indicators.adx : null
           const bestMacdHist = typeof best.indicators.macd?.histogram === 'number' ? best.indicators.macd.histogram : null
