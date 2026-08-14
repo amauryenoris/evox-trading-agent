@@ -293,6 +293,7 @@ export async function getTradeEvaluations(limit = 200, startDate?: string): Prom
     buyIndicators: (() => {
       const raw = row.indicators_at_buy ?? {}
       return {
+        ...raw,
         rsi: raw.rsi ?? null,
         macd: raw.macd ?? null,
         bollingerBands: raw.bollingerBands ?? null,
