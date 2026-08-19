@@ -318,3 +318,23 @@ export function buildThresholdMap(symbols: string[], classified: NewsClassificat
 
   return map
 }
+
+export interface MacroSentimentSummary {
+  bullishCount: number
+  bearishCount: number
+  neutralCount: number
+}
+
+export async function getAggregateMacroSentiment(hours: number): Promise<MacroSentimentSummary> {
+  const classifications = await getRecentNewsClassifications(hours)
+  const macroOnly = classifications.filter((c) => c.scope === 'MACRO')
+
+  const summary: MacroSentimentSummary = {
+    bullishCount: macroOnly.filter((c) => c.sentiment === 'BULLISH').length,
+    bearishCount: macroOnly.filter((c) => c.sentiment === 'BEARISH').length,
+    neutralCount: macroOnly.filter((c) => c.sentiment === 'NEUTRAL').length,
+  }
+  console.log(`[NEWS] Aggregate macro sentiment (${hours}h): ${summary.bullishCount} bullish, ${summary.bearishCount} bearish, ${summary.neutralCount} neutral`)
+
+  return summary
+}
