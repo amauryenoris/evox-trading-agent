@@ -320,6 +320,14 @@ export interface NewsEvent {
   created_at?: string
 }
 
+// Keep in sync with getRecentNewsClassifications()'s .select() list
+// in db.ts — this type must match exactly which columns that query
+// actually requests.
+export type NewsClassificationRecord = Pick<
+  NewsEvent,
+  'scope' | 'symbol' | 'sentiment' | 'impact' | 'threshold_adjustment'
+>
+
 export interface NearMissEntry {
   id: string
   symbol: string

@@ -7,6 +7,7 @@ import type {
   SelectionDecision,
   SelectionEvaluation,
   NewsEvent,
+  NewsClassificationRecord,
   NearMissEntry,
 } from './types'
 
@@ -587,7 +588,9 @@ export async function getRecentNormalizedHeadlines(hours: number): Promise<Set<s
   )
 }
 
-export async function getRecentNewsClassifications(hours: number): Promise<NewsEvent[]> {
+// Keep in sync with NewsClassificationRecord's Pick<> in types.ts —
+// if a column is added/removed here, update that type too.
+export async function getRecentNewsClassifications(hours: number): Promise<NewsClassificationRecord[]> {
   const db = getClient()
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
   const { data, error } = await db
@@ -595,7 +598,7 @@ export async function getRecentNewsClassifications(hours: number): Promise<NewsE
     .select('scope, symbol, sentiment, impact, threshold_adjustment')
     .gt('created_at', since)
   if (error) throw new Error(`Failed to fetch recent news classifications: ${error.message}`)
-  return (data ?? []) as NewsEvent[]
+  return (data ?? []) as NewsClassificationRecord[]
 }
 
 // ── near_miss_watchlist ───────────────────────────────────────────────────────
