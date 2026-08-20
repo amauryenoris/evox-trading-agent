@@ -9,7 +9,7 @@ const { mockGetMarketDailyBriefingByDate, mockUpsertMarketDailyBriefing } = vi.h
   mockUpsertMarketDailyBriefing: vi.fn(),
 }))
 
-vi.mock('../db', () => ({
+vi.mock('../db-market-briefing', () => ({
   getMarketDailyBriefingByDate: mockGetMarketDailyBriefingByDate,
   upsertMarketDailyBriefing: mockUpsertMarketDailyBriefing,
 }))
@@ -70,6 +70,29 @@ describe('generateDailyBriefing — existing row branch', () => {
     // Assert
     expect(result).toBe(existing.narrative)
     expect(mockUpsertMarketDailyBriefing).not.toHaveBeenCalled()
+  })
+})
+
+// The 4th parameter lets the "missing row" path be exercised end-to-end through
+// generateDailyBriefing() itself via a fake synthesis function, with zero Anthropic
+// SDK involvement — synthesizeDailyBriefingNarrative() remains untested directly.
+describe('generateDailyBriefing — missing row branch (via injected synthesis function)', () => {
+  it('calls the injected synthesize function, persists the result, and returns the new narrative', async () => {
+    // Arrange
+    mockGetMarketDailyBriefingByDate.mockResolvedValue(null)
+    mockUpsertMarketDailyBriefing.mockResolvedValue(undefined)
+    const fakeNarrative = 'Fake narrative from injected synthesis function.'
+    const fakeSynthesize = vi.fn().mockResolvedValue(fakeNarrative)
+
+    // Act
+    const result = await generateDailyBriefing(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, fakeSynthesize)
+
+    // Assert
+    expect(fakeSynthesize).toHaveBeenCalledWith(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT)
+    expect(mockUpsertMarketDailyBriefing).toHaveBeenCalledWith(
+      expect.objectContaining({ narrative: fakeNarrative })
+    )
+    expect(result).toBe(fakeNarrative)
   })
 })
 

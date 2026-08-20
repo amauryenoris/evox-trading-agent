@@ -8,7 +8,6 @@ import type {
   SelectionEvaluation,
   NewsEvent,
   NewsClassificationRecord,
-  MarketDailyBriefing,
   NearMissEntry,
 } from './types'
 
@@ -767,29 +766,13 @@ export async function createStorageSignedUrl(
   return data.signedUrl
 }
 
-export async function getMarketDailyBriefingByDate(briefingDate: string): Promise<MarketDailyBriefing | null> {
-  const db = getClient()
-  const { data, error } = await db
-    .from('market_daily_briefings')
-    .select('*')
-    .eq('briefing_date', briefingDate)
-    .maybeSingle()
-  if (error) throw new Error(`Failed to fetch market daily briefing: ${error.message}`)
-  return (data ?? null) as MarketDailyBriefing | null
-}
-
-export async function upsertMarketDailyBriefing(
-  record: Omit<MarketDailyBriefing, 'id' | 'created_at'>
-): Promise<void> {
-  const db = getClient()
-  const { error } = await db
-    .from('market_daily_briefings')
-    .upsert({ ...record }, { onConflict: 'briefing_date' })
-  if (error) throw new Error(`Failed to upsert market daily briefing: ${error.message}`)
-}
-
 export {
   upsertSymbolCooldown,
   getActiveCooldowns,
   cleanExpiredCooldowns,
 } from './db-cooldowns'
+
+export {
+  getMarketDailyBriefingByDate,
+  upsertMarketDailyBriefing,
+} from './db-market-briefing'

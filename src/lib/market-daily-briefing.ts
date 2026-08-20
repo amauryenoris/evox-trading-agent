@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { MacroSentimentSummary } from './news-intelligence'
 import type { SectorRotationSnapshot } from './sector-rotation'
 import type { MarketDailyBriefing } from './types'
-import { getMarketDailyBriefingByDate, upsertMarketDailyBriefing } from './db'
+import { getMarketDailyBriefingByDate, upsertMarketDailyBriefing } from './db-market-briefing'
 
 export interface SpxSnapshot {
   spx_price: number | null
@@ -132,7 +132,8 @@ ${formatMacroSentimentSummary(macroSentiment)}`
 export async function generateDailyBriefing(
   spxSnapshot: SpxSnapshot,
   sectorRotation: SectorRotationSnapshot,
-  macroSentiment: MacroSentimentSummary
+  macroSentiment: MacroSentimentSummary,
+  synthesize: typeof synthesizeDailyBriefingNarrative = synthesizeDailyBriefingNarrative
 ): Promise<string> {
   const today = new Date().toISOString().split('T')[0]
 
@@ -142,7 +143,7 @@ export async function generateDailyBriefing(
     return existing.narrative
   }
 
-  const narrative = await synthesizeDailyBriefingNarrative(spxSnapshot, sectorRotation, macroSentiment)
+  const narrative = await synthesize(spxSnapshot, sectorRotation, macroSentiment)
 
   await upsertMarketDailyBriefing(buildBriefingRecord(today, spxSnapshot, sectorRotation, macroSentiment, narrative))
   console.log(`[BRIEFING] Synthesized and persisted new briefing for ${today}`)
