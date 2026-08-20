@@ -328,6 +328,25 @@ export type NewsClassificationRecord = Pick<
   'scope' | 'symbol' | 'sentiment' | 'impact' | 'threshold_adjustment'
 >
 
+export interface MarketDailyBriefing {
+  id?: string
+  briefing_date: string
+  created_at?: string
+  spx_price: number | null
+  spx_sma50: number | null
+  spx_sma200: number | null
+  spx_regime: string | null
+  gdx_relative_strength_pct: number | null
+  xle_relative_strength_pct: number | null
+  xlk_relative_strength_pct: number | null
+  macro_sentiment_bullish_count: number
+  macro_sentiment_bearish_count: number
+  macro_sentiment_neutral_count: number
+  narrative: string
+  vix_proxy_change: number | null
+  upcoming_events_note: string | null
+}
+
 export interface NearMissEntry {
   id: string
   symbol: string
