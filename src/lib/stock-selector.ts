@@ -53,7 +53,8 @@ RESPOND ONLY with valid JSON (no markdown):
 export async function selectStocksForAnalysis(
   candidates: ScreenerStock[],
   account: AlpacaAccount,
-  positions: AlpacaPosition[]
+  positions: AlpacaPosition[],
+  briefingNarrative: string = ''
 ): Promise<string[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set')
@@ -126,7 +127,10 @@ export async function selectStocksForAnalysis(
 CURRENT PORTFOLIO: ${positions.length}/5 positions open
 Available cash: $${parseFloat(account.cash).toFixed(0)}
 Currently held: ${positions.length > 0 ? positions.map((p) => p.symbol).join(', ') : 'none'}
-
+${briefingNarrative ? `
+--- TODAY'S MARKET BRIEFING ---
+${briefingNarrative}
+` : ''}
 --- POOL A: MARKET SCREENER (most active by volume today) ---
 ${screenerLines.join('\n')}
 

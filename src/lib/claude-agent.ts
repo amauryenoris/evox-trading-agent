@@ -23,6 +23,7 @@ import {
 import { calculateAllIndicators } from './indicators'
 import { getAdxBucket, getMacdBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
 import { computeSectorRotation, formatSectorRotationContext } from './sector-rotation'
+import { generateDailyBriefing } from './market-daily-briefing'
 import { appendAgentLogEntries } from './agent-log'
 import {
   detectClosedPositions,
@@ -34,7 +35,7 @@ import {
 import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, tradeEvaluationExists } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
-import { newsIntelligenceLayer } from './news-intelligence'
+import { newsIntelligenceLayer, getAggregateMacroSentiment } from './news-intelligence'
 import { ZSCORE_ENTRY_THRESHOLD, INSTRUMENT_BLACKLIST, MAX_SPREAD_BPS } from './config'
 import {
   detectNearMisses,
@@ -1022,6 +1023,15 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const sectorRotationContext = formatSectorRotationContext(sectorRotation)
   console.log('[SECTOR_ROTATION]', JSON.stringify(sectorRotation))
 
+  let briefingNarrative = ''
+  try {
+    const macroSentiment = await getAggregateMacroSentiment(12)
+    briefingNarrative = await generateDailyBriefing(spxSnapshot, sectorRotation, macroSentiment)
+    console.log('[BRIEFING]', briefingNarrative)
+  } catch (err: unknown) {
+    console.error('[BRIEFING] Failed to generate/fetch daily briefing:', err)
+  }
+
   if (spxSnapshot.spx_price !== null) {
     console.log(
       `[MACRO_SPX] price=${spxSnapshot.spx_price}` +
@@ -1038,7 +1048,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   try {
     const candidates = await getMarketMovers(30)
     if (candidates.length >= 10) {
-      watchlist = await selectStocksForAnalysis(candidates, account, positions)
+      watchlist = await selectStocksForAnalysis(candidates, account, positions, briefingNarrative)
       console.log(`Dynamic selection: ${watchlist.join(', ')}`)
     } else {
       throw new Error('Not enough screener candidates')
