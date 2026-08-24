@@ -77,7 +77,7 @@ async function main() {
 
   const openPositions = await getOpenPositionContexts()
 
-  const spyBars = await getBars('SPY', '1Day', 400).catch((err: unknown) => {
+  const spyBars = await getBars('SPY', '1Day', 400, 400).catch((err: unknown) => {
     console.error('[HEALTH_CHECK_ERROR] SPY: failed bars fetch:', err)
     return []
   })
@@ -95,7 +95,7 @@ async function main() {
   for (const ctx of openPositions) {
     let bars
     try {
-      bars = await getBars(ctx.symbol, '1Day', 400)
+      bars = await getBars(ctx.symbol, '1Day', 400, 400)
     } catch (err) {
       console.error(`[HEALTH_CHECK_ERROR] ${ctx.symbol}: bars fetch failed:`, err)
       failed++
