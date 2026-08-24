@@ -256,6 +256,7 @@ export interface ScreenerStock {
   price: number
   changePercent: number
   volume: number
+  relativeVolume: number
 }
 
 export interface SelectionDecision {

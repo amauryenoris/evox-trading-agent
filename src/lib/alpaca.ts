@@ -201,7 +201,7 @@ export async function getMarketMovers(limit = 30): Promise<ScreenerStock[]> {
     const snapshotUrl = `${dataUrl()}/v2/stocks/snapshots?symbols=${symbols.join(',')}&feed=iex`
     const snapshots = await alpacaFetch<Record<string, AlpacaSnapshot>>(snapshotUrl)
 
-    return symbols
+    const rawCandidates = symbols
       .filter((sym) => snapshots[sym])
       .map((sym) => {
         const snap = snapshots[sym]
@@ -212,6 +212,15 @@ export async function getMarketMovers(limit = 30): Promise<ScreenerStock[]> {
         return { symbol: sym, price: currentPrice, changePercent, volume: screenerData.volume }
       })
       .filter((s) => s.price > 0)
+
+    const avgVolume = rawCandidates.length > 0
+      ? rawCandidates.reduce((sum, c) => sum + c.volume, 0) / rawCandidates.length
+      : 0
+
+    return rawCandidates.map((c) => ({
+      ...c,
+      relativeVolume: avgVolume > 0 ? c.volume / avgVolume : 0,
+    }))
   } catch {
     return []
   }
@@ -235,7 +244,7 @@ export async function getStockSnapshots(symbols: string[]): Promise<ScreenerStoc
         const currentPrice = snap.latestTrade?.p ?? snap.dailyBar?.c ?? 0
         const prevClose = snap.prevDailyBar?.c ?? currentPrice
         const changePercent = prevClose > 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0
-        return { symbol: sym, price: currentPrice, changePercent, volume: 0 }
+        return { symbol: sym, price: currentPrice, changePercent, volume: 0, relativeVolume: 1 }
       })
       .filter((s) => s.price > 0)
   } catch {

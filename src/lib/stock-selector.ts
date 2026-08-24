@@ -17,6 +17,7 @@ import {
 import { INSTRUMENT_BLACKLIST } from './config'
 
 const MAX_DAILY_CHANGE_PCT = 15
+const HIGH_RELATIVE_VOLUME_THRESHOLD = 1.5  // 1.5x the candidate batch's average volume — starting value, not yet validated with real data, see [GAP_VOL_EXCEPTION] logging
 const MAX_POOL_A_CANDIDATES = 15
 
 // Default sector watchlist — overridable via SECTOR_WATCHLIST env var
@@ -64,7 +65,14 @@ export async function selectStocksForAnalysis(
   // Pre-filter Pool A — applied before allCandidates is built so validation is consistent
   candidates = candidates.filter(c => !INSTRUMENT_BLACKLIST.has(c.symbol))  // Step 1: blacklist
   candidates = candidates.filter(c => !heldSymbols.has(c.symbol))           // Step 2: open positions
-  candidates = candidates.filter(c => Math.abs(c.changePercent) < MAX_DAILY_CHANGE_PCT)  // Step 3: overbought spikes
+  candidates = candidates.filter(c => {
+    const passesChangeFilter = Math.abs(c.changePercent) < MAX_DAILY_CHANGE_PCT
+    const passesGapVolumeException = c.relativeVolume >= HIGH_RELATIVE_VOLUME_THRESHOLD
+    if (!passesChangeFilter && passesGapVolumeException) {
+      console.log(`[GAP_VOL_EXCEPTION] symbol=${c.symbol} changePercent=${c.changePercent.toFixed(1)} relativeVolume=${c.relativeVolume.toFixed(2)}`)
+    }
+    return passesChangeFilter || passesGapVolumeException
+  })  // Step 3: overbought spikes, unless accompanied by unusually high relative volume
 
   // Fetch sector watchlist snapshots and merge with screener candidates
   const sectorSymbols = (process.env.SECTOR_WATCHLIST ?? DEFAULT_SECTOR_WATCHLIST)
@@ -113,7 +121,8 @@ export async function selectStocksForAnalysis(
   const screenerLines = candidates.map((s) => {
     const change = s.changePercent >= 0 ? `+${s.changePercent.toFixed(1)}%` : `${s.changePercent.toFixed(1)}%`
     const held = heldSymbols.has(s.symbol) ? ' [CURRENTLY HELD]' : ''
-    return `${s.symbol}: $${s.price.toFixed(2)} (${change}) Vol: ${(s.volume / 1e6).toFixed(1)}M${held}`
+    const gapFlag = Math.abs(s.changePercent) >= MAX_DAILY_CHANGE_PCT ? ' [GAP+VOL]' : ''
+    return `${s.symbol}: $${s.price.toFixed(2)} (${change}) Vol: ${(s.volume / 1e6).toFixed(1)}M${gapFlag}${held}`
   })
 
   const sectorLines = sectorSnapshots.map((s) => {
