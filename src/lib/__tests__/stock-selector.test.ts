@@ -1,5 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { ScreenerStock } from '../types'
+import type { ScreenerStock, AlpacaAccount, AlpacaPosition } from '../types'
+
+const { mockMessagesCreate, mockInsertSelectionDecision, mockGetSelectionEvaluations, mockGetStockSnapshots } = vi.hoisted(() => ({
+  mockMessagesCreate: vi.fn(),
+  mockInsertSelectionDecision: vi.fn(),
+  mockGetSelectionEvaluations: vi.fn(),
+  mockGetStockSnapshots: vi.fn(),
+}))
+
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: class MockAnthropic {
+    messages = { create: mockMessagesCreate }
+  },
+}))
+
+vi.mock('../db', () => ({
+  insertSelectionDecision: mockInsertSelectionDecision,
+  getRecentSelections: vi.fn().mockResolvedValue([]),
+  getSelectionEvaluations: mockGetSelectionEvaluations,
+  insertSelectionEvaluation: vi.fn(),
+}))
+
+vi.mock('../alpaca', () => ({
+  getStockSnapshots: mockGetStockSnapshots,
+}))
+
+import { selectStocksForAnalysis } from '../stock-selector'
 
 // Replicates the briefingNarrative conditional-section idiom from
 // selectStocksForAnalysis()'s prompt template (stock-selector.ts, the
@@ -124,5 +150,78 @@ describe('Pool A Step 3 filter — gap+volume exception', () => {
     // Assert
     expect(result).toEqual([])
     expect(logSpy).not.toHaveBeenCalled()
+  })
+})
+
+const MAX_POOL_A_CANDIDATES = 15
+
+function manyPoolACandidates(count: number): ScreenerStock[] {
+  return Array.from({ length: count }, (_, i) =>
+    stock({ symbol: `SYM${String(i).padStart(2, '0')}`, changePercent: 5, relativeVolume: 1, volume: 1_000_000 })
+  )
+}
+
+const ACCOUNT: AlpacaAccount = {
+  id: 'acct-1',
+  cash: '10000',
+  portfolio_value: '10000',
+  buying_power: '10000',
+  equity: '10000',
+  last_equity: '10000',
+  long_market_value: '0',
+  short_market_value: '0',
+  initial_margin: '0',
+  maintenance_margin: '0',
+  daytrade_count: 0,
+  multiplier: '1',
+  pattern_day_trader: false,
+  trading_blocked: false,
+  account_blocked: false,
+  status: 'ACTIVE',
+}
+
+const NO_POSITIONS: AlpacaPosition[] = []
+
+function mockClaudeSelection(selected: string[]): void {
+  mockMessagesCreate.mockResolvedValue({
+    content: [{ type: 'text', text: JSON.stringify({ selected, reasoning: 'test reasoning' }) }],
+  })
+}
+
+describe('selectStocksForAnalysis — candidatesOffered truncation fix', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    mockGetSelectionEvaluations.mockResolvedValue([])
+    mockGetStockSnapshots.mockResolvedValue([])
+    mockInsertSelectionDecision.mockReset()
+    mockMessagesCreate.mockReset()
+  })
+
+  it('persists candidatesOffered capped to the post-truncation count, not the pre-truncation count', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(20)
+    mockClaudeSelection(['SYM00'])
+
+    // Act
+    await selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    expect(mockInsertSelectionDecision).toHaveBeenCalledTimes(1)
+    const persisted = mockInsertSelectionDecision.mock.calls[0][0]
+    expect(persisted.candidatesOffered).toHaveLength(MAX_POOL_A_CANDIDATES)
+    expect(persisted.candidatesOffered.map((c: ScreenerStock) => c.symbol)).not.toContain('SYM19')
+  })
+
+  it('filters out a selected symbol that was truncated out of Pool A and never shown to Claude', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(20)
+    mockClaudeSelection(['SYM00', 'SYM19'])
+
+    // Act
+    const result = await selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    expect(result).toEqual(['SYM00'])
+    expect(result).not.toContain('SYM19')
   })
 })

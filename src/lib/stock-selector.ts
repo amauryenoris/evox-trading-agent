@@ -84,9 +84,6 @@ export async function selectStocksForAnalysis(
   const sectorOnlySymbols = sectorSymbols.filter((s) => !screenerSymbolSet.has(s))
   const sectorSnapshots = await getStockSnapshots(sectorOnlySymbols)
 
-  // All candidates = screener (most active) + sector watchlist not already in screener
-  const allCandidates: ScreenerStock[] = [...candidates, ...sectorSnapshots]
-
   const [selectionEvals] = await Promise.all([getSelectionEvaluations(50)])
 
   // Step 4: sort — symbols with profitable history first (volume order preserved within ties)
@@ -103,6 +100,11 @@ export async function selectStocksForAnalysis(
 
   // Step 5: truncate to top 15 (reduced from 30 — higher quality pool for Claude)
   candidates = candidates.slice(0, MAX_POOL_A_CANDIDATES)
+
+  // All candidates = screener (most active) + sector watchlist not already in screener
+  // Captured post-truncation so it matches exactly what screenerLines/sectorLines render into the prompt
+  const allCandidates: ScreenerStock[] = [...candidates, ...sectorSnapshots]
+
   console.log(`[STOCK-SELECTOR] Pool A after pre-filter: ${candidates.length} candidates (blacklist/held/overbought removed, history sorted)`)
 
   const learningLines: string[] = []
