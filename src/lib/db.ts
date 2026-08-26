@@ -384,6 +384,7 @@ export async function insertSelectionDecision(decision: SelectionDecision): Prom
     candidates_offered: decision.candidatesOffered,
     selected_symbols: decision.selectedSymbols,
     reasoning: decision.reasoning,
+    candidate_scores: decision.candidateScores ?? null,
   })
   if (error) throw new Error(`Failed to insert selection decision: ${error.message}`)
 }
@@ -401,6 +402,7 @@ export async function getRecentSelections(limit = 10): Promise<SelectionDecision
     candidatesOffered: row.candidates_offered ?? [],
     selectedSymbols: row.selected_symbols ?? [],
     reasoning: row.reasoning ?? '',
+    candidateScores: row.candidate_scores ?? undefined,
   }))
 }
 

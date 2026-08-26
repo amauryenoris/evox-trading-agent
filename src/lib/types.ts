@@ -259,11 +259,20 @@ export interface ScreenerStock {
   relativeVolume: number
 }
 
+export interface CandidateScore {
+  symbol: string
+  score: number
+  regime: string
+  risks: string[]
+  thesis: string
+}
+
 export interface SelectionDecision {
   timestamp: string
   candidatesOffered: ScreenerStock[]
   selectedSymbols: string[]
   reasoning: string
+  candidateScores?: CandidateScore[]
 }
 
 export interface SelectionEvaluation {
