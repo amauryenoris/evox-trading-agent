@@ -52,7 +52,7 @@ async function callClaudeWithRetry(
 }
 
 const NARRATIVE_SYSTEM_PROMPT = `You are a market analyst writing a concise daily market briefing.
-You will receive an SPX trend snapshot, sector rotation data, and a macro news sentiment count.
+You will receive an SPX trend snapshot, sector rotation data, a macro news sentiment count, and a VIX proxy reading.
 Synthesize these into a short narrative summarizing today's market conditions.
 
 RESPOND ONLY with valid JSON (no markdown):
@@ -81,7 +81,7 @@ export function formatMacroSentimentSummary(summary: MacroSentimentSummary): str
 }
 
 export function formatVixyChangeContext(vixyChangePct: number | null): string {
-  if (vixyChangePct === null) return 'VIX proxy (VIXY): no data'
+  if (vixyChangePct === null) return 'VIX proxy (VIXY, directional only — not the real VIX level): no data'
   const sign = vixyChangePct >= 0 ? '+' : ''
   return `VIX proxy (VIXY, directional only — not the real VIX level): ${sign}${vixyChangePct.toFixed(2)}% today`
 }

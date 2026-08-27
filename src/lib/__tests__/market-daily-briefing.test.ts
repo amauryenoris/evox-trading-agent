@@ -238,7 +238,7 @@ describe('formatVixyChangeContext', () => {
     const result = formatVixyChangeContext(null)
 
     // Assert
-    expect(result).toBe('VIX proxy (VIXY): no data')
+    expect(result).toBe('VIX proxy (VIXY, directional only — not the real VIX level): no data')
   })
 
   it('renders a signed positive percentage with the directional-only caveat', () => {
