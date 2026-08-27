@@ -230,6 +230,13 @@ export async function enforceExitRules(
       }
     }
 
+    // TREND_PULLBACK_3DAY exit — price reclaims SMA5
+    if (!exitReason && signalType === 'TREND_PULLBACK_3DAY') {
+      if (ind.sma5 != null && ind.currentPrice > ind.sma5) {
+        exitReason = `Exit rule: price $${ind.currentPrice.toFixed(2)} closed above SMA5 $${ind.sma5.toFixed(2)}`
+      }
+    }
+
     // Legacy positions (signal_type === null): profit target + time stop only
     // z-score exit NOT applied to unknown entries
 

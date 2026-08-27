@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 // exitReason assignment now requires !exitReason, matching every other condition's
 // "first to fire wins" pattern. Lines 242-295's state-tracking stays unconditional.
 
-type SignalType = 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+type SignalType = 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null
 
 interface ExitCycleInput {
   pnlPct: number
@@ -16,6 +16,7 @@ interface ExitCycleInput {
   zScore: number
   kalmanSignal?: 'MEAN_REVERSION_LONG' | 'EXIT_LONG' | 'NEUTRAL'
   ema50: number | null
+  sma5?: number | null
   currentPrice: number
   atr: number | null
   ctxHighSinceEntry: number | null
@@ -32,10 +33,10 @@ interface ExitCycleResult {
 
 function simulateExitCycle(input: ExitCycleInput): ExitCycleResult {
   const ACTIVATION_PCT: Record<string, number> = {
-    MEAN_REVERSION: 0.05, TREND: 0.06, TREND_PULLBACK: 0.06, TREND_ZLE05: 0.03, EMA_RECLAIM: 0.04, default: 0.05,
+    MEAN_REVERSION: 0.05, TREND: 0.06, TREND_PULLBACK: 0.06, TREND_ZLE05: 0.03, EMA_RECLAIM: 0.04, TREND_PULLBACK_3DAY: 0.06, default: 0.05,
   }
   const ATR_MULT: Record<string, number> = {
-    MEAN_REVERSION: 1.2, TREND: 1.5, TREND_PULLBACK: 1.5, TREND_ZLE05: 1.0, EMA_RECLAIM: 1.0, default: 1.2,
+    MEAN_REVERSION: 1.2, TREND: 1.5, TREND_PULLBACK: 1.5, TREND_ZLE05: 1.0, EMA_RECLAIM: 1.0, TREND_PULLBACK_3DAY: 1.5, default: 1.2,
   }
   const MIN_DISTANCE_PCT = 0.015
 
@@ -59,6 +60,13 @@ function simulateExitCycle(input: ExitCycleInput): ExitCycleResult {
   if (!exitReason && input.signalType === 'EMA_RECLAIM') {
     if (input.ema50 !== null && input.currentPrice < input.ema50) {
       exitReason = 'Exit rule: EMA Reclaim failed'
+    }
+  }
+
+  if (!exitReason && input.signalType === 'TREND_PULLBACK_3DAY') {
+    const sma5 = input.sma5 ?? null
+    if (sma5 != null && input.currentPrice > sma5) {
+      exitReason = 'Exit rule: price closed above SMA5'
     }
   }
 
@@ -213,6 +221,78 @@ describe('trailing-stop exit reason no longer overwrites an already-set exit rea
     expect(result.persisted?.trailingActivated).toBe(true)
     expect(result.persisted?.highSinceEntry).toBe(120)
     expect(result.persisted?.trailingStop).not.toBeNull()
+  })
+
+  it('TREND_PULLBACK_3DAY: price above SMA5 AND trailing already activated — SMA5 exit wins, not overwritten by trailing', () => {
+    // Arrange — price has reclaimed SMA5; trailing is already activated too, in the same cycle
+    const input: ExitCycleInput = {
+      pnlPct: 0.05,
+      daysOpen: 5,
+      signalType: 'TREND_PULLBACK_3DAY',
+      zScore: 0.5,
+      ema50: null,
+      sma5: 100,
+      currentPrice: 105,
+      atr: 1,
+      ctxHighSinceEntry: 106,
+      ctxTrailingActivated: true,
+      ctxTrailingStop: 104,
+      ctxBuyPrice: 95,
+    }
+
+    // Act
+    const result = simulateExitCycle(input)
+
+    // Assert
+    expect(result.exitReason).toBe('Exit rule: price closed above SMA5')
+  })
+
+  it('TREND_PULLBACK_3DAY: sma5 null — branch does not fire, falls through to trailing stop', () => {
+    // Arrange — sma5 unavailable (e.g. insufficient bar history); trailing stop is already triggered
+    const input: ExitCycleInput = {
+      pnlPct: 0.05,
+      daysOpen: 5,
+      signalType: 'TREND_PULLBACK_3DAY',
+      zScore: 0.5,
+      ema50: null,
+      sma5: null,
+      currentPrice: 103,
+      atr: 1,
+      ctxHighSinceEntry: 106,
+      ctxTrailingActivated: true,
+      ctxTrailingStop: 104,
+      ctxBuyPrice: 95,
+    }
+
+    // Act
+    const result = simulateExitCycle(input)
+
+    // Assert — null sma5 is a no-op for this branch; trailing stop fires normally instead
+    expect(result.exitReason).toBe('Trailing stop triggered')
+  })
+
+  it('TREND_PULLBACK_3DAY: price at or below SMA5 — branch does not fire (no exit)', () => {
+    // Arrange — price has not reclaimed SMA5; trailing not yet activated
+    const input: ExitCycleInput = {
+      pnlPct: 0.02,
+      daysOpen: 3,
+      signalType: 'TREND_PULLBACK_3DAY',
+      zScore: 0.5,
+      ema50: null,
+      sma5: 100,
+      currentPrice: 98,
+      atr: 1,
+      ctxHighSinceEntry: 99,
+      ctxTrailingActivated: false,
+      ctxTrailingStop: null,
+      ctxBuyPrice: 95,
+    }
+
+    // Act
+    const result = simulateExitCycle(input)
+
+    // Assert
+    expect(result.exitReason).toBeNull()
   })
 
   it('historical replay — FCX 2026-05-14 real values (price still above EMA50) — trailing still fires, unaffected by the new guard', () => {
