@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { ScreenerStock, AlpacaAccount, AlpacaPosition } from '../types'
+import type { ScreenerStock, AlpacaAccount, AlpacaPosition, CandidateScore } from '../types'
 
 const { mockMessagesCreate, mockInsertSelectionDecision, mockGetSelectionEvaluations, mockGetStockSnapshots } = vi.hoisted(() => ({
   mockMessagesCreate: vi.fn(),
@@ -182,10 +182,26 @@ const ACCOUNT: AlpacaAccount = {
 
 const NO_POSITIONS: AlpacaPosition[] = []
 
-function mockClaudeSelection(selected: string[]): void {
+function mockClaudeSelection(selected: string[], scores?: CandidateScore[]): void {
+  const body: { selected: string[]; reasoning: string; scores?: CandidateScore[] } = {
+    selected,
+    reasoning: 'test reasoning',
+  }
+  if (scores) body.scores = scores
   mockMessagesCreate.mockResolvedValue({
-    content: [{ type: 'text', text: JSON.stringify({ selected, reasoning: 'test reasoning' }) }],
+    content: [{ type: 'text', text: JSON.stringify(body) }],
   })
+}
+
+function makeCandidateScore(overrides: Partial<CandidateScore> = {}): CandidateScore {
+  return {
+    symbol: 'SYM00',
+    score: 50,
+    regime: 'TRENDING',
+    risks: [],
+    thesis: 'test thesis',
+    ...overrides,
+  }
 }
 
 describe('selectStocksForAnalysis — candidatesOffered truncation fix', () => {
@@ -223,5 +239,77 @@ describe('selectStocksForAnalysis — candidatesOffered truncation fix', () => {
     // Assert
     expect(result).toEqual(['SYM00'])
     expect(result).not.toContain('SYM19')
+  })
+})
+
+describe('selectStocksForAnalysis — candidateScores parsing (parallel observability only)', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    mockGetSelectionEvaluations.mockResolvedValue([])
+    mockGetStockSnapshots.mockResolvedValue([])
+    mockInsertSelectionDecision.mockReset()
+    mockMessagesCreate.mockReset()
+  })
+
+  it('parses a full scores array into candidateScores and persists it', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    const scores = [
+      makeCandidateScore({ symbol: 'SYM00' }),
+      makeCandidateScore({ symbol: 'SYM01' }),
+      makeCandidateScore({ symbol: 'SYM02' }),
+    ]
+    mockClaudeSelection(['SYM00'], scores)
+
+    // Act
+    await selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    const persisted = mockInsertSelectionDecision.mock.calls[0][0]
+    expect(persisted.candidateScores).toEqual(scores)
+  })
+
+  it('completes successfully with candidateScores undefined when Claude omits the scores field', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    mockClaudeSelection(['SYM00'])
+
+    // Act
+    const result = await selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    const persisted = mockInsertSelectionDecision.mock.calls[0][0]
+    expect(persisted.candidateScores).toBeUndefined()
+    expect(result).toEqual(['SYM00'])
+  })
+
+  it('does not let scores content influence the returned watchlist', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    const misleadingScores = [
+      makeCandidateScore({ symbol: 'SYM00', score: 1 }),
+      makeCandidateScore({ symbol: 'NOT_A_CANDIDATE', score: 100 }),
+    ]
+    mockClaudeSelection(['SYM00'], misleadingScores)
+
+    // Act
+    const result = await selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    expect(result).toEqual(['SYM00'])
+  })
+
+  it('sets max_tokens to 3000 on the Claude API call', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    mockClaudeSelection(['SYM00'])
+
+    // Act
+    await selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    expect(mockMessagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 3000 })
+    )
   })
 })

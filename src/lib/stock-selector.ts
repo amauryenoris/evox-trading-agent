@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type {
   AlpacaAccount,
   AlpacaPosition,
+  CandidateScore,
   ScreenerStock,
   SelectionDecision,
   SelectionEvaluation,
@@ -48,7 +49,17 @@ CRITERIA:
 RESPOND ONLY with valid JSON (no markdown):
 {
   "selected": ["SYMBOL1", "SYMBOL2", ...],
-  "reasoning": "2-3 sentences explaining your selection including sector coverage"
+  "reasoning": "2-3 sentences explaining your selection including sector coverage",
+  "scores": [
+    {
+      "symbol": "SYMBOL",
+      "score": 0-100 (integer, higher = more attractive as a candidate right now),
+      "regime": "one short word or phrase describing this candidate's current technical/momentum state",
+      "risks": ["short risk phrase", ...],
+      "thesis": "1 sentence on why this candidate scores as it does"
+    },
+    ...one object for EVERY candidate shown in Pool A and Pool B above, not just your 6-8 selected symbols
+  ]
 }`
 
 export async function selectStocksForAnalysis(
@@ -154,7 +165,7 @@ Select 6-8 symbols for detailed technical analysis. Must include at least 1 from
   const client = new Anthropic({ apiKey })
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 512,
+    max_tokens: 3000,
     system: SELECTION_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   })
@@ -163,13 +174,14 @@ Select 6-8 symbols for detailed technical analysis. Must include at least 1 from
   if (content.type !== 'text') throw new Error('Unexpected Claude response type')
 
   const jsonText = content.text.replace(/```json\n?|\n?```/g, '').trim()
-  const parsed = JSON.parse(jsonText) as { selected: string[]; reasoning: string }
+  const parsed = JSON.parse(jsonText) as { selected: string[]; reasoning: string; scores?: CandidateScore[] }
 
   const decision: SelectionDecision = {
     timestamp: new Date().toISOString(),
     candidatesOffered: allCandidates,
     selectedSymbols: parsed.selected,
     reasoning: parsed.reasoning,
+    candidateScores: parsed.scores,
   }
   await insertSelectionDecision(decision)
 
