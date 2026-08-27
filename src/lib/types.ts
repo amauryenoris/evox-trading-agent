@@ -121,6 +121,10 @@ export interface TechnicalIndicators {
   marketRegime: MarketRegime | null
   prevClose?: number | null
   ema50Prev?: number | null
+  sma5?: number | null
+  closeMinus2?: number | null
+  closeMinus3?: number | null
+  closeMinus4?: number | null
 }
 
 // ============================================================
