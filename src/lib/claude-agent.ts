@@ -23,7 +23,7 @@ import {
 import { calculateAllIndicators } from './indicators'
 import { getAdxBucket, getMacdBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
 import { computeSectorRotation, formatSectorRotationContext } from './sector-rotation'
-import { generateDailyBriefing } from './market-daily-briefing'
+import { generateDailyBriefing, computeVixyChangePct } from './market-daily-briefing'
 import { appendAgentLogEntries } from './agent-log'
 import {
   detectClosedPositions,
@@ -995,7 +995,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const client = new Anthropic({ apiKey })
 
   // 1. Load portfolio state and market status
-  const [account, positions, clock, spyBars, gdxBars, xleBars, xlkBars] = await Promise.all([
+  const [account, positions, clock, spyBars, gdxBars, xleBars, xlkBars, vixyBars] = await Promise.all([
     getAccount(),
     getPositions(),
     getClock(),
@@ -1015,6 +1015,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       console.error('[SECTOR_ROTATION] XLK fetch failed:', err)
       return []
     }),
+    getBars('VIXY', '1Day', 400).catch((err: unknown) => {
+      console.error('[BRIEFING] VIXY fetch failed:', err)
+      return []
+    }),
   ])
 
   const spxSnapshot = computeSpxSnapshot(spyBars)
@@ -1023,10 +1027,13 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const sectorRotationContext = formatSectorRotationContext(sectorRotation)
   console.log('[SECTOR_ROTATION]', JSON.stringify(sectorRotation))
 
+  const vixyChangePct = computeVixyChangePct(vixyBars)
+  console.log('[BRIEFING] VIXY 1-day change:', vixyChangePct)
+
   let briefingNarrative = ''
   try {
     const macroSentiment = await getAggregateMacroSentiment(12)
-    briefingNarrative = await generateDailyBriefing(spxSnapshot, sectorRotation, macroSentiment)
+    briefingNarrative = await generateDailyBriefing(spxSnapshot, sectorRotation, macroSentiment, vixyChangePct)
     console.log('[BRIEFING]', briefingNarrative)
   } catch (err: unknown) {
     console.error('[BRIEFING] Failed to generate/fetch daily briefing:', err)

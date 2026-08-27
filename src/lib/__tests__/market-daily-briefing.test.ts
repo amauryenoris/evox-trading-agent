@@ -20,6 +20,8 @@ import {
   formatSpxSnapshotContext,
   formatSectorRotationSnapshot,
   formatMacroSentimentSummary,
+  computeVixyChangePct,
+  formatVixyChangeContext,
 } from '../market-daily-briefing'
 
 const SPX_SNAPSHOT: SpxSnapshot = {
@@ -65,7 +67,7 @@ describe('generateDailyBriefing — existing row branch', () => {
     mockGetMarketDailyBriefingByDate.mockResolvedValue(existing)
 
     // Act
-    const result = await generateDailyBriefing(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT)
+    const result = await generateDailyBriefing(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, null)
 
     // Assert
     expect(result).toBe(existing.narrative)
@@ -85,10 +87,10 @@ describe('generateDailyBriefing — missing row branch (via injected synthesis f
     const fakeSynthesize = vi.fn().mockResolvedValue(fakeNarrative)
 
     // Act
-    const result = await generateDailyBriefing(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, fakeSynthesize)
+    const result = await generateDailyBriefing(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, null, fakeSynthesize)
 
     // Assert
-    expect(fakeSynthesize).toHaveBeenCalledWith(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT)
+    expect(fakeSynthesize).toHaveBeenCalledWith(SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, null)
     expect(mockUpsertMarketDailyBriefing).toHaveBeenCalledWith(
       expect.objectContaining({ narrative: fakeNarrative })
     )
@@ -103,7 +105,7 @@ describe('buildBriefingRecord', () => {
     const narrative = 'SPX in an uptrend; sector rotation favors gold miners; macro sentiment tilts bullish.'
 
     // Act
-    const record = buildBriefingRecord(briefingDate, SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, narrative)
+    const record = buildBriefingRecord(briefingDate, SPX_SNAPSHOT, SECTOR_ROTATION, MACRO_SENTIMENT, narrative, -3.42)
 
     // Assert
     expect(record).toEqual({
@@ -119,7 +121,7 @@ describe('buildBriefingRecord', () => {
       macro_sentiment_bearish_count: 1,
       macro_sentiment_neutral_count: 2,
       narrative,
-      vix_proxy_change: null,
+      vix_proxy_change: -3.42,
       upcoming_events_note: null,
     })
   })
@@ -180,5 +182,78 @@ describe('formatMacroSentimentSummary', () => {
 
     // Assert
     expect(result).toBe('MACRO NEWS SENTIMENT (last 12h): 4 bullish, 1 bearish, 2 neutral')
+  })
+})
+
+describe('computeVixyChangePct', () => {
+  it('computes the 1-day change from the confirmed close vs. the prior confirmed close', () => {
+    // Arrange
+    const bars = [
+      { t: '2026-08-24', c: 20 },
+      { t: '2026-08-25', c: 19 },
+      { t: '2026-08-26', c: 20.9 },
+      { t: '2026-08-27', c: 999 }, // today's still-forming bar — must be excluded
+    ]
+
+    // Act
+    const result = computeVixyChangePct(bars)
+
+    // Assert — refIndex = length-2 = index 2 (20.9), past = index 1 (19) → +10%
+    expect(result).toBeCloseTo(10, 5)
+  })
+
+  it('returns null when fewer than 3 bars are supplied', () => {
+    // Arrange
+    const bars = [
+      { t: '2026-08-26', c: 20 },
+      { t: '2026-08-27', c: 21 },
+    ]
+
+    // Act
+    const result = computeVixyChangePct(bars)
+
+    // Assert
+    expect(result).toBeNull()
+  })
+
+  it('returns null when the past close is zero', () => {
+    // Arrange
+    const bars = [
+      { t: '2026-08-25', c: 0 },
+      { t: '2026-08-26', c: 20 },
+      { t: '2026-08-27', c: 999 },
+    ]
+
+    // Act
+    const result = computeVixyChangePct(bars)
+
+    // Assert
+    expect(result).toBeNull()
+  })
+})
+
+describe('formatVixyChangeContext', () => {
+  it('renders a no-data message when vixyChangePct is null', () => {
+    // Arrange / Act
+    const result = formatVixyChangeContext(null)
+
+    // Assert
+    expect(result).toBe('VIX proxy (VIXY): no data')
+  })
+
+  it('renders a signed positive percentage with the directional-only caveat', () => {
+    // Arrange / Act
+    const result = formatVixyChangeContext(4.5)
+
+    // Assert
+    expect(result).toBe('VIX proxy (VIXY, directional only — not the real VIX level): +4.50% today')
+  })
+
+  it('renders a signed negative percentage with the directional-only caveat', () => {
+    // Arrange / Act
+    const result = formatVixyChangeContext(-2.13)
+
+    // Assert
+    expect(result).toBe('VIX proxy (VIXY, directional only — not the real VIX level): -2.13% today')
   })
 })

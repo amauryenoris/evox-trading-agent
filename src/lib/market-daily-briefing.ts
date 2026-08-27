@@ -11,6 +11,17 @@ export interface SpxSnapshot {
   spx_regime: string | null
 }
 
+export function computeVixyChangePct(bars: { t: string; c: number }[]): number | null {
+  // Same anti-lookahead convention as sector-rotation.ts's relativeReturnPct():
+  // bars.length - 2 = yesterday's confirmed close (today's partial bar excluded).
+  if (bars.length < 3) return null
+  const refIndex = bars.length - 2
+  const currentClose = bars[refIndex].c
+  const pastClose = bars[refIndex - 1].c
+  if (pastClose === 0) return null
+  return ((currentClose - pastClose) / pastClose) * 100
+}
+
 const RETRYABLE_STATUS_CODES = new Set([429, 529])
 
 // Duplicated from claude-agent.ts's private callClaudeWithRetry() — that
@@ -69,12 +80,19 @@ export function formatMacroSentimentSummary(summary: MacroSentimentSummary): str
   return `MACRO NEWS SENTIMENT (last 12h): ${summary.bullishCount} bullish, ${summary.bearishCount} bearish, ${summary.neutralCount} neutral`
 }
 
+export function formatVixyChangeContext(vixyChangePct: number | null): string {
+  if (vixyChangePct === null) return 'VIX proxy (VIXY): no data'
+  const sign = vixyChangePct >= 0 ? '+' : ''
+  return `VIX proxy (VIXY, directional only — not the real VIX level): ${sign}${vixyChangePct.toFixed(2)}% today`
+}
+
 export function buildBriefingRecord(
   briefingDate: string,
   spxSnapshot: SpxSnapshot,
   sectorRotation: SectorRotationSnapshot,
   macroSentiment: MacroSentimentSummary,
-  narrative: string
+  narrative: string,
+  vixyChangePct: number | null
 ): Omit<MarketDailyBriefing, 'id' | 'created_at'> {
   return {
     briefing_date: briefingDate,
@@ -89,7 +107,7 @@ export function buildBriefingRecord(
     macro_sentiment_bearish_count: macroSentiment.bearishCount,
     macro_sentiment_neutral_count: macroSentiment.neutralCount,
     narrative,
-    vix_proxy_change: null,
+    vix_proxy_change: vixyChangePct,
     upcoming_events_note: null,
   }
 }
@@ -97,7 +115,8 @@ export function buildBriefingRecord(
 export async function synthesizeDailyBriefingNarrative(
   spxSnapshot: SpxSnapshot,
   sectorRotation: SectorRotationSnapshot,
-  macroSentiment: MacroSentimentSummary
+  macroSentiment: MacroSentimentSummary,
+  vixyChangePct: number | null
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set')
@@ -110,7 +129,10 @@ ${formatSpxSnapshotContext(spxSnapshot)}
 ${formatSectorRotationSnapshot(sectorRotation)}
 
 --- MACRO SENTIMENT ---
-${formatMacroSentimentSummary(macroSentiment)}`
+${formatMacroSentimentSummary(macroSentiment)}
+
+--- VIX PROXY ---
+${formatVixyChangeContext(vixyChangePct)}`
 
   const client = new Anthropic({ apiKey })
   const response = await callClaudeWithRetry(client, {
@@ -133,6 +155,7 @@ export async function generateDailyBriefing(
   spxSnapshot: SpxSnapshot,
   sectorRotation: SectorRotationSnapshot,
   macroSentiment: MacroSentimentSummary,
+  vixyChangePct: number | null,
   synthesize: typeof synthesizeDailyBriefingNarrative = synthesizeDailyBriefingNarrative
 ): Promise<string> {
   const today = new Date().toISOString().split('T')[0]
@@ -143,9 +166,9 @@ export async function generateDailyBriefing(
     return existing.narrative
   }
 
-  const narrative = await synthesize(spxSnapshot, sectorRotation, macroSentiment)
+  const narrative = await synthesize(spxSnapshot, sectorRotation, macroSentiment, vixyChangePct)
 
-  await upsertMarketDailyBriefing(buildBriefingRecord(today, spxSnapshot, sectorRotation, macroSentiment, narrative))
+  await upsertMarketDailyBriefing(buildBriefingRecord(today, spxSnapshot, sectorRotation, macroSentiment, narrative, vixyChangePct))
   console.log(`[BRIEFING] Synthesized and persisted new briefing for ${today}`)
 
   return narrative
