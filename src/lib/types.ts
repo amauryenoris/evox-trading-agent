@@ -190,7 +190,7 @@ export interface OpenPositionContext {
   patternIdsUsed: string[]
   stopOrderId?: string | null
   trailingStopOrderId?: string | null
-  signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+  signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null
   highSinceEntry?: number | null
   trailingStop?: number | null
   trailingActivated?: boolean
@@ -207,7 +207,7 @@ export interface TradeEvaluation {
   pnlUSD: number
   pnlPct: number
   holdingDays: number
-  signal_type?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+  signal_type?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null
   spxPrice?:  number | null
   spxSma50?:  number | null
   spxSma200?: number | null
@@ -370,7 +370,7 @@ export interface NearMissEntry {
   initial_regime: string
   indicators_snapshot: Record<string, unknown>
   status: 'ACTIVE' | 'TRIGGERED' | 'EXPIRED' | 'CANCELLED'
-  signal_type?: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null
+  signal_type?: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null
   near_miss_type?: 'NEAR_MISS' | 'BLOCKED_BY_GATE'
   blocked_reason?: 'max_positions' | 'max_buys' | 'outranked' | null
   latest_zscore?: number

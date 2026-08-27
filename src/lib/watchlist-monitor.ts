@@ -19,7 +19,7 @@ export async function detectNearMisses(
   symbol: string,
   indicators: TechnicalIndicators,
   thresholdMap: ThresholdMap,
-  blockedByGate?: { wouldExecute: boolean; reason: 'max_positions' | 'max_buys' | 'outranked'; signalType: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null }
+  blockedByGate?: { wouldExecute: boolean; reason: 'max_positions' | 'max_buys' | 'outranked'; signalType: 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null }
 ): Promise<void> {
   await cleanupExpiredNearMisses()
   console.log('[NEAR-MISS] Cleaned up expired entries')

@@ -19,6 +19,7 @@ export function getZBucket(
     | 'TREND_PULLBACK'
     | 'TREND_ZLE05'
     | 'EMA_RECLAIM'
+    | 'TREND_PULLBACK_3DAY'
     | null
 ): string | null {
   if (z === null || !Number.isFinite(z)) return null

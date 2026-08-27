@@ -240,6 +240,7 @@ export async function enforceExitRules(
       TREND_PULLBACK: 0.06,
       TREND_ZLE05:    0.03,
       EMA_RECLAIM:    0.04,
+      TREND_PULLBACK_3DAY: 0.06,
       default:        0.05,
     }
     const ATR_MULT: Record<string, number> = {
@@ -248,6 +249,7 @@ export async function enforceExitRules(
       TREND_PULLBACK: 1.5,
       TREND_ZLE05:    1.0,
       EMA_RECLAIM:    1.0,
+      TREND_PULLBACK_3DAY: 1.5,
       default:        1.2,
     }
     const MIN_DISTANCE_PCT = 0.015
@@ -1542,6 +1544,25 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       const meanReversionSetup = meanReversionSignal && mrRangingAdxGateOk
 
+      // TREND_PULLBACK_3DAY: price > SMA200 (uptrend) + 3 consecutive prior down-closes.
+      // Independent, pure price-action gate — no z-score/ADX/MACD condition (backtested rule).
+      const trendPullback3DayUptrendOk =
+        indicators.prevClose != null &&
+        indicators.sma200 != null &&
+        indicators.prevClose > indicators.sma200
+
+      const trendPullback3DayStreakOk =
+        indicators.prevClose != null &&
+        indicators.closeMinus2 != null &&
+        indicators.closeMinus3 != null &&
+        indicators.closeMinus4 != null &&
+        indicators.prevClose < indicators.closeMinus2 &&
+        indicators.closeMinus2 < indicators.closeMinus3 &&
+        indicators.closeMinus3 < indicators.closeMinus4
+
+      const trendPullback3DaySetup =
+        trendPullback3DayUptrendOk && trendPullback3DayStreakOk
+
       // TREND_PULLBACK: uptrend structure, z-score <= 0, momentum + quality confirmed
       const trendPullbackMomentumOk =
         macdHistogram !== null &&
@@ -1676,7 +1697,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         )
       }
 
-      const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || trendZLE05Setup || emaReclaimSetup
+      const setup_detected = isAutoEntry || meanReversionSetup || trendSetup || trendZLE05Setup || emaReclaimSetup || trendPullback3DaySetup
       if (isAutoEntry && !meanReversionSetup && !trendSetup && !trendZLE05Setup && !emaReclaimSetup) {
         console.log(`[WATCHLIST] ${symbol}: auto-entry bypassing setup gate (monitored from near-miss watchlist)`)
       }
@@ -1685,7 +1706,9 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const trendSetupRejected = isTrendStructure && ema50Value > 0 && ema200Value > 0 && zScore > 1.25
 
       // Computed signal type — used for sizing, context save, and near-miss tagging
-      const signalType = meanReversionSetup
+      const signalType = trendPullback3DaySetup
+        ? 'TREND_PULLBACK_3DAY'
+        : meanReversionSetup
         ? 'MEAN_REVERSION'
         : trendSetup
         ? 'TREND_PULLBACK'
