@@ -8,9 +8,10 @@ import {
 } from '../claude-agent'
 import type { AlpacaOrder } from '../types'
 
-const { mockSubmitStopOrder, mockGetOrder } = vi.hoisted(() => ({
+const { mockSubmitStopOrder, mockGetOrder, mockCancelOrder } = vi.hoisted(() => ({
   mockSubmitStopOrder: vi.fn(),
   mockGetOrder: vi.fn(),
+  mockCancelOrder: vi.fn(),
 }))
 
 vi.mock('../alpaca', async (importOriginal) => {
@@ -19,6 +20,7 @@ vi.mock('../alpaca', async (importOriginal) => {
     ...actual,
     submitStopOrder: mockSubmitStopOrder,
     getOrder: mockGetOrder,
+    cancelOrder: mockCancelOrder,
   }
 })
 
@@ -174,21 +176,59 @@ describe('resolveIocFinalState', () => {
     consoleSpy.mockRestore()
   })
 
-  it('logs IOC_STATE_UNRESOLVED when re-fetched status is neither filled nor canceled', async () => {
-    // Arrange
+  it('polling exhausts without a terminal status — forces cancel and returns the final post-cancel getOrder() result', async () => {
+    // Arrange — order stays pending_new for all 4 poll attempts; the final
+    // post-cancel getOrder() call is the one that returns a terminal state.
     const syncOrder = makeOrder({ id: 'ord-4', symbol: 'XOM', status: 'new', filled_qty: '0' })
-    const resolvedOrder = makeOrder({ id: 'ord-4', symbol: 'XOM', status: 'pending_new', filled_qty: '0' })
-    mockGetOrder.mockResolvedValueOnce(resolvedOrder)
+    const pendingOrder = makeOrder({ id: 'ord-4', symbol: 'XOM', status: 'pending_new', filled_qty: '0' })
+    const canceledOrder = makeOrder({ id: 'ord-4', symbol: 'XOM', status: 'canceled', filled_qty: '0' })
+    mockGetOrder
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(canceledOrder)
     const consoleSpy = vi.spyOn(console, 'log')
 
     // Act
     const resultPromise = resolveIocFinalState(syncOrder, 0)
     await vi.runAllTimersAsync()
-    await resultPromise
+    const result = await resultPromise
 
-    // Assert
+    // Assert — polled exactly maxAttempts (4) times, then canceled, then one final re-fetch
+    expect(mockGetOrder).toHaveBeenCalledTimes(5)
+    expect(mockCancelOrder).toHaveBeenCalledExactlyOnceWith('ord-4')
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('IOC_STATE_UNRESOLVED'))
+    expect(result).toBe(canceledOrder)
     consoleSpy.mockRestore()
+  })
+
+  it('cancelOrder throws during forced resolution — still returns the final getOrder() result (does not propagate the error)', async () => {
+    // Arrange
+    const syncOrder = makeOrder({ id: 'ord-6', symbol: 'META', status: 'new', filled_qty: '0' })
+    const pendingOrder = makeOrder({ id: 'ord-6', symbol: 'META', status: 'accepted', filled_qty: '0' })
+    const canceledOrder = makeOrder({ id: 'ord-6', symbol: 'META', status: 'canceled', filled_qty: '0' })
+    mockGetOrder
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(canceledOrder)
+    mockCancelOrder.mockRejectedValueOnce(new Error('order already terminal'))
+    const consoleWarnSpy = vi.spyOn(console, 'warn')
+
+    // Act
+    const resultPromise = resolveIocFinalState(syncOrder, 0)
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    // Assert — cancelOrder failure is caught and logged, not thrown; final getOrder() still wins
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('cancelOrder failed'),
+      expect.any(Error)
+    )
+    expect(result).toBe(canceledOrder)
+    consoleWarnSpy.mockRestore()
   })
 
   it('returns re-fetched partially_filled qty when sync returned 0 and re-fetch shows partial fill', async () => {

@@ -965,34 +965,45 @@ export async function submitStopLimitWithRetry(
 
 // Alpaca's IOC sync response is not guaranteed to reflect the final fill —
 // the paper matching engine can resolve the order after the response is sent.
-// Re-fetch once after a short delay whenever the sync response isn't
-// definitively filled, to avoid orphan positions with no context or stop.
+// Poll a bounded number of times whenever the sync response isn't definitively
+// filled, to avoid orphan positions with no context or stop. If the order still
+// hasn't reached a terminal status after polling, force resolution via cancel —
+// an ambiguous snapshot is never returned as if it were final.
 export async function resolveIocFinalState(
   syncOrder: AlpacaOrder,
-  delayMs = 2000
+  delayMs = 1500,
+  maxAttempts = 4
 ): Promise<AlpacaOrder> {
   const syncFilled = parseInt(syncOrder.filled_qty, 10)
   if (syncOrder.status === 'filled' && syncFilled > 0) {
     return syncOrder
   }
 
-  await new Promise(r => setTimeout(r, delayMs))
-  const resolved = await getOrder(syncOrder.id)
-  const resolvedFilled = parseInt(resolved.filled_qty, 10)
+  let order = syncOrder
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise(r => setTimeout(r, delayMs))
+    order = await getOrder(syncOrder.id)
+    const filled = parseInt(order.filled_qty, 10)
 
-  if (syncFilled === 0 && resolvedFilled > 0) {
-    console.log(
-      `[ORDER] ${resolved.symbol} ${IOC_LATE_FILL}: sync=0 final=${resolvedFilled}`
-    )
+    if (order.status === 'filled' || order.status === 'canceled') {
+      if (syncFilled === 0 && filled > 0) {
+        console.log(
+          `[ORDER] ${order.symbol} ${IOC_LATE_FILL}: sync=0 final=${filled}`
+        )
+      }
+      return order
+    }
   }
 
-  if (resolved.status !== 'filled' && resolved.status !== 'canceled') {
-    console.log(
-      `[ORDER] ${resolved.symbol} IOC_STATE_UNRESOLVED: status=${resolved.status} filled=${resolvedFilled} after re-fetch`
-    )
+  console.log(
+    `[ORDER] ${order.symbol} IOC_STATE_UNRESOLVED after ${maxAttempts} re-fetches — forcing cancel to obtain definitive final state`
+  )
+  try {
+    await cancelOrder(syncOrder.id)
+  } catch (err) {
+    console.warn(`[ORDER] ${order.symbol} cancelOrder failed during forced IOC resolution:`, err)
   }
-
-  return resolved
+  return getOrder(syncOrder.id)
 }
 
 export async function runAgentCycle(): Promise<AgentCycleResult> {
@@ -2027,7 +2038,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       const syncOrder = await submitLimitOrder(symbol, qty, 'buy', limitPrice)
                       const order = await resolveIocFinalState(syncOrder)
                       const filledQty = parseInt(order.filled_qty, 10)
-                      console.log(`[ORDER] ${symbol} limit IOC BUY @ $${limitPrice} status: ${order.status} filled: ${filledQty}/${qty} spread: ${quote.spreadBps}bps`)
+                      console.log(`[ORDER] ${symbol} limit IOC BUY @ $${limitPrice} id: ${order.id} status: ${order.status} filled: ${filledQty}/${qty} spread: ${quote.spreadBps}bps`)
 
                       if (filledQty === 0) {
                         console.log(`[ORDER] ${symbol} IOC not filled — 0 shares filled at $${limitPrice}`)
@@ -2207,7 +2218,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         const syncOrder = await submitLimitOrder(best.symbol, best.qty, 'buy', rankingQuote.ask)
         const order = await resolveIocFinalState(syncOrder)
         const filledQty = parseInt(order.filled_qty, 10)
-        console.log(`[ORDER] ${best.symbol} limit IOC BUY @ $${rankingQuote.ask} status: ${order.status} filled: ${filledQty}/${best.qty} spread: ${rankingQuote.spreadBps}bps`)
+        console.log(`[ORDER] ${best.symbol} limit IOC BUY @ $${rankingQuote.ask} id: ${order.id} status: ${order.status} filled: ${filledQty}/${best.qty} spread: ${rankingQuote.spreadBps}bps`)
 
         if (filledQty === 0) {
           console.log(`[ORDER] ${best.symbol} IOC not filled — 0 shares filled at $${rankingQuote.ask}`)
