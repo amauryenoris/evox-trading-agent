@@ -790,7 +790,10 @@ Note: z 0.5–1.25 is the expanded bucket — valid continuation signal when ADX
 This is NOT mean-reversion. This is trend resumption after a pullback.
 Edge: Confirmed EMA50 cross from below (prevClose <= ema50Prev, currentPrice > ema50), price below fair value (z < 0), EMA50 slope rising, minimum 0.2% distance above EMA50.
 Key indicators: cross confirmation, EMA50 slope direction, z-score proximity to fair value, momentum recovery.
-Note: best setups have EMA50 > EMA200 (structural uptrend intact).` : ''}
+Note: best setups have EMA50 > EMA200 (structural uptrend intact).` : ''}${signalType === 'TREND_PULLBACK_3DAY' ? `TREND_PULLBACK_3DAY: Price pulled back for 3 consecutive days within an established uptrend, entering on the 4th day.
+Edge: price > SMA200 (uptrend filter) AND the last 3 known daily closes each closed lower than the day before (a 3-day down-streak). This is a pure price-action setup — it does NOT use z-score, ADX, or MACD as entry conditions, unlike this system's other setups. A weak or negative Kalman z-score reading here is expected and is NOT a disqualifying signal for this specific setup — do not compare it against MEAN_REVERSION-style entry thresholds, which do not apply here.
+Key indicators: SMA200 trend filter, the depth/consistency of the 3-day pullback, and current price's relationship to SMA5 (the exit trigger — a close back above SMA5 signals the pullback has ended).
+Your analysis should focus on whether the broader uptrend and macro/sector context support this pullback resolving upward, not on statistical dislocation from fair value.` : ''}
 
 Your analysis should focus on whether the conditions supporting this specific setup are strong or weak.` : 'No specific setup was detected — analyze why.'}
 
