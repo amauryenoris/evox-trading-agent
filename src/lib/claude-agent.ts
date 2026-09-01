@@ -10,6 +10,7 @@ import {
   submitStopLimitOrder,
   cancelOrder,
   getOrder,
+  getOrders,
   closePosition,
   getLatestSellOrder,
   normalizeTimestampPrecision,
@@ -196,6 +197,78 @@ export async function enforceExitRules(
     const zScore = ind.kalman.zScore
     const pnlPct = parseFloat(position.unrealized_plpc)
     const ctx = openContexts.find((c) => c.symbol === position.symbol)
+
+    if (!ctx) {
+      let stopOrderIdForBackfill: string | undefined
+      try {
+        const openOrders = await getOrders('open', 100)
+        const alreadyProtected = openOrders.some(
+          (o) => o.symbol === position.symbol && o.side === 'sell'
+        )
+
+        if (!alreadyProtected) {
+          const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
+          const avgEntryPrice = parseFloat(position.avg_entry_price)
+          const qty = parseInt(position.qty, 10)
+          const stopPrice = avgEntryPrice * (1 - stopLossPct)
+          const { stopOrderId, failureReason } = await submitStopWithRetry(position.symbol, qty, stopPrice)
+          stopOrderIdForBackfill = stopOrderId
+          if (failureReason) {
+            console.error(`[RECONCILE] ${position.symbol} orphaned position found, but protective stop submission FAILED: ${failureReason}`)
+          }
+        } else {
+          console.log(`[RECONCILE] ${position.symbol} orphaned position already has an existing sell order — skipping new stop submission`)
+        }
+
+        let buyTimestamp = timestamp
+        try {
+          const filledOrders = await getOrders('filled', 200)
+          const matchingBuys = filledOrders
+            .filter((o) => o.symbol === position.symbol && o.side === 'buy')
+            .sort((a, b) => new Date(b.filled_at ?? 0).getTime() - new Date(a.filled_at ?? 0).getTime())
+          if (matchingBuys.length > 0 && matchingBuys[0].filled_at) {
+            buyTimestamp = matchingBuys[0].filled_at
+          } else {
+            console.warn(`[RECONCILE] ${position.symbol} no matching filled buy order found — using current cycle timestamp as buyTimestamp fallback`)
+          }
+        } catch (err) {
+          console.warn(`[RECONCILE] ${position.symbol} failed to derive buyTimestamp from order history — using current cycle timestamp:`, err)
+        }
+
+        await saveOpenPositionContext({
+          symbol: position.symbol,
+          buyTimestamp,
+          buyPrice: parseFloat(position.avg_entry_price),
+          quantity: parseInt(position.qty, 10),
+          indicators: ind,
+          claudeReasoning: `[AUTO-RECONCILED] Position found open on Alpaca with no matching context row — backfilled automatically by the orphaned-position safety net.`,
+          patternIdsUsed: [],
+          stopOrderId: stopOrderIdForBackfill,
+          signalType: null,
+        })
+
+        await insertAgentLogEntry({
+          id: randomUUID(),
+          timestamp,
+          symbol: position.symbol,
+          decision: {
+            action: 'HOLD',
+            symbol: position.symbol,
+            quantity: 0,
+            reasoning: `EXIT-RULES: orphaned position reconciled — ${alreadyProtected ? 'existing protective order found' : stopOrderIdForBackfill ? `new stop order ${stopOrderIdForBackfill} submitted` : 'stop submission FAILED, position may still be naked'}, context backfilled with buyTimestamp=${buyTimestamp}`,
+            confidence: 0,
+          },
+          indicators: ind,
+          portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+          orderExecuted: false,
+          error: 'orphaned_position_reconciled',
+        }).catch((err) => console.error(`[EXIT-RULES] Failed to log orphaned-position alert for ${position.symbol}:`, err))
+      } catch (err) {
+        console.error(`[RECONCILE] ${position.symbol} orphaned-position reconciliation failed unexpectedly:`, err)
+      }
+      continue
+    }
+
     const daysOpen = ctx ? getTradingDaysOpen(ctx.buyTimestamp) : 0
     const signalType = ctx?.signalType ?? null
 
