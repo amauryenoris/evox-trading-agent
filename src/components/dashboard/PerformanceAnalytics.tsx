@@ -90,6 +90,7 @@ interface PerformanceData {
     trendPullback?: SignalStat
     trendZLE05?: SignalStat
     emaReclaim: SignalStat
+    trendPullback3Day?: SignalStat
   }
   best?: { symbol: string; pct: number; pnl: number } | null
   worst?: { symbol: string; pct: number; pnl: number } | null
@@ -185,6 +186,15 @@ export function PerformanceAnalytics() {
       avgPnL:       data.signalTypeBreakdown.trendZLE05?.avgPnlPct    ?? 0,
       profitFactor: data.signalTypeBreakdown.trendZLE05?.profitFactor ?? 0,
       expectancy:   data.signalTypeBreakdown.trendZLE05?.expectancy   ?? 0,
+      color: 'green' as SigColor,
+    },
+    {
+      type: 'TREND_PULLBACK_3DAY', label: 'Trend PB 3-Day',
+      trades:       data.signalTypeBreakdown.trendPullback3Day?.count        ?? 0,
+      winRate:      data.signalTypeBreakdown.trendPullback3Day?.winRate      ?? 0,
+      avgPnL:       data.signalTypeBreakdown.trendPullback3Day?.avgPnlPct    ?? 0,
+      profitFactor: data.signalTypeBreakdown.trendPullback3Day?.profitFactor ?? 0,
+      expectancy:   data.signalTypeBreakdown.trendPullback3Day?.expectancy   ?? 0,
       color: 'green' as SigColor,
     },
     ...(data.signalTypeBreakdown.emaReclaim.count > 0 ? [{

@@ -62,12 +62,14 @@ export async function GET(request: Request) {
     )
     const trendZLE05Trades = closedTrades.filter((t) => t.signal_type === 'TREND_ZLE05')
     const emaReclaimTrades = closedTrades.filter((t) => t.signal_type === 'EMA_RECLAIM')
+    const trendPullback3DayTrades = closedTrades.filter((t) => t.signal_type === 'TREND_PULLBACK_3DAY')
     const signalTypeBreakdown = {
       meanReversion: signalStats(mrTrades),
       trend:         signalStats([...trendPullbackTrades, ...trendZLE05Trades]), // backward compat — do not remove
       trendPullback: signalStats(trendPullbackTrades),
       trendZLE05:    signalStats(trendZLE05Trades),
       emaReclaim:    signalStats(emaReclaimTrades),
+      trendPullback3Day: signalStats(trendPullback3DayTrades),
     }
 
     const last10 = closedTrades
