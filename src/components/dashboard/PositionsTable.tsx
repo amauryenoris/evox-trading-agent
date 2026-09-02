@@ -10,6 +10,7 @@ const ACTIVATION_PCT: Record<string, number> = {
   TREND_PULLBACK: 0.06,
   TREND_ZLE05:    0.03,
   EMA_RECLAIM:    0.04,
+  TREND_PULLBACK_3DAY: 0.06,
 }
 
 // ADAPTED: MEAN_REVERSION → 'MR' because ui.tsx SignalBadge map uses shortcodes
