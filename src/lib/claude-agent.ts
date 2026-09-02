@@ -672,7 +672,7 @@ function smaLabel(price: number, sma: number | null, period: number): string {
   return `$${sma.toFixed(2)} (${price > sma ? '+' : ''}${pct}% — ${price > sma ? 'ABOVE' : 'BELOW'} SMA${period})`
 }
 
-function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
+function kalmanLabel(kalman: TechnicalIndicators['kalman'], zscoreAnnotation?: string): string {
   if (!kalman) return 'N/A — insufficient data'
   const dir = kalman.forecastError >= 0 ? 'ABOVE' : 'BELOW'
   const signalMap = {
@@ -684,7 +684,7 @@ function kalmanLabel(kalman: TechnicalIndicators['kalman']): string {
     `Fair Value Estimate: $${kalman.stateEstimate.toFixed(2)}`,
     `Forecast Error e(t): ${kalman.forecastError >= 0 ? '+' : ''}${kalman.forecastError.toFixed(4)} (price is ${dir} fair value)`,
     `Error Std Dev Q(t): ${kalman.errorStdDev.toFixed(4)}`,
-    `Z-Score: ${kalman.zScore.toFixed(3)} (entry threshold: < ${ZSCORE_ENTRY_THRESHOLD} | exit threshold: >= -0.8)`,
+    `Z-Score: ${kalman.zScore.toFixed(3)}${zscoreAnnotation ? ` (${zscoreAnnotation})` : ''}`,
     `Signal: ${signalMap[kalman.signal]}`,
   ].join('\n')
 }
@@ -731,7 +731,7 @@ Current Price: $${indicators.currentPrice.toFixed(2)}
 Volume: ${indicators.volume.toLocaleString()}
 
 --- PRIMARY SIGNAL: KALMAN FILTER (E.P. Chan) ---
-${kalmanLabel(indicators.kalman)}
+${kalmanLabel(indicators.kalman, signalType === 'MEAN_REVERSION' ? `entry threshold: < ${ZSCORE_ENTRY_THRESHOLD} | exit threshold: >= -0.8` : undefined)}
 
 --- MARKET REGIME ---
 ADX(14): ${indicators.adx?.toFixed(2) ?? 'N/A'} ${indicators.adx !== null ? (indicators.adx > 30 ? '(TRENDING — strong directional move)' : indicators.adx >= 20 ? '(TRANSITION — regime unclear)' : '(RANGING — weak trend)') : ''}
@@ -771,7 +771,7 @@ ${learningContext}
 ${watchlistContext ? `
 --- NEAR-MISS WATCHLIST CONTEXT ---
 ${watchlistContext}
-` : ''}${effectiveThreshold !== undefined && effectiveThreshold !== ZSCORE_ENTRY_THRESHOLD ? `
+` : ''}${signalType === 'MEAN_REVERSION' && effectiveThreshold !== undefined && effectiveThreshold !== ZSCORE_ENTRY_THRESHOLD ? `
 --- NEWS-ADJUSTED THRESHOLD ---
 Entry threshold for this cycle: ${effectiveThreshold.toFixed(3)} (base: ${ZSCORE_ENTRY_THRESHOLD}, news adjustment: ${(effectiveThreshold - ZSCORE_ENTRY_THRESHOLD).toFixed(3)})
 ` : ''}
