@@ -124,6 +124,8 @@ interface SignalTypeBreakdown {
   trend: SignalTypeStats
   trendPullback?: SignalTypeStats
   trendZLE05?: SignalTypeStats
+  emaReclaim?: SignalTypeStats
+  trendPullback3Day?: SignalTypeStats
 }
 
 interface RegimeDistribution {
@@ -321,6 +323,8 @@ function calculateDiagnostics(
     ['TREND', 'TREND_PULLBACK', 'PULLBACK_EMA50', 'TREND_FOLLOWING'].includes(e.signal_type ?? '')
   )
   const trendZLE05Trades = weekEvals.filter((e) => e.signal_type === 'TREND_ZLE05')
+  const emaReclaimTrades = weekEvals.filter((e) => e.signal_type === 'EMA_RECLAIM')
+  const trendPullback3DayTrades = weekEvals.filter((e) => e.signal_type === 'TREND_PULLBACK_3DAY')
 
   return {
     holdsBreakdown: {
@@ -357,6 +361,8 @@ function calculateDiagnostics(
       trend:         buildSignalStats([...trendPullbackTrades, ...trendZLE05Trades]), // backward compat — do not remove
       trendPullback: buildSignalStats(trendPullbackTrades),
       trendZLE05:    buildSignalStats(trendZLE05Trades),
+      emaReclaim:    buildSignalStats(emaReclaimTrades),
+      trendPullback3Day: buildSignalStats(trendPullback3DayTrades),
     },
   }
 }

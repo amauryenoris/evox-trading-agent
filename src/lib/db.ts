@@ -185,7 +185,7 @@ function mapRowToOpenPositionContext(row: Record<string, unknown>): OpenPosition
     patternIdsUsed: (row.pattern_ids as string[]) ?? [],
     stopOrderId: (row.stop_order_id as string | null) ?? undefined,
     trailingStopOrderId: (row.trailing_stop_order_id as string | null) ?? undefined,
-    signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
+    signalType: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null) ?? null,
     highSinceEntry: (row.high_since_entry as number | null) ?? null,
     trailingStop: (row.trailing_stop as number | null) ?? null,
     trailingActivated: (row.trailing_activated as boolean) ?? false,
@@ -313,7 +313,7 @@ export async function getTradeEvaluations(limit = 200, startDate?: string): Prom
         kalman: raw.indicators_at_buy?.kalman ?? raw.kalman ?? null,
       }
     })(),
-    signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | null) ?? null,
+    signal_type: (row.signal_type as 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null) ?? null,
     stateFingerprint: row.state_fingerprint ?? null,
     claudePostMortem: row.buy_reasoning ?? '',
     lessonsLearned: row.lessons ?? [],

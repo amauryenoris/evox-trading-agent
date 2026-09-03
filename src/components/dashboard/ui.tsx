@@ -90,6 +90,7 @@ export function SignalBadge({ signal, size = 'sm' }: SignalBadgeProps) {
     PULLBACK_EMA50:  { tone: 'green',  label: 'Trend PB' },
     TREND_PULLBACK:  { tone: 'green',  label: 'Trend PB' },
     TREND_ZLE05:     { tone: 'green',  label: 'Trend ZLE' },
+    TREND_PULLBACK_3DAY: { tone: 'green', label: 'Trend PB 3D' },
     TREND_ZGT05:     { tone: 'amber',  label: 'TREND ZGT' },
     EMA_RECLAIM:     { tone: 'purple', label: 'EMA RECLAIM' },
     NEWS_FILTER:     { tone: 'purple', label: 'NEWS' },
