@@ -398,6 +398,7 @@ export type ExitReason =
   | 'STOP_LOSS'
   | 'TIME_STOP'
   | 'EMA_FAILURE'
+  | 'SMA5_RECLAIM'
   | 'UNKNOWN'
 
 export type EnforceExitResult = {

@@ -138,6 +138,7 @@ function computeCooldownUntil(
   switch (reason) {
     case 'Z_SCORE_EXIT':
     case 'PROFIT_TARGET':
+    case 'SMA5_RECLAIM':
       return endOfTradingDay
     case 'TRAILING_STOP':
     case 'EMA_FAILURE':
@@ -173,6 +174,7 @@ export async function enforceExitRules(
     if (r.includes('FAIR_VALUE'))       return 'Z_SCORE_EXIT'
     if (r.includes('FELL_BELOW_EMA50')) return 'EMA_FAILURE'
     if (r.includes('TRAILING_STOP'))    return 'TRAILING_STOP'
+    if (r.includes('CLOSED_ABOVE_SMA5')) return 'SMA5_RECLAIM'
     console.warn(`[EXIT_REASON_UNMATCHED] raw="${reason}"`)
     return 'UNKNOWN'
   }
