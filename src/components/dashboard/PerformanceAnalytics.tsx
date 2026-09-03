@@ -257,7 +257,6 @@ export function PerformanceAnalytics() {
                   <div className="flex items-center justify-between mb-2.5">
                     <div className="flex items-center gap-2.5">
                       <SignalBadge signal={s.type} />
-                      <span className="text-[11px] text-mute2">{s.label}</span>
                     </div>
                     <span className="text-[10.5px] text-muted num">{s.trades} trades</span>
                   </div>
