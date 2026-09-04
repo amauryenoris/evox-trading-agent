@@ -1,0 +1,38 @@
+name: Daily Bars Sync
+
+on:
+  schedule:
+    - cron: "0 21 * * 1-5"   # 5:00 PM ET (EDT; adjust if this project's other crons account for EST separately)
+  workflow_dispatch:
+
+concurrency:
+  group: daily-bars-sync
+  cancel-in-progress: false
+
+jobs:
+  daily-bars-sync:
+    name: Daily Bars Sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+      ALPACA_DATA_URL: ${{ secrets.ALPACA_DATA_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      RUN_DAILY_BARS_SYNC: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - name: Security audit
+        run: npm audit --audit-level=critical
+      - run: npm run daily-bars-sync

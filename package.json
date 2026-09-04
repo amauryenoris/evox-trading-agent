@@ -12,7 +12,8 @@
     "cycle": "tsx scripts/run-cycle.ts",
     "exit-only": "tsx src/scripts/exit-only.ts",
     "report": "tsx scripts/generate-weekly-report.ts",
-    "health-check": "tsx scripts/position-health-check.ts"
+    "health-check": "tsx scripts/position-health-check.ts",
+    "daily-bars-sync": "tsx scripts/daily-bars-sync.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
