@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS daily_bars (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  bar_date DATE NOT NULL,
+  open NUMERIC NOT NULL,
+  high NUMERIC NOT NULL,
+  low NUMERIC NOT NULL,
+  close NUMERIC NOT NULL,
+  volume BIGINT NOT NULL,
+  vwap NUMERIC,
+  trade_count INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (symbol, bar_date)
+);
+
+ALTER TABLE daily_bars ENABLE ROW LEVEL SECURITY;
