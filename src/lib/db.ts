@@ -70,6 +70,7 @@ export async function getAgentLog(limit = 500): Promise<AgentLogEntry[]> {
     indicators: (() => {
       const raw = row.indicators ?? {}
       return {
+        ...raw,
         rsi: raw.rsi ?? null,
         macd: raw.macd ?? null,
         bollingerBands: raw.bollingerBands ?? null,
@@ -118,6 +119,7 @@ export async function getAgentLogPrioritized(): Promise<AgentLogEntry[]> {
     indicators: (() => {
       const raw = (row.indicators as Record<string, unknown>) ?? {}
       return {
+        ...raw,
         rsi: raw.rsi as number | null ?? null,
         macd: raw.macd as AgentLogEntry['indicators']['macd'] ?? null,
         bollingerBands: raw.bollingerBands as AgentLogEntry['indicators']['bollingerBands'] ?? null,
