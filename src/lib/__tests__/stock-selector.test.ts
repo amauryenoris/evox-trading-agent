@@ -299,7 +299,7 @@ describe('selectStocksForAnalysis — candidateScores parsing (parallel observab
     expect(result).toEqual(['SYM00'])
   })
 
-  it('sets max_tokens to 3000 on the Claude API call', async () => {
+  it('sets max_tokens to 8000 on the Claude API call', async () => {
     // Arrange
     const candidates = manyPoolACandidates(3)
     mockClaudeSelection(['SYM00'])
@@ -309,7 +309,7 @@ describe('selectStocksForAnalysis — candidateScores parsing (parallel observab
 
     // Assert
     expect(mockMessagesCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ max_tokens: 3000 })
+      expect.objectContaining({ max_tokens: 8000 })
     )
   })
 })

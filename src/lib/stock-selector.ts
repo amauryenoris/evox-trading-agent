@@ -20,6 +20,7 @@ import { INSTRUMENT_BLACKLIST } from './config'
 const MAX_DAILY_CHANGE_PCT = 15
 const HIGH_RELATIVE_VOLUME_THRESHOLD = 1.5  // 1.5x the candidate batch's average volume — starting value, not yet validated with real data, see [GAP_VOL_EXCEPTION] logging
 const MAX_POOL_A_CANDIDATES = 15
+const SELECTION_MAX_TOKENS = 8000  // headroom for a full candidate_scores object per Pool A+B candidate (~30) — 3000 caused JSON truncation, confirmed 2026-09-07
 
 // Default sector watchlist — overridable via SECTOR_WATCHLIST env var
 const DEFAULT_SECTOR_WATCHLIST = [
@@ -165,7 +166,7 @@ Select 6-8 symbols for detailed technical analysis. Must include at least 1 from
   const client = new Anthropic({ apiKey })
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 3000,
+    max_tokens: SELECTION_MAX_TOKENS,
     system: SELECTION_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   })
