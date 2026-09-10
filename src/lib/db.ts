@@ -6,6 +6,7 @@ import type {
   TradingPattern,
   SelectionDecision,
   SelectionEvaluation,
+  SelectionFailure,
   NewsEvent,
   NewsClassificationRecord,
   NearMissEntry,
@@ -439,6 +440,19 @@ export async function getSelectionEvaluations(limit = 100): Promise<SelectionEva
     pnlPct: row.pnl_pct ?? 0,
     lesson: row.lesson ?? '',
   }))
+}
+
+// ============================================================
+// SELECTION FAILURES
+// ============================================================
+
+export async function insertSelectionFailure(failure: SelectionFailure): Promise<void> {
+  const db = getClient()
+  const { error } = await db.from('selection_failures').insert({
+    failure_step: failure.failureStep,
+    failure_detail: failure.failureDetail,
+  })
+  if (error) throw new Error(`Failed to insert selection failure: ${error.message}`)
 }
 
 // ============================================================

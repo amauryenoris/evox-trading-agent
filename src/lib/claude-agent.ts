@@ -33,7 +33,7 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
-import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, tradeEvaluationExists } from './db'
+import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, tradeEvaluationExists, insertSelectionFailure } from './db'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome, SelectionStepError } from './stock-selector'
 import { newsIntelligenceLayer, getAggregateMacroSentiment } from './news-intelligence'
@@ -1164,8 +1164,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         `Dynamic selection failed at step=${err.step}: ${err.detail}` +
         (err.stopReason ? ` (stop_reason=${err.stopReason})` : '')
       )
+      await insertSelectionFailure({
+        failureStep: err.step,
+        failureDetail: err.detail + (err.stopReason ? ` (stop_reason=${err.stopReason})` : ''),
+      }).catch((dbErr) => console.error('[SELECTION_FAILURES] Failed to persist failure record:', dbErr))
     } else {
       console.warn('Dynamic selection failed at step=screener_fetch:', err)
+      await insertSelectionFailure({
+        failureStep: 'screener_fetch',
+        failureDetail: (err as Error).message ?? String(err),
+      }).catch((dbErr) => console.error('[SELECTION_FAILURES] Failed to persist failure record:', dbErr))
     }
     watchlist = (process.env.TRADING_WATCHLIST ?? 'AAPL,MSFT,NVDA,XOM,CVX,MP,NEM,GOOGL,META')
       .split(',')

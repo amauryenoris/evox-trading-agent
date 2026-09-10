@@ -287,6 +287,13 @@ export interface SelectionEvaluation {
   lesson: string
 }
 
+export type SelectionFailureStep = 'screener_fetch' | 'claude_call' | 'json_parse' | 'db_write'
+
+export interface SelectionFailure {
+  failureStep: SelectionFailureStep
+  failureDetail: string
+}
+
 // ============================================================
 // DASHBOARD DISPLAY TYPES
 // ============================================================

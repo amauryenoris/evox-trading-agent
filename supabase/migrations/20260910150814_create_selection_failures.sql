@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS selection_failures (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  failure_step TEXT NOT NULL,
+  failure_detail TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE selection_failures ENABLE ROW LEVEL SECURITY;
