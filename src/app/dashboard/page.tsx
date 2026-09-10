@@ -11,6 +11,7 @@ import { GenerateReportButton } from '@/components/dashboard/GenerateReportButto
 import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
+import { BuyScannerPanel } from '@/components/dashboard/BuyScannerPanel'
 import { RejectedSetups } from '@/components/dashboard/RejectedSetups'
 import { DailySummary } from '@/components/dashboard/DailySummary'
 // ADAPTED: LogoutButton kept — auth layer requires it; absent in App.jsx (abstract Header)
@@ -126,6 +127,16 @@ export default async function DashboardPage() {
           subtitle="Complete weekly report archive — expand any row for full breakdown and PDF export."
         />
         <WeeklyReportsCard reports={reports} />
+      </div>
+    ),
+    scanner: (
+      <div className="space-y-5">
+        <ZoneTitle
+          kicker="05 · Buy Scanner"
+          title="What the scanner is considering"
+          subtitle="Today's market briefing and the candidates behind the most recent selection cycles."
+        />
+        <BuyScannerPanel />
       </div>
     ),
   }

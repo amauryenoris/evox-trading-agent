@@ -7,6 +7,7 @@ const TABS = [
   { id: 'intelligence', label: 'Intelligence', kicker: '02' },
   { id: 'analytics',    label: 'Analytics',    kicker: '03' },
   { id: 'reports',      label: 'Reports',      kicker: '04' },
+  { id: 'scanner',      label: 'Buy Scanner',  kicker: '05' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']

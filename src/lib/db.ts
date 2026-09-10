@@ -793,4 +793,5 @@ export {
 export {
   getMarketDailyBriefingByDate,
   upsertMarketDailyBriefing,
+  getLatestBriefing,
 } from './db-market-briefing'

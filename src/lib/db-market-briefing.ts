@@ -19,6 +19,17 @@ export async function getMarketDailyBriefingByDate(briefingDate: string): Promis
   return (data ?? null) as MarketDailyBriefing | null
 }
 
+export async function getLatestBriefing(): Promise<MarketDailyBriefing | null> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('market_daily_briefings')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error) throw new Error(`Failed to fetch market daily briefing: ${error.message}`)
+  return (data?.[0] ?? null) as MarketDailyBriefing | null
+}
+
 export async function upsertMarketDailyBriefing(
   record: Omit<MarketDailyBriefing, 'id' | 'created_at'>
 ): Promise<void> {

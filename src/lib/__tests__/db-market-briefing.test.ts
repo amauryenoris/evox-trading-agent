@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { getMarketDailyBriefingByDate, upsertMarketDailyBriefing } from '../db-market-briefing'
+import { getMarketDailyBriefingByDate, upsertMarketDailyBriefing, getLatestBriefing } from '../db-market-briefing'
 
-const { mockFrom, mockSelect, mockEq, mockMaybeSingle, mockUpsert } = vi.hoisted(() => ({
+const { mockFrom, mockSelect, mockEq, mockMaybeSingle, mockUpsert, mockOrder, mockLimit } = vi.hoisted(() => ({
   mockFrom: vi.fn(),
   mockSelect: vi.fn(),
   mockEq: vi.fn(),
   mockMaybeSingle: vi.fn(),
   mockUpsert: vi.fn(),
+  mockOrder: vi.fn(),
+  mockLimit: vi.fn(),
 }))
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -53,6 +55,52 @@ describe('getMarketDailyBriefingByDate', () => {
 
     // Act + Assert
     await expect(getMarketDailyBriefingByDate('2026-08-20')).rejects.toThrow(
+      'Failed to fetch market daily briefing: connection lost'
+    )
+  })
+})
+
+describe('getLatestBriefing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockOrder.mockReturnValue({ limit: mockLimit })
+    mockSelect.mockReturnValue({ order: mockOrder })
+    mockFrom.mockReturnValue({ select: mockSelect })
+  })
+
+  it('orders by created_at descending, limits to 1, and returns the row when found', async () => {
+    // Arrange
+    const row = { id: '1', briefing_date: '2026-09-10', narrative: 'Markets steady.' }
+    mockLimit.mockResolvedValue({ data: [row], error: null })
+
+    // Act
+    const result = await getLatestBriefing()
+
+    // Assert
+    expect(mockFrom).toHaveBeenCalledWith('market_daily_briefings')
+    expect(mockSelect).toHaveBeenCalledWith('*')
+    expect(mockOrder).toHaveBeenCalledWith('created_at', { ascending: false })
+    expect(mockLimit).toHaveBeenCalledWith(1)
+    expect(result).toEqual(row)
+  })
+
+  it('returns null when no rows exist', async () => {
+    // Arrange
+    mockLimit.mockResolvedValue({ data: [], error: null })
+
+    // Act
+    const result = await getLatestBriefing()
+
+    // Assert
+    expect(result).toBeNull()
+  })
+
+  it('throws on a Supabase error', async () => {
+    // Arrange
+    mockLimit.mockResolvedValue({ data: null, error: { message: 'connection lost' } })
+
+    // Act + Assert
+    await expect(getLatestBriefing()).rejects.toThrow(
       'Failed to fetch market daily briefing: connection lost'
     )
   })
