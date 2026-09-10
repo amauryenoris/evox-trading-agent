@@ -17,6 +17,17 @@ import {
 } from './db'
 import { INSTRUMENT_BLACKLIST } from './config'
 
+export class SelectionStepError extends Error {
+  constructor(
+    public readonly step: 'claude_call' | 'json_parse' | 'db_write',
+    public readonly detail: string,
+    public readonly stopReason?: string | null
+  ) {
+    super(`Selection failed at step=${step}: ${detail}`)
+    this.name = 'SelectionStepError'
+  }
+}
+
 const MAX_DAILY_CHANGE_PCT = 15
 const HIGH_RELATIVE_VOLUME_THRESHOLD = 1.5  // 1.5x the candidate batch's average volume — starting value, not yet validated with real data, see [GAP_VOL_EXCEPTION] logging
 const MAX_POOL_A_CANDIDATES = 15
@@ -164,18 +175,29 @@ ${learningLines.length > 0 ? '\n--- YOUR PAST SELECTION LEARNING ---\n' + learni
 Select 6-8 symbols for detailed technical analysis. Must include at least 1 from each sector in Pool B.`
 
   const client = new Anthropic({ apiKey })
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: SELECTION_MAX_TOKENS,
-    system: SELECTION_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  let response: Anthropic.Message
+  try {
+    response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: SELECTION_MAX_TOKENS,
+      system: SELECTION_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    })
+  } catch (err) {
+    throw new SelectionStepError('claude_call', (err as Error).message ?? String(err))
+  }
 
-  const content = response.content[0]
-  if (content.type !== 'text') throw new Error('Unexpected Claude response type')
+  let parsed: { selected: string[]; reasoning: string; scores?: CandidateScore[] }
+  try {
+    const content = response.content[0]
+    if (content.type !== 'text') throw new Error('Unexpected Claude response type')
 
-  const jsonText = content.text.replace(/```json\n?|\n?```/g, '').trim()
-  const parsed = JSON.parse(jsonText) as { selected: string[]; reasoning: string; scores?: CandidateScore[] }
+    const jsonText = content.text.replace(/```json\n?|\n?```/g, '').trim()
+    parsed = JSON.parse(jsonText) as { selected: string[]; reasoning: string; scores?: CandidateScore[] }
+  } catch (err) {
+    const detail = response.stop_reason === 'max_tokens' ? 'max_tokens' : ((err as Error).message ?? String(err))
+    throw new SelectionStepError('json_parse', detail, response.stop_reason)
+  }
 
   const decision: SelectionDecision = {
     timestamp: new Date().toISOString(),
@@ -184,7 +206,11 @@ Select 6-8 symbols for detailed technical analysis. Must include at least 1 from
     reasoning: parsed.reasoning,
     candidateScores: parsed.scores,
   }
-  await insertSelectionDecision(decision)
+  try {
+    await insertSelectionDecision(decision)
+  } catch (err) {
+    throw new SelectionStepError('db_write', (err as Error).message ?? String(err))
+  }
 
   // Accept any symbol from either pool
   const allSymbolSet = new Set(allCandidates.map((c) => c.symbol))

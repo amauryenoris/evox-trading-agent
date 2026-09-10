@@ -35,7 +35,7 @@ import {
 } from './learning'
 import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, tradeEvaluationExists } from './db'
 import { isNewPositionAllowed } from './risk-manager'
-import { selectStocksForAnalysis, recordSelectionOutcome } from './stock-selector'
+import { selectStocksForAnalysis, recordSelectionOutcome, SelectionStepError } from './stock-selector'
 import { newsIntelligenceLayer, getAggregateMacroSentiment } from './news-intelligence'
 import { ZSCORE_ENTRY_THRESHOLD, INSTRUMENT_BLACKLIST, MAX_SPREAD_BPS } from './config'
 import {
@@ -1159,7 +1159,14 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       throw new Error('Not enough screener candidates')
     }
   } catch (err) {
-    console.warn('Dynamic selection failed, using static watchlist:', err)
+    if (err instanceof SelectionStepError) {
+      console.warn(
+        `Dynamic selection failed at step=${err.step}: ${err.detail}` +
+        (err.stopReason ? ` (stop_reason=${err.stopReason})` : '')
+      )
+    } else {
+      console.warn('Dynamic selection failed at step=screener_fetch:', err)
+    }
     watchlist = (process.env.TRADING_WATCHLIST ?? 'AAPL,MSFT,NVDA,XOM,CVX,MP,NEM,GOOGL,META')
       .split(',')
       .map((s) => s.trim())

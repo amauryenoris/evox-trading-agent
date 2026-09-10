@@ -25,7 +25,7 @@ vi.mock('../alpaca', () => ({
   getStockSnapshots: mockGetStockSnapshots,
 }))
 
-import { selectStocksForAnalysis } from '../stock-selector'
+import { selectStocksForAnalysis, SelectionStepError } from '../stock-selector'
 
 // Replicates the briefingNarrative conditional-section idiom from
 // selectStocksForAnalysis()'s prompt template (stock-selector.ts, the
@@ -311,5 +311,88 @@ describe('selectStocksForAnalysis — candidateScores parsing (parallel observab
     expect(mockMessagesCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: 8000 })
     )
+  })
+})
+
+describe('selectStocksForAnalysis — SelectionStepError step isolation', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    mockGetSelectionEvaluations.mockResolvedValue([])
+    mockGetStockSnapshots.mockResolvedValue([])
+    mockInsertSelectionDecision.mockReset()
+    mockMessagesCreate.mockReset()
+  })
+
+  it('throws a SelectionStepError with step="claude_call" when the Claude API call rejects', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    mockMessagesCreate.mockRejectedValue(new Error('rate limited'))
+
+    // Act
+    const attempt = selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    await expect(attempt).rejects.toBeInstanceOf(SelectionStepError)
+    await attempt.catch((err: SelectionStepError) => {
+      expect(err.step).toBe('claude_call')
+      expect(err.detail).toBe('rate limited')
+    })
+  })
+
+  it('throws a SelectionStepError with step="json_parse" and detail="max_tokens" when parsing fails and stop_reason is "max_tokens"', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: '{"selected": ["SYM00"' }], // truncated, unparseable
+      stop_reason: 'max_tokens',
+    })
+
+    // Act
+    const attempt = selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    await expect(attempt).rejects.toBeInstanceOf(SelectionStepError)
+    await attempt.catch((err: SelectionStepError) => {
+      expect(err.step).toBe('json_parse')
+      expect(err.detail).toBe('max_tokens')
+      expect(err.stopReason).toBe('max_tokens')
+    })
+  })
+
+  it('throws a SelectionStepError with step="json_parse" and the raw parse error as detail when stop_reason is not "max_tokens"', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'not valid json at all' }],
+      stop_reason: 'end_turn',
+    })
+
+    // Act
+    const attempt = selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    await expect(attempt).rejects.toBeInstanceOf(SelectionStepError)
+    await attempt.catch((err: SelectionStepError) => {
+      expect(err.step).toBe('json_parse')
+      expect(err.detail).not.toBe('max_tokens')
+      expect(err.stopReason).toBe('end_turn')
+    })
+  })
+
+  it('throws a SelectionStepError with step="db_write" when insertSelectionDecision rejects', async () => {
+    // Arrange
+    const candidates = manyPoolACandidates(3)
+    mockClaudeSelection(['SYM00'])
+    mockInsertSelectionDecision.mockRejectedValue(new Error('supabase unavailable'))
+
+    // Act
+    const attempt = selectStocksForAnalysis(candidates, ACCOUNT, NO_POSITIONS)
+
+    // Assert
+    await expect(attempt).rejects.toBeInstanceOf(SelectionStepError)
+    await attempt.catch((err: SelectionStepError) => {
+      expect(err.step).toBe('db_write')
+      expect(err.detail).toBe('supabase unavailable')
+    })
   })
 })
