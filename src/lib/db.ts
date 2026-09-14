@@ -10,6 +10,7 @@ import type {
   NewsEvent,
   NewsClassificationRecord,
   NearMissEntry,
+  PositionHealthSnapshot,
 } from './types'
 
 function getClient(): SupabaseClient {
@@ -227,6 +228,21 @@ export async function deleteOpenPositionContext(symbol: string): Promise<void> {
   const db = getClient()
   const { error } = await db.from('open_position_contexts').delete().eq('symbol', symbol)
   if (error) throw new Error(`Failed to delete position context: ${error.message}`)
+}
+
+// ============================================================
+// POSITION HEALTH SNAPSHOTS
+// ============================================================
+
+export async function getLatestHealthSnapshots(): Promise<PositionHealthSnapshot[]> {
+  const db = getClient()
+  const { data, error } = await db
+    .from('position_health_snapshots')
+    .select('*')
+    .order('snapshot_timestamp', { ascending: false })
+    .limit(20) // most recent batch is at most MAX_POSITIONS (5) rows; 20 gives headroom for ~2 recent runs
+  if (error) throw new Error(`Failed to fetch position health snapshots: ${error.message}`)
+  return data ?? []
 }
 
 // ============================================================

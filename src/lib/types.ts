@@ -368,6 +368,26 @@ export interface MarketDailyBriefing {
   upcoming_events_note: string | null
 }
 
+export interface PositionHealthSnapshot {
+  id: string
+  symbol: string
+  position_buy_timestamp: string
+  snapshot_timestamp: string
+  entry_adx_bucket: string | null
+  entry_macd_bucket: string | null
+  entry_z_bucket: string | null
+  entry_spx_regime: string | null
+  current_adx_bucket: string | null
+  current_macd_bucket: string | null
+  current_z_bucket: string | null
+  current_spx_regime: string | null
+  current_adx: number | null
+  current_macd_histogram: number | null
+  current_z_score: number | null
+  current_price: number | null
+  days_since_entry: number | null
+}
+
 export interface NearMissEntry {
   id: string
   symbol: string

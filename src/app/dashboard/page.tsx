@@ -12,6 +12,7 @@ import { NearMissWatchlist } from '@/components/dashboard/NearMissWatchlist'
 import { NewsIntelligence } from '@/components/dashboard/NewsIntelligence'
 import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytics'
 import { BuyScannerPanel } from '@/components/dashboard/BuyScannerPanel'
+import { HealthMonitorPanel } from '@/components/dashboard/HealthMonitorPanel'
 import { RejectedSetups } from '@/components/dashboard/RejectedSetups'
 import { DailySummary } from '@/components/dashboard/DailySummary'
 // ADAPTED: LogoutButton kept — auth layer requires it; absent in App.jsx (abstract Header)
@@ -137,6 +138,16 @@ export default async function DashboardPage() {
           subtitle="Today's market briefing and the candidates behind the most recent selection cycles."
         />
         <BuyScannerPanel />
+      </div>
+    ),
+    health: (
+      <div className="space-y-5">
+        <ZoneTitle
+          kicker="06 · Health Monitor"
+          title="How open positions have drifted since entry"
+          subtitle="Entry-vs-current technical state for every currently-open position, from the twice-daily health check."
+        />
+        <HealthMonitorPanel />
       </div>
     ),
   }
