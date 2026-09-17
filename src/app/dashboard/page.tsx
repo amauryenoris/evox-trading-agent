@@ -14,6 +14,7 @@ import { PerformanceAnalytics } from '@/components/dashboard/PerformanceAnalytic
 import { BuyScannerPanel } from '@/components/dashboard/BuyScannerPanel'
 import { HealthMonitorPanel } from '@/components/dashboard/HealthMonitorPanel'
 import { RejectedSetups } from '@/components/dashboard/RejectedSetups'
+import { ActiveCooldowns } from '@/components/dashboard/ActiveCooldowns'
 import { DailySummary } from '@/components/dashboard/DailySummary'
 // ADAPTED: LogoutButton kept — auth layer requires it; absent in App.jsx (abstract Header)
 import { LogoutButton } from '@/components/dashboard/LogoutButton'
@@ -103,6 +104,7 @@ export default async function DashboardPage() {
           <NewsIntelligence />
         </div>
         <RejectedSetups />
+        <ActiveCooldowns />
       </div>
     ),
     analytics: (
