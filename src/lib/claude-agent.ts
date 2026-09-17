@@ -1305,29 +1305,33 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   // Write persistent cooldowns — Fase 2b
   // Dates hoisted earlier in the cycle (see cooldownDates) — reused here, not recomputed
-  if (cooldownDates !== null) {
-    const { endOfTradingDay, nextTradingDay1, nextTradingDay3 } = cooldownDates
-    await Promise.all(
-      [...exitReasons.entries()].map(async ([symbol, reason]) => {
-        const cooldownUntil = computeCooldownUntil(
-          reason,
-          endOfTradingDay,
-          nextTradingDay1,
-          nextTradingDay3
-        )
-        if (cooldownUntil !== null) {
-          await upsertSymbolCooldown(symbol, reason, cooldownUntil)
-          console.log(
-            `[COOLDOWN_PERSIST] symbol=${symbol}` +
-            ` reason=${reason}` +
-            ` until=${cooldownUntil.toISOString()}` +
-            ` source=enforceExitRules`
+  try {
+    if (cooldownDates !== null) {
+      const { endOfTradingDay, nextTradingDay1, nextTradingDay3 } = cooldownDates
+      await Promise.all(
+        [...exitReasons.entries()].map(async ([symbol, reason]) => {
+          const cooldownUntil = computeCooldownUntil(
+            reason,
+            endOfTradingDay,
+            nextTradingDay1,
+            nextTradingDay3
           )
-        }
-      })
-    )
-  } else {
-    console.error('[COOLDOWN_PERSIST_ERROR] skipped — cooldown dates unavailable this cycle')
+          if (cooldownUntil !== null) {
+            await upsertSymbolCooldown(symbol, reason, cooldownUntil)
+            console.log(
+              `[COOLDOWN_PERSIST] symbol=${symbol}` +
+              ` reason=${reason}` +
+              ` until=${cooldownUntil.toISOString()}` +
+              ` source=enforceExitRules`
+            )
+          }
+        })
+      )
+    } else {
+      console.error('[COOLDOWN_PERSIST_ERROR] skipped — cooldown dates unavailable this cycle')
+    }
+  } catch (err) {
+    console.error('[COOLDOWN_PERSIST_ERROR] cooldown-persistence block failed:', err)
   }
 
   // 5. Evaluate closed positions (learning loop)
@@ -1406,6 +1410,30 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           `[COOLDOWN_SKIP] symbol=${ctx.symbol}` +
           ` reason=already_has_active_cooldown` +
           ` source=ghost_close`
+        )
+      } else if (pnlPct >= 0 && cooldownDates !== null && !existingCooldowns.has(ctx.symbol)) {
+        const isConfirmedTrailingStopFill =
+          sellOrder?.id != null &&
+          ctx.trailingStopOrderId != null &&
+          sellOrder.id === ctx.trailingStopOrderId
+        const reason = isConfirmedTrailingStopFill ? 'TRAILING_STOP' : 'GHOST_CLOSE_PROFIT'
+        const cooldownUntil = isConfirmedTrailingStopFill
+          ? cooldownDates.nextTradingDay1
+          : cooldownDates.endOfTradingDay
+        await upsertSymbolCooldown(ctx.symbol, reason, cooldownUntil)
+        console.log(
+          `[COOLDOWN_PERSIST] symbol=${ctx.symbol}` +
+          ` reason=${reason}` +
+          ` until=${cooldownUntil.toISOString()}` +
+          ` source=ghost_close_profit` +
+          ` confirmed=${isConfirmedTrailingStopFill}`
+        )
+      } else if (pnlPct >= 0 && cooldownDates !== null) {
+        console.log(
+          `[COOLDOWN_SKIP] symbol=${ctx.symbol}` +
+          ` reason=already_has_active_cooldown` +
+          ` source=ghost_close_profit` +
+          ` pnl=${(pnlPct * 100).toFixed(2)}%`
         )
       }
     } catch (err) {

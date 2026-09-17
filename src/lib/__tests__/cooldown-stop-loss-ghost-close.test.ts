@@ -118,7 +118,7 @@ describe('ghost-close cooldown-write decision', () => {
     expect(shouldWriteStopLossCooldown(pnlPct)).toBe(true)
   })
 
-  it('pnlPct=+0.005 writes no cooldown', () => {
+  it('pnlPct=+0.005 does not trigger a STOP_LOSS cooldown (a separate profitable-close branch handles this case — see below)', () => {
     // Arrange
     const pnlPct = 0.005
 
@@ -246,10 +246,185 @@ describe('ghost-close STOP_LOSS write — existing active cooldown is not overwr
     expect(shouldWrite).toBe(true)
   })
 
-  it('a non-negative pnlPct still writes nothing regardless of existing cooldown state', () => {
+  it('a non-negative pnlPct never triggers this STOP_LOSS-scoped write (a separate profitable-close branch handles it — see below)', () => {
     // Arrange / Act / Assert
     expect(shouldWriteGhostCloseCooldown(0, new Map(), 'XOM')).toBe(false)
     expect(shouldWriteGhostCloseCooldown(0.01, new Map(), 'XOM')).toBe(false)
+  })
+})
+
+// ── Part 1: Block A cooldown-persistence failure isolation ──────
+// Replicates the try/catch wrap added around the cooldown-persistence
+// Promise.all in claude-agent.ts (lines 1306-1335) — a failure anywhere
+// inside is caught, logged, and does not abort the rest of runAgentCycle().
+
+async function persistCooldownsSafely(
+  exitReasons: Map<string, ExitReason>,
+  cooldownUntilFor: (reason: ExitReason) => Date | null,
+  upsertFn: (symbol: string, reason: ExitReason, until: Date) => Promise<void>,
+  logError: (msg: string, err: unknown) => void
+): Promise<boolean> {
+  try {
+    await Promise.all(
+      [...exitReasons.entries()].map(async ([symbol, reason]) => {
+        const cooldownUntil = cooldownUntilFor(reason)
+        if (cooldownUntil !== null) {
+          await upsertFn(symbol, reason, cooldownUntil)
+        }
+      })
+    )
+    return true
+  } catch (err) {
+    logError('[COOLDOWN_PERSIST_ERROR] cooldown-persistence block failed:', err)
+    return false
+  }
+}
+
+describe('Block A guard — cooldown-persistence failure is caught, not propagated', () => {
+  it('a rejected upsert for one symbol is caught, logged, and the call resolves (does not throw)', async () => {
+    // Arrange
+    const exitReasons = new Map<string, ExitReason>([['XOM', 'PROFIT_TARGET']])
+    const upsertFn = vi.fn().mockRejectedValue(new Error('Supabase RPC failed'))
+    const logError = vi.fn()
+
+    // Act
+    const succeeded = await persistCooldownsSafely(
+      exitReasons,
+      () => new Date('2026-09-14T21:00:00Z'),
+      upsertFn,
+      logError
+    )
+
+    // Assert
+    expect(succeeded).toBe(false)
+    expect(logError).toHaveBeenCalledWith('[COOLDOWN_PERSIST_ERROR] cooldown-persistence block failed:', expect.any(Error))
+  })
+
+  it('no failure means no error is logged and the write succeeds', async () => {
+    // Arrange
+    const exitReasons = new Map<string, ExitReason>([['AAPL', 'TRAILING_STOP']])
+    const upsertFn = vi.fn().mockResolvedValue(undefined)
+    const logError = vi.fn()
+
+    // Act
+    const succeeded = await persistCooldownsSafely(
+      exitReasons,
+      () => new Date('2026-09-15T00:00:00Z'),
+      upsertFn,
+      logError
+    )
+
+    // Assert
+    expect(succeeded).toBe(true)
+    expect(upsertFn).toHaveBeenCalledTimes(1)
+    expect(logError).not.toHaveBeenCalled()
+  })
+})
+
+// ── Part 2: profitable ghost-close cooldown branch ───────────────
+// Replicates the two new else-if branches added after the existing
+// pnlPct < 0 branches in claude-agent.ts (lines 1414-1438) — a
+// profitable ghost-close now writes TRAILING_STOP (confirmed order-id
+// match) or GHOST_CLOSE_PROFIT (no match) instead of writing nothing.
+
+function isConfirmedTrailingStopFill(
+  sellOrderId: string | null | undefined,
+  trailingStopOrderId: string | null | undefined
+): boolean {
+  return sellOrderId != null && trailingStopOrderId != null && sellOrderId === trailingStopOrderId
+}
+
+function shouldWriteProfitableGhostCloseCooldown(
+  pnlPct: number,
+  existingCooldowns: Map<string, string>,
+  symbol: string
+): boolean {
+  return pnlPct >= 0 && !existingCooldowns.has(symbol)
+}
+
+function decideProfitableGhostCloseCooldownReason(
+  sellOrderId: string | null | undefined,
+  trailingStopOrderId: string | null | undefined
+): 'TRAILING_STOP' | 'GHOST_CLOSE_PROFIT' {
+  return isConfirmedTrailingStopFill(sellOrderId, trailingStopOrderId) ? 'TRAILING_STOP' : 'GHOST_CLOSE_PROFIT'
+}
+
+describe('profitable ghost-close — trailing-stop-order-id match', () => {
+  it('sellOrder.id === ctx.trailingStopOrderId (both non-null) resolves to TRAILING_STOP', () => {
+    // Arrange
+    const sellOrderId = 'order-abc-123'
+    const trailingStopOrderId = 'order-abc-123'
+
+    // Act
+    const confirmed = isConfirmedTrailingStopFill(sellOrderId, trailingStopOrderId)
+    const reason = decideProfitableGhostCloseCooldownReason(sellOrderId, trailingStopOrderId)
+
+    // Assert
+    expect(confirmed).toBe(true)
+    expect(reason).toBe('TRAILING_STOP')
+  })
+
+  it('a mismatched order id resolves to GHOST_CLOSE_PROFIT, not TRAILING_STOP', () => {
+    // Arrange
+    const sellOrderId = 'order-xyz-999'
+    const trailingStopOrderId = 'order-abc-123'
+
+    // Act
+    const confirmed = isConfirmedTrailingStopFill(sellOrderId, trailingStopOrderId)
+    const reason = decideProfitableGhostCloseCooldownReason(sellOrderId, trailingStopOrderId)
+
+    // Assert
+    expect(confirmed).toBe(false)
+    expect(reason).toBe('GHOST_CLOSE_PROFIT')
+  })
+
+  it('a null/undefined ctx.trailingStopOrderId resolves to GHOST_CLOSE_PROFIT', () => {
+    // Arrange / Act / Assert
+    expect(decideProfitableGhostCloseCooldownReason('order-abc-123', null)).toBe('GHOST_CLOSE_PROFIT')
+    expect(decideProfitableGhostCloseCooldownReason('order-abc-123', undefined)).toBe('GHOST_CLOSE_PROFIT')
+  })
+
+  it('a null sellOrder.id resolves to GHOST_CLOSE_PROFIT', () => {
+    // Arrange / Act / Assert
+    expect(decideProfitableGhostCloseCooldownReason(null, 'order-abc-123')).toBe('GHOST_CLOSE_PROFIT')
+    expect(decideProfitableGhostCloseCooldownReason(undefined, 'order-abc-123')).toBe('GHOST_CLOSE_PROFIT')
+  })
+})
+
+describe('profitable ghost-close cooldown-write decision', () => {
+  it('a profitable close with no existing cooldown for the symbol writes a cooldown', () => {
+    // Arrange
+    const pnlPct = 0.0237 // XOM real value
+    const existingCooldowns = new Map<string, string>()
+
+    // Act
+    const shouldWrite = shouldWriteProfitableGhostCloseCooldown(pnlPct, existingCooldowns, 'XOM')
+
+    // Assert
+    expect(shouldWrite).toBe(true)
+  })
+
+  it('breakeven (pnlPct=0) is treated as profitable — writes a cooldown, not STOP_LOSS', () => {
+    // Arrange / Act / Assert
+    expect(shouldWriteProfitableGhostCloseCooldown(0, new Map(), 'XOM')).toBe(true)
+    expect(shouldWriteStopLossCooldown(0)).toBe(false)
+  })
+
+  it('a profitable close with an existing active cooldown for the symbol skips the write', () => {
+    // Arrange — symbol already has a cooldown from earlier this cycle
+    const pnlPct = 0.0237
+    const existingCooldowns = new Map<string, string>([['XOM', 'Z_SCORE_EXIT']])
+
+    // Act
+    const shouldWrite = shouldWriteProfitableGhostCloseCooldown(pnlPct, existingCooldowns, 'XOM')
+
+    // Assert
+    expect(shouldWrite).toBe(false)
+  })
+
+  it('a loss (pnlPct < 0) is never handled by the profitable-close gate', () => {
+    // Arrange / Act / Assert
+    expect(shouldWriteProfitableGhostCloseCooldown(-0.0079, new Map(), 'XOM')).toBe(false)
   })
 })
 
