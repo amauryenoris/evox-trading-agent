@@ -15,8 +15,8 @@ export async function GET() {
 
     const { data, error } = await db
       .from('agent_log')
-      .select('id, symbol, error, indicators, created_at, signal_type')
-      .or('error.ilike.TREND_ZGT05%,error.ilike.TREND_QUALITY_FAIL%')
+      .select('id, symbol, error, indicators, created_at')
+      .or('error.ilike.TREND_ZGT125%,error.ilike.TREND_QUALITY_FAIL%,error.ilike.Spread gate%,error.ilike.MR_RANGING_ADX_GATE%')
       .gte('created_at', startOfDay.toISOString())
       .order('created_at', { ascending: false })
       .limit(100)
@@ -29,13 +29,19 @@ export async function GET() {
       const z = kalman?.zScore ?? null
       const adx = typeof ind.adx === 'number' ? ind.adx : null
       const err: string = row.error ?? ''
-      const kind: 'TREND_ZGT05' | 'TREND_QUALITY_FAIL' = err.toUpperCase().startsWith('TREND_QUALITY_FAIL')
-        ? 'TREND_QUALITY_FAIL'
-        : 'TREND_ZGT05'
+      const upperErr = err.toUpperCase()
 
-      const reason = kind === 'TREND_ZGT05'
-        ? `z-score ${z != null ? z.toFixed(3) : '—'} > 0.5 threshold`
-        : `ADX ${adx != null ? adx.toFixed(1) : '—'} < 20 — trend not confirmed`
+      const kind: 'TREND_ZGT125' | 'TREND_QUALITY_FAIL' | 'SPREAD_GATE' | 'MR_RANGING_ADX_GATE' =
+        upperErr.startsWith('TREND_QUALITY_FAIL') ? 'TREND_QUALITY_FAIL'
+        : upperErr.startsWith('SPREAD GATE') ? 'SPREAD_GATE'
+        : upperErr.startsWith('MR_RANGING_ADX_GATE') ? 'MR_RANGING_ADX_GATE'
+        : 'TREND_ZGT125'
+
+      const reason =
+        kind === 'TREND_ZGT125' ? `z-score ${z != null ? z.toFixed(3) : '—'} > 1.25 threshold`
+        : kind === 'TREND_QUALITY_FAIL' ? `ADX ${adx != null ? adx.toFixed(1) : '—'} < 20 — trend not confirmed`
+        : kind === 'MR_RANGING_ADX_GATE' ? `z-score ${z != null ? z.toFixed(3) : '—'} met threshold but ADX ${adx != null ? adx.toFixed(1) : '—'} too low — RANGING regime`
+        : err.replace(/^Spread gate:\s*/i, '')
 
       const ts = new Date(row.created_at).toLocaleTimeString('en-US', {
         hour: '2-digit',

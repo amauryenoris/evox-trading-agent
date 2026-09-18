@@ -7,7 +7,7 @@ const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).
 
 interface RejectedEntry {
   symbol: string
-  kind: 'TREND_ZGT05' | 'TREND_QUALITY_FAIL'
+  kind: 'TREND_ZGT125' | 'TREND_QUALITY_FAIL' | 'SPREAD_GATE' | 'MR_RANGING_ADX_GATE'
   reason: string
   z: number | null
   adx: number | null
@@ -55,7 +55,7 @@ export function RejectedSetups() {
         </div>
       ) : rows.length === 0 ? (
         <p className="px-5 pb-6 text-center text-sm text-muted">
-          No trend rejections today
+          No rejections today
         </p>
       ) : (
         <div className="overflow-x-auto px-5 pb-5">
@@ -75,7 +75,10 @@ export function RejectedSetups() {
                   <td className="py-3 pr-4 font-semibold">{r.symbol}</td>
                   <td className="py-3 pr-4">
                     <Badge tone="amber" size="xs">
-                      {r.kind === 'TREND_ZGT05' ? 'Z>0.5' : 'QUALITY'}
+                      {r.kind === 'TREND_ZGT125' ? 'Z>1.25'
+                        : r.kind === 'TREND_QUALITY_FAIL' ? 'QUALITY'
+                        : r.kind === 'SPREAD_GATE' ? 'SPREAD'
+                        : 'MR RANGING'}
                     </Badge>
                   </td>
                   <td className="py-3 pr-4 text-mute2 text-[12.5px]">{r.reason}</td>
