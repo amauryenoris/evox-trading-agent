@@ -1336,7 +1336,19 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
   // 5. Evaluate closed positions (learning loop)
   const evaluations: TradeEvaluation[] = []
-  const closedContexts = await detectClosedPositions(positions)
+  let closedContexts: OpenPositionContext[] = []
+  try {
+    closedContexts = await detectClosedPositions(positions)
+  } catch (err) {
+    console.error(
+      '[GHOST_CLOSE_ERROR] detectClosedPositions() failed — ghost-close ' +
+      'detection skipped this cycle. Same-cycle GTC_STOP re-entry ' +
+      'protection is unavailable this cycle only; any actually-closed ' +
+      'position will be correctly detected and processed on the next ' +
+      'cycle (detectClosedPositions is stateless/idempotent):',
+      err
+    )
+  }
 
   // Hoisted once per cycle — prevents the ghost-close STOP_LOSS write below from
   // overwriting a symbol's already-correct cooldown from an earlier exit reason

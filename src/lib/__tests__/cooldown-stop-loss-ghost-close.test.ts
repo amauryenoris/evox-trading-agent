@@ -321,6 +321,87 @@ describe('Block A guard — cooldown-persistence failure is caught, not propagat
   })
 })
 
+// ── Block B guard: detectClosedPositions() failure isolation ────
+// Replicates the try/catch wrap added around detectClosedPositions() in
+// claude-agent.ts (lines 1339-1351) — a failure defaults closedContexts
+// to [] instead of aborting the rest of runAgentCycle(). Unlike Block A,
+// this default is a plain assignment (no boolean return needed) since
+// no caller inspects whether the detection itself "succeeded" —
+// downstream code only ever consumes the resulting array.
+
+async function detectClosedContextsSafely<T>(
+  detectFn: () => Promise<T[]>,
+  logError: (msg: string, err: unknown) => void
+): Promise<T[]> {
+  try {
+    return await detectFn()
+  } catch (err) {
+    logError(
+      '[GHOST_CLOSE_ERROR] detectClosedPositions() failed — ghost-close ' +
+      'detection skipped this cycle. Same-cycle GTC_STOP re-entry ' +
+      'protection is unavailable this cycle only; any actually-closed ' +
+      'position will be correctly detected and processed on the next ' +
+      'cycle (detectClosedPositions is stateless/idempotent):',
+      err
+    )
+    return []
+  }
+}
+
+describe('Block B guard — detectClosedPositions() failure is caught, not propagated', () => {
+  it('a rejected detectClosedPositions() call is caught, logged with the exact consequence message, and defaults to []', async () => {
+    // Arrange
+    const detectFn = vi.fn().mockRejectedValue(new Error('Failed to fetch position contexts: network error'))
+    const logError = vi.fn()
+
+    // Act
+    const closedContexts = await detectClosedContextsSafely(detectFn, logError)
+
+    // Assert
+    expect(closedContexts).toEqual([])
+    expect(logError).toHaveBeenCalledWith(
+      '[GHOST_CLOSE_ERROR] detectClosedPositions() failed — ghost-close ' +
+      'detection skipped this cycle. Same-cycle GTC_STOP re-entry ' +
+      'protection is unavailable this cycle only; any actually-closed ' +
+      'position will be correctly detected and processed on the next ' +
+      'cycle (detectClosedPositions is stateless/idempotent):',
+      expect.any(Error)
+    )
+  })
+
+  it('no failure means closedContexts receives the real return value and no error is logged', async () => {
+    // Arrange
+    const realClosedContexts = [{ symbol: 'XOM' }, { symbol: 'AAPL' }]
+    const detectFn = vi.fn().mockResolvedValue(realClosedContexts)
+    const logError = vi.fn()
+
+    // Act
+    const closedContexts = await detectClosedContextsSafely(detectFn, logError)
+
+    // Assert
+    expect(closedContexts).toBe(realClosedContexts)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('an empty closedContexts (from either a genuine zero-closures cycle or a caught failure) drives zero ghost-close loop iterations, matching each other exactly', () => {
+    // Arrange
+    const closedContextsFromFailure: Array<{ symbol: string }> = []
+    const closedContextsFromZeroClosures: Array<{ symbol: string }> = []
+
+    // Act
+    let failureIterations = 0
+    for (const _ctx of closedContextsFromFailure) failureIterations++
+    let zeroClosureIterations = 0
+    for (const _ctx of closedContextsFromZeroClosures) zeroClosureIterations++
+    const closedThisCycleFromFailure = new Set(closedContextsFromFailure.map((c) => c.symbol))
+
+    // Assert — no crash, no special-casing, identical to a genuinely quiet cycle
+    expect(failureIterations).toBe(0)
+    expect(zeroClosureIterations).toBe(0)
+    expect(closedThisCycleFromFailure.size).toBe(0)
+  })
+})
+
 // ── Part 2: profitable ghost-close cooldown branch ───────────────
 // Replicates the two new else-if branches added after the existing
 // pnlPct < 0 branches in claude-agent.ts (lines 1414-1438) — a
