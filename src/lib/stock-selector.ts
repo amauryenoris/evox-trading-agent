@@ -56,7 +56,6 @@ CRITERIA:
     * Mining / Gold / Rare Earth (MP, UUUU, NEM, FCX, GOLD)
 - Use your past selection performance to refine your choices within sectors
 - Avoid selecting highly correlated stocks (e.g. don't pick 3 energy stocks)
-- Stocks currently held should only be included if you may want to evaluate them for exit
 
 RESPOND ONLY with valid JSON (no markdown):
 {
@@ -104,7 +103,7 @@ export async function selectStocksForAnalysis(
     .filter(Boolean)
 
   const screenerSymbolSet = new Set(candidates.map((c) => c.symbol))
-  const sectorOnlySymbols = sectorSymbols.filter((s) => !screenerSymbolSet.has(s))
+  const sectorOnlySymbols = sectorSymbols.filter((s) => !screenerSymbolSet.has(s) && !heldSymbols.has(s))
   const sectorSnapshots = await getStockSnapshots(sectorOnlySymbols)
 
   const [selectionEvals] = await Promise.all([getSelectionEvaluations(50)])
@@ -214,7 +213,7 @@ Select 6-8 symbols for detailed technical analysis. Must include at least 1 from
 
   // Accept any symbol from either pool
   const allSymbolSet = new Set(allCandidates.map((c) => c.symbol))
-  return parsed.selected.filter((s) => allSymbolSet.has(s))
+  return parsed.selected.filter((s) => allSymbolSet.has(s) && !heldSymbols.has(s))
 }
 
 export async function recordSelectionOutcome(
