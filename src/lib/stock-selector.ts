@@ -73,6 +73,18 @@ RESPOND ONLY with valid JSON (no markdown):
   ]
 }`
 
+function applyPoolQualityFilters(pool: ScreenerStock[]): ScreenerStock[] {
+  const notBlacklisted = pool.filter((c) => !INSTRUMENT_BLACKLIST.has(c.symbol))
+  return notBlacklisted.filter((c) => {
+    const passesChangeFilter = Math.abs(c.changePercent) < MAX_DAILY_CHANGE_PCT
+    const passesGapVolumeException = c.relativeVolume >= HIGH_RELATIVE_VOLUME_THRESHOLD
+    if (!passesChangeFilter && passesGapVolumeException) {
+      console.log(`[GAP_VOL_EXCEPTION] symbol=${c.symbol} changePercent=${c.changePercent.toFixed(1)} relativeVolume=${c.relativeVolume.toFixed(2)}`)
+    }
+    return passesChangeFilter || passesGapVolumeException
+  })
+}
+
 export async function selectStocksForAnalysis(
   candidates: ScreenerStock[],
   account: AlpacaAccount,
@@ -85,16 +97,8 @@ export async function selectStocksForAnalysis(
   const heldSymbols = new Set(positions.map((p) => p.symbol))
 
   // Pre-filter Pool A — applied before allCandidates is built so validation is consistent
-  candidates = candidates.filter(c => !INSTRUMENT_BLACKLIST.has(c.symbol))  // Step 1: blacklist
-  candidates = candidates.filter(c => !heldSymbols.has(c.symbol))           // Step 2: open positions
-  candidates = candidates.filter(c => {
-    const passesChangeFilter = Math.abs(c.changePercent) < MAX_DAILY_CHANGE_PCT
-    const passesGapVolumeException = c.relativeVolume >= HIGH_RELATIVE_VOLUME_THRESHOLD
-    if (!passesChangeFilter && passesGapVolumeException) {
-      console.log(`[GAP_VOL_EXCEPTION] symbol=${c.symbol} changePercent=${c.changePercent.toFixed(1)} relativeVolume=${c.relativeVolume.toFixed(2)}`)
-    }
-    return passesChangeFilter || passesGapVolumeException
-  })  // Step 3: overbought spikes, unless accompanied by unusually high relative volume
+  candidates = applyPoolQualityFilters(candidates)                  // Step 1+3: blacklist + overbought spikes, unless accompanied by unusually high relative volume
+  candidates = candidates.filter(c => !heldSymbols.has(c.symbol))   // Step 2: open positions
 
   // Fetch sector watchlist snapshots and merge with screener candidates
   const sectorSymbols = (process.env.SECTOR_WATCHLIST ?? DEFAULT_SECTOR_WATCHLIST)
@@ -104,7 +108,7 @@ export async function selectStocksForAnalysis(
 
   const screenerSymbolSet = new Set(candidates.map((c) => c.symbol))
   const sectorOnlySymbols = sectorSymbols.filter((s) => !screenerSymbolSet.has(s) && !heldSymbols.has(s))
-  const sectorSnapshots = await getStockSnapshots(sectorOnlySymbols)
+  const sectorSnapshots = applyPoolQualityFilters(await getStockSnapshots(sectorOnlySymbols))
 
   const [selectionEvals] = await Promise.all([getSelectionEvaluations(50)])
 
