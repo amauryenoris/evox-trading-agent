@@ -125,6 +125,7 @@ export interface TechnicalIndicators {
   closeMinus2?: number | null
   closeMinus3?: number | null
   closeMinus4?: number | null
+  mrRiskFactors?: string[] | null
 }
 
 // ============================================================

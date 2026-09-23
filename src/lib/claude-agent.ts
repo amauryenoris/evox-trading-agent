@@ -1700,6 +1700,14 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
       const meanReversionSetup = meanReversionSignal && mrRangingAdxGateOk
 
+      // mrRiskFactors = observability only, NOT an active gate — accumulates n for
+      // Phase 3 MR gate validation. Each tag fires independently.
+      const mrRiskFactors = !meanReversionSignal ? null : [
+        hasValidAdx && adxValue < mrRangingAdxFloor ? 'LOW_ADX' : null,
+        indicators.marketRegime === 'RANGING' ? 'RANGING' : null,
+        indicators.distanceToEma50Pct !== null && indicators.distanceToEma50Pct < -15 ? 'DEEP_EXTENSION' : null,
+      ].filter((v): v is string => Boolean(v))
+
       // TREND_PULLBACK_3DAY: price > SMA200 (uptrend) + 3 consecutive prior down-closes.
       // Independent, pure price-action gate — no z-score/ADX/MACD condition (backtested rule).
       const trendPullback3DayUptrendOk =
@@ -1942,7 +1950,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             timestamp,
             symbol,
             decision: { action: 'HOLD', symbol, quantity: 0, reasoning: `Mean reversion signal triggered (z-score ${zScore.toFixed(3)} <= ${effectiveThreshold.toFixed(2)}) but blocked by RANGING+low-ADX gate (ADX ${adxValue !== null ? adxValue.toFixed(1) : 'null'} < ${mrRangingAdxFloor})`, confidence: 0 },
-            indicators,
+            indicators: { ...indicators, ...(mrRiskFactors !== null && { mrRiskFactors }) },
             portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
             orderExecuted: false,
             error: gateError,
@@ -2046,7 +2054,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           timestamp,
           symbol,
           decision,
-          indicators: { ...indicators, would_execute: false, errors: ['max_positions'] } as unknown as TechnicalIndicators,
+          indicators: { ...indicators, ...(mrRiskFactors !== null && { mrRiskFactors }), would_execute: false, errors: ['max_positions'] } as unknown as TechnicalIndicators,
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
           error: `Gate: max positions (${openPositionsCount}/${maxPositions})`,
@@ -2064,7 +2072,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           timestamp,
           symbol,
           decision,
-          indicators: { ...indicators, would_execute: false, errors: ['max_buys'] } as unknown as TechnicalIndicators,
+          indicators: { ...indicators, ...(mrRiskFactors !== null && { mrRiskFactors }), would_execute: false, errors: ['max_buys'] } as unknown as TechnicalIndicators,
           portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
           orderExecuted: false,
           error: `Gate: max buys per day (${buysToday}/${maxBuysPerDay})`,
@@ -2287,6 +2295,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ...(decision.near_miss_score !== undefined && { near_miss_score: decision.near_miss_score }),
         ...(decision.what_would_trigger !== undefined && { what_would_trigger: decision.what_would_trigger }),
         ...(selfFlaggedRisk !== undefined && { self_flagged_disqualifying_risk: selfFlaggedRisk }),
+        ...(mrRiskFactors !== null && { mrRiskFactors }),
       }
 
       const entry: AgentLogEntry = {
