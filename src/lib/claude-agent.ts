@@ -1148,6 +1148,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     console.log('[MACRO_SPX] unavailable')
   }
 
+  // Held-symbol set — hoisted here so it can also filter the static watchlist
+  // fallback below; the main loop's skip check further down reuses this same Set.
+  const openPositionSymbols = new Set(positions.map((p) => p.symbol))
+
   // 2. Dynamic stock selection — fallback to static watchlist if screener unavailable
   let watchlist: string[]
   try {
@@ -1179,6 +1183,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+      .filter((s) => !openPositionSymbols.has(s))
   }
 
   const marketOpen = clock.is_open
@@ -1476,7 +1481,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   const slotsAvailable = maxPositions - openPositionsCount
 
   // Skip open positions in the main loop — already handled by enforceExitRules()
-  const openPositionSymbols = new Set(positions.map((p) => p.symbol))
+  // (openPositionSymbols is declared earlier in this function, reused here)
 
   // Prevent same-cycle re-entry after GTC stop loss
   const closedThisCycle = new Set(closedContexts.map(ctx => ctx.symbol))
