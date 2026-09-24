@@ -2090,6 +2090,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       let error: string | undefined
       let queuedForRanking = false
       let buyQueueQty = 0
+      let requestedQty: number | undefined
 
       // Execute order if market is open and setup was detected
       if (setup_detected) {
@@ -2167,6 +2168,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                     finalShares = Math.round(adjustedShares * emaReclaimMultiplier)
                   }
                   const qty = finalShares
+                  requestedQty = qty
                   const allGatesPassed = true  // reached this point — all gates cleared
                   const wouldExecute = setup_detected && allGatesPassed
                   console.log(`[BUY SIZING] ${symbol}: baseShares=${baseShares} | confidence=${decision.confidence.toFixed(2)} | multiplier=${confidenceMultiplier.toFixed(2)} | adjustedShares=${adjustedShares} | zScore=${zScore.toFixed(3)} | price=$${indicators.currentPrice} | regime=${indicators.marketRegime}`)
@@ -2225,6 +2227,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                         indicatorsAtBuy.newsAdjustment = newsAdjustment
                         indicatorsAtBuy.sectorRotation = sectorRotation
                         indicatorsAtBuy.sectorRotationContext = sectorRotationContext
+                        indicatorsAtBuy.requestedQty = qty
 
                         indicatorsAtBuy.state_fingerprint = {
                           signal_type:   signalType,
@@ -2296,6 +2299,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ...(decision.what_would_trigger !== undefined && { what_would_trigger: decision.what_would_trigger }),
         ...(selfFlaggedRisk !== undefined && { self_flagged_disqualifying_risk: selfFlaggedRisk }),
         ...(mrRiskFactors !== null && { mrRiskFactors }),
+        ...(requestedQty !== undefined && { requestedQty }),
       }
 
       const entry: AgentLogEntry = {
@@ -2404,6 +2408,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
           bestIndicatorsAtBuy.sectorRotation = sectorRotation
           bestIndicatorsAtBuy.sectorRotationContext = sectorRotationContext
+          bestIndicatorsAtBuy.requestedQty = best.qty
 
           const bestEntryIndicators = best.entry.indicators as TechnicalIndicators & Record<string, unknown>
           bestIndicatorsAtBuy.effectiveThreshold = bestEntryIndicators.effectiveThreshold
