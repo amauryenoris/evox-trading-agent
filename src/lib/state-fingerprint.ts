@@ -12,6 +12,14 @@ export function getMacdBucket(macd: number | null): string | null {
   return 'NEGATIVE'
 }
 
+export function getAtrBucket(atrPercentile: number | null): string | null {
+  if (atrPercentile === null || !Number.isFinite(atrPercentile)) return null
+  if (atrPercentile >= 0.85) return 'VERY_HIGH'
+  if (atrPercentile >= 0.60) return 'HIGH'
+  if (atrPercentile >= 0.30) return 'MID'
+  return 'LOW'
+}
+
 export function getZBucket(
   z: number | null,
   signalType:

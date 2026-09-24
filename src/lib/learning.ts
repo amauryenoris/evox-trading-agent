@@ -103,6 +103,7 @@ export async function evaluateClosedTrade(
           adx_bucket:    string | null
           z_bucket:      string | null
           macd_bucket:   string | null
+          atr_bucket?:   string | null
         })
       : null
 

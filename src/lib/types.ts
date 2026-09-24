@@ -221,6 +221,7 @@ export interface TradeEvaluation {
     adx_bucket:    string | null
     z_bucket:      string | null
     macd_bucket:   string | null
+    atr_bucket?:   string | null
   } | null
   buyIndicators: TechnicalIndicators
   claudePostMortem: string

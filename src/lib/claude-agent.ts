@@ -22,7 +22,7 @@ import {
   type AlpacaNewsArticle,
 } from './alpaca'
 import { calculateAllIndicators } from './indicators'
-import { getAdxBucket, getMacdBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
+import { getAdxBucket, getMacdBucket, getAtrBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
 import { computeSectorRotation, formatSectorRotationContext } from './sector-rotation'
 import { generateDailyBriefing, computeVixyChangePct } from './market-daily-briefing'
 import { appendAgentLogEntries } from './agent-log'
@@ -2236,6 +2236,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                           adx_bucket:    getAdxBucket(adxValue),
                           z_bucket:      getZBucket(typeof zScore === 'number' ? zScore : null, signalType),
                           macd_bucket:   getMacdBucket(macdHistogram),
+                          atr_bucket:    getAtrBucket(typeof indicators.atrPercentile === 'number' ? indicators.atrPercentile : null),
                         }
 
                         if (signalType === 'TREND_PULLBACK') {
@@ -2416,6 +2417,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
 
           const bestAdxValue = typeof best.indicators.adx === 'number' ? best.indicators.adx : null
           const bestMacdHist = typeof best.indicators.macd?.histogram === 'number' ? best.indicators.macd.histogram : null
+          const bestAtrPercentile = typeof best.indicators.atrPercentile === 'number' ? best.indicators.atrPercentile : null
           const bestZForFingerprint = typeof best.zScore === 'number'
             ? best.zScore
             : typeof best.indicators.kalman?.zScore === 'number'
@@ -2430,6 +2432,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             adx_bucket:    getAdxBucket(bestAdxValue),
             z_bucket:      getZBucket(bestZForFingerprint, bestSignalType),
             macd_bucket:   getMacdBucket(bestMacdHist),
+            atr_bucket:    getAtrBucket(bestAtrPercentile),
           }
 
           if (best.signalType === 'TREND_PULLBACK') {
