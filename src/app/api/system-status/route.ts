@@ -29,7 +29,7 @@ export async function GET() {
       )
       for (const e of cycleEntries) {
         if (e.decision.signal_type === 'MEAN_REVERSION') meanReversionSetups++
-        else if (e.decision.signal_type === 'TREND_FOLLOWING' || e.decision.signal_type === 'PULLBACK_EMA50') trendSetups++
+        else if (e.decision.signal_type === 'TREND_PULLBACK' || e.decision.signal_type === 'TREND_ZLE05' || e.decision.signal_type === 'TREND_PULLBACK_3DAY') trendSetups++
       }
     }
 

@@ -1,3 +1,5 @@
+import type { SetupName } from './setups'
+
 // ============================================================
 // ALPACA API TYPES
 // ============================================================
@@ -134,7 +136,7 @@ export interface TechnicalIndicators {
 // ============================================================
 
 export type AgentAction = 'BUY' | 'SELL' | 'HOLD'
-export type SignalType = 'MEAN_REVERSION' | 'TREND_FOLLOWING' | 'PULLBACK_EMA50' | 'OTHER'
+export type SignalType = SetupName
 
 export interface PreFilterFlag {
   rule: 'zscore' | 'regime' | 'drawdown' | 'volatility'
@@ -192,6 +194,7 @@ export interface OpenPositionContext {
   patternIdsUsed: string[]
   stopOrderId?: string | null
   trailingStopOrderId?: string | null
+  // 'TREND' is legacy-compat for positions opened before the TREND -> TREND_PULLBACK rename — still read by claude-agent.ts's exit rules
   signalType?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null
   highSinceEntry?: number | null
   trailingStop?: number | null
@@ -209,6 +212,7 @@ export interface TradeEvaluation {
   pnlUSD: number
   pnlPct: number
   holdingDays: number
+  // 'TREND' is legacy-compat for positions opened before the TREND -> TREND_PULLBACK rename — still read by claude-agent.ts's exit rules
   signal_type?: 'MEAN_REVERSION' | 'TREND' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | 'TREND_PULLBACK_3DAY' | null
   spxPrice?:  number | null
   spxSma50?:  number | null
