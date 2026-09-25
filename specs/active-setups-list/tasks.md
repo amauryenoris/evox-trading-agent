@@ -41,8 +41,8 @@
 
 ## Post-Implementation
 
-- [ ] Run `/review active-setups-list` to verify implementation matches spec
-- [ ] Confirm Protected Zone files (`config.ts`, `claude-agent.ts`, `risk-manager.ts`, `indicators.ts`) unchanged
+- [x] Run `/review active-setups-list` to verify implementation matches spec
+- [x] Confirm Protected Zone files (`config.ts`, `claude-agent.ts`, `risk-manager.ts`, `indicators.ts`) unchanged
 
 ## Estimated Complexity
 
