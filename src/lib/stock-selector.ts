@@ -16,6 +16,7 @@ import {
   insertSelectionEvaluation,
 } from './db'
 import { INSTRUMENT_BLACKLIST } from './config'
+import { ACTIVE_SETUPS } from './setups'
 
 export class SelectionStepError extends Error {
   constructor(
@@ -43,6 +44,11 @@ const DEFAULT_SECTOR_WATCHLIST = [
   'MP', 'UUUU', 'NEM', 'FCX', 'GOLD',
 ].join(',')
 
+const ACTIVE_SETUP_CRITERIA_TEXT = ACTIVE_SETUPS
+  .filter((s) => s.active)
+  .map((s) => `    * ${s.name}: ${s.criteria}`)
+  .join('\n')
+
 const SELECTION_SYSTEM_PROMPT = `You are a quantitative trader AI selecting stocks for detailed technical analysis.
 You will receive two pools of candidates: the most active stocks from the market screener, and a curated sector watchlist.
 Your job is to select 6-8 symbols that maximize both opportunity and sector diversification.
@@ -56,6 +62,8 @@ CRITERIA:
     * Mining / Gold / Rare Earth (MP, UUUU, NEM, FCX, GOLD)
 - Use your past selection performance to refine your choices within sectors
 - Avoid selecting highly correlated stocks (e.g. don't pick 3 energy stocks)
+- Also weigh whether a candidate plausibly fits one of these active trading setups (one more factor among the above, not a requirement):
+${ACTIVE_SETUP_CRITERIA_TEXT}
 
 RESPOND ONLY with valid JSON (no markdown):
 {
