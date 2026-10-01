@@ -52,6 +52,7 @@ import type {
   AlpacaAccount,
   AlpacaOrder,
   AlpacaPosition,
+  FillAttempt,
   OpenPositionContext,
   TechnicalIndicators,
   TradeEvaluation,
@@ -988,6 +989,11 @@ export const IOC_NOT_FILLED    = 'IOC_NOT_FILLED'
 export const STOP_SUBMIT_FAILED = 'STOP_SUBMIT_FAILED'
 export const IOC_LATE_FILL = 'IOC_LATE_FILL'
 
+// Bounded remainder retry for a partial IOC BUY fill — never retries a zero fill.
+export const IOC_REMAINDER_RETRY_MAX = 2
+export const IOC_RETRY_MAX_DRIFT_BPS = 20
+export const IOC_RETRY_MIN_REMAINDER_USD = 300
+
 // Submits a GTC stop order and retries once on failure.
 // Returns the stop order ID on success, or a failureReason on double failure.
 // The position context is always saved by the caller — a naked position
@@ -1082,6 +1088,94 @@ export async function resolveIocFinalState(
     console.warn(`[ORDER] ${order.symbol} cancelOrder failed during forced IOC resolution:`, err)
   }
   return getOrder(syncOrder.id)
+}
+
+function buildFillAttempt(order: AlpacaOrder, qtyRequested: number, limitPrice: number): FillAttempt {
+  const qtyFilled = parseInt(order.filled_qty, 10)
+  let avgFillPrice: number | null = null
+  if (qtyFilled > 0) {
+    if (order.filled_avg_price) {
+      avgFillPrice = parseFloat(order.filled_avg_price)
+    } else {
+      avgFillPrice = limitPrice
+      console.warn(`[IOC_RETRY] ${order.symbol} order ${order.id} filled ${qtyFilled} but has no filled_avg_price — using limit price $${limitPrice} instead`)
+    }
+  }
+  return { orderId: order.id, qtyRequested, qtyFilled, limitPrice, avgFillPrice, status: order.status }
+}
+
+function weightedAvgFillPrice(attempts: FillAttempt[], totalFilledQty: number): number | null {
+  if (totalFilledQty === 0) return null
+  const weightedSum = attempts.reduce((sum, a) => sum + (a.avgFillPrice ?? 0) * a.qtyFilled, 0)
+  return weightedSum / totalFilledQty
+}
+
+// Runs the initial IOC BUY order, then bounded remainder retries on a
+// partial fill only (never on a zero fill — see .claude/skills/alpaca-patterns.md).
+// Each retry requires a fresh, non-stale, in-spread quote that hasn't drifted
+// more than IOC_RETRY_MAX_DRIFT_BPS above attempt 1's price, and a remainder
+// worth at least IOC_RETRY_MIN_REMAINDER_USD — any failing check simply stops
+// the retries and keeps whatever already filled, it is never treated as an error.
+export async function executeIocWithRemainderRetry(
+  symbol: string,
+  requestedQty: number,
+  firstLimitPrice: number,
+  firstSpreadBps: number
+): Promise<{
+  totalFilledQty: number
+  avgFillPrice: number | null
+  attempts: FillAttempt[]
+  firstOrder: AlpacaOrder
+}> {
+  const firstSyncOrder = await submitLimitOrder(symbol, requestedQty, 'buy', firstLimitPrice)
+  const firstOrder = await resolveIocFinalState(firstSyncOrder)
+  const attempts: FillAttempt[] = [buildFillAttempt(firstOrder, requestedQty, firstLimitPrice)]
+  let totalFilledQty = Math.min(attempts[0].qtyFilled, requestedQty)
+  console.log(`[ORDER] ${symbol} limit IOC BUY @ $${firstLimitPrice} id: ${firstOrder.id} status: ${firstOrder.status} filled: ${totalFilledQty}/${requestedQty} spread: ${firstSpreadBps}bps`)
+
+  if (totalFilledQty > 0) {
+    for (let retry = 0; retry < IOC_REMAINDER_RETRY_MAX && totalFilledQty < requestedQty; retry++) {
+      const remainder = requestedQty - totalFilledQty
+      const freshQuote = await getQuote(symbol)
+      const maxDriftPrice = firstLimitPrice * (1 + IOC_RETRY_MAX_DRIFT_BPS / 10000)
+      const gateOk =
+        freshQuote !== null &&
+        freshQuote.fresh &&
+        freshQuote.spreadBps <= MAX_SPREAD_BPS &&
+        freshQuote.ask <= maxDriftPrice &&
+        remainder * freshQuote.ask >= IOC_RETRY_MIN_REMAINDER_USD
+
+      if (!gateOk) {
+        console.log(`[IOC_RETRY] ${symbol} stopping remainder retries — gate check failed (remainder=${remainder})`)
+        break
+      }
+
+      try {
+        const retrySyncOrder = await submitLimitOrder(symbol, remainder, 'buy', freshQuote.ask)
+        const retryOrder = await resolveIocFinalState(retrySyncOrder)
+        const attempt = buildFillAttempt(retryOrder, remainder, freshQuote.ask)
+        attempts.push(attempt)
+        totalFilledQty = Math.min(totalFilledQty + attempt.qtyFilled, requestedQty)
+        console.log(`[ORDER] ${symbol} limit IOC BUY retry @ $${freshQuote.ask} id: ${retryOrder.id} status: ${retryOrder.status} filled: ${attempt.qtyFilled}/${remainder} spread: ${freshQuote.spreadBps}bps`)
+        if (attempt.qtyFilled === 0) {
+          console.log(`[IOC_RETRY] ${symbol} stopping remainder retries — retry filled 0 shares`)
+          break
+        }
+      } catch (err) {
+        console.error(`[IOC_RETRY] ${symbol} retry attempt failed — keeping fills already obtained:`, err)
+        break
+      }
+    }
+  }
+
+  console.log(`[IOC_REMAINDER_RETRY] ${symbol}: requested ${requestedQty}, attempts ${attempts.length}, filled ${totalFilledQty}`)
+
+  return {
+    totalFilledQty,
+    avgFillPrice: weightedAvgFillPrice(attempts, totalFilledQty),
+    attempts,
+    firstOrder,
+  }
 }
 
 export async function runAgentCycle(): Promise<AgentCycleResult> {
@@ -2091,6 +2185,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       let queuedForRanking = false
       let buyQueueQty = 0
       let requestedQty: number | undefined
+      let fillAttempts: FillAttempt[] | undefined
 
       // Execute order if market is open and setup was detected
       if (setup_detected) {
@@ -2183,10 +2278,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                       // Normal mode — execute immediately
                       decision.action = 'BUY'
                       const limitPrice = quote.ask
-                      const syncOrder = await submitLimitOrder(symbol, qty, 'buy', limitPrice)
-                      const order = await resolveIocFinalState(syncOrder)
-                      const filledQty = parseInt(order.filled_qty, 10)
-                      console.log(`[ORDER] ${symbol} limit IOC BUY @ $${limitPrice} id: ${order.id} status: ${order.status} filled: ${filledQty}/${qty} spread: ${quote.spreadBps}bps`)
+                      const fillResult = await executeIocWithRemainderRetry(symbol, qty, limitPrice, quote.spreadBps)
+                      const filledQty = fillResult.totalFilledQty
 
                       if (filledQty === 0) {
                         console.log(`[ORDER] ${symbol} IOC not filled — 0 shares filled at $${limitPrice}`)
@@ -2197,9 +2290,10 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                           console.log(`[ORDER] ${symbol} IOC_PARTIAL_FILL: requested ${qty}, filled ${filledQty}`)
                         }
 
-                        orderId = order.id
+                        orderId = fillResult.firstOrder.id
                         orderExecuted = true
                         decision.quantity = filledQty
+                        fillAttempts = fillResult.attempts
                         openPositionsCount++
                         buysToday++
 
@@ -2228,6 +2322,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                         indicatorsAtBuy.sectorRotation = sectorRotation
                         indicatorsAtBuy.sectorRotationContext = sectorRotationContext
                         indicatorsAtBuy.requestedQty = qty
+                        indicatorsAtBuy.fillAttempts = fillResult.attempts
 
                         indicatorsAtBuy.state_fingerprint = {
                           signal_type:   signalType,
@@ -2301,6 +2396,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         ...(selfFlaggedRisk !== undefined && { self_flagged_disqualifying_risk: selfFlaggedRisk }),
         ...(mrRiskFactors !== null && { mrRiskFactors }),
         ...(requestedQty !== undefined && { requestedQty }),
+        ...(fillAttempts !== undefined && { fillAttempts }),
       }
 
       const entry: AgentLogEntry = {
@@ -2367,10 +2463,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       } else {
         const rankingQuote = await getQuote(best.symbol)
         if (!rankingQuote) throw new Error('Spread gate: no quote at ranking execution')
-        const syncOrder = await submitLimitOrder(best.symbol, best.qty, 'buy', rankingQuote.ask)
-        const order = await resolveIocFinalState(syncOrder)
-        const filledQty = parseInt(order.filled_qty, 10)
-        console.log(`[ORDER] ${best.symbol} limit IOC BUY @ $${rankingQuote.ask} id: ${order.id} status: ${order.status} filled: ${filledQty}/${best.qty} spread: ${rankingQuote.spreadBps}bps`)
+        const fillResult = await executeIocWithRemainderRetry(best.symbol, best.qty, rankingQuote.ask, rankingQuote.spreadBps)
+        const filledQty = fillResult.totalFilledQty
 
         if (filledQty === 0) {
           console.log(`[ORDER] ${best.symbol} IOC not filled — 0 shares filled at $${rankingQuote.ask}`)
@@ -2381,7 +2475,8 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             console.log(`[ORDER] ${best.symbol} IOC_PARTIAL_FILL: requested ${best.qty}, filled ${filledQty}`)
           }
 
-          best.entry.orderId = order.id
+          best.entry.orderId = fillResult.firstOrder.id
+          best.entry.indicators = { ...best.entry.indicators, fillAttempts: fillResult.attempts }
           best.entry.orderExecuted = true
           best.decision.action = 'BUY'
           best.decision.quantity = filledQty
@@ -2410,6 +2505,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           bestIndicatorsAtBuy.sectorRotation = sectorRotation
           bestIndicatorsAtBuy.sectorRotationContext = sectorRotationContext
           bestIndicatorsAtBuy.requestedQty = best.qty
+          bestIndicatorsAtBuy.fillAttempts = fillResult.attempts
 
           const bestEntryIndicators = best.entry.indicators as TechnicalIndicators & Record<string, unknown>
           bestIndicatorsAtBuy.effectiveThreshold = bestEntryIndicators.effectiveThreshold

@@ -129,6 +129,16 @@ export interface TechnicalIndicators {
   closeMinus4?: number | null
   mrRiskFactors?: string[] | null
   requestedQty?: number
+  fillAttempts?: FillAttempt[]
+}
+
+export interface FillAttempt {
+  orderId: string
+  qtyRequested: number
+  qtyFilled: number
+  limitPrice: number
+  avgFillPrice: number | null
+  status: string
 }
 
 // ============================================================
