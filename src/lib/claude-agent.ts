@@ -25,6 +25,7 @@ import { calculateAllIndicators } from './indicators'
 import { getAdxBucket, getMacdBucket, getAtrBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
 import { computeSectorRotation, formatSectorRotationContext } from './sector-rotation'
 import { generateDailyBriefing, computeVixyChangePct } from './market-daily-briefing'
+import { isMacroBarsStale } from './macro-bars-staleness'
 import { appendAgentLogEntries } from './agent-log'
 import {
   detectClosedPositions,
@@ -50,6 +51,7 @@ import type {
   AgentDecision,
   AgentLogEntry,
   AlpacaAccount,
+  AlpacaBar,
   AlpacaOrder,
   AlpacaPosition,
   FillAttempt,
@@ -1178,6 +1180,16 @@ export async function executeIocWithRemainderRetry(
   }
 }
 
+function guardMacroBars(symbol: string, bars: AlpacaBar[]): AlpacaBar[] {
+  if (!isMacroBarsStale(bars, new Date())) return bars
+  const lastBar = bars.length > 0 ? bars[bars.length - 1].t.split('T')[0] : 'none'
+  const ageDays = bars.length > 0
+    ? Math.floor((Date.now() - new Date(bars[bars.length - 1].t).getTime()) / (24 * 60 * 60 * 1000))
+    : -1
+  console.warn(`[STALE_MACRO_BARS] symbol=${symbol} lastBar=${lastBar} ageDays=${ageDays}`)
+  return []
+}
+
 export async function runAgentCycle(): Promise<AgentCycleResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set')
@@ -1191,35 +1203,41 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     getAccount(),
     getPositions(),
     getClock(),
-    getBars('SPY', '1Day', 400).catch((err: unknown) => {
+    getBars('SPY', '1Day', 400, 400).catch((err: unknown) => {
       console.error('[MACRO_SPX] SPY fetch failed:', err)
       return []
     }),
-    getBars('GDX', '1Day', 400).catch((err: unknown) => {
+    getBars('GDX', '1Day', 400, 400).catch((err: unknown) => {
       console.error('[SECTOR_ROTATION] GDX fetch failed:', err)
       return []
     }),
-    getBars('XLE', '1Day', 400).catch((err: unknown) => {
+    getBars('XLE', '1Day', 400, 400).catch((err: unknown) => {
       console.error('[SECTOR_ROTATION] XLE fetch failed:', err)
       return []
     }),
-    getBars('XLK', '1Day', 400).catch((err: unknown) => {
+    getBars('XLK', '1Day', 400, 400).catch((err: unknown) => {
       console.error('[SECTOR_ROTATION] XLK fetch failed:', err)
       return []
     }),
-    getBars('VIXY', '1Day', 400).catch((err: unknown) => {
+    getBars('VIXY', '1Day', 400, 400).catch((err: unknown) => {
       console.error('[BRIEFING] VIXY fetch failed:', err)
       return []
     }),
   ])
 
-  const spxSnapshot = computeSpxSnapshot(spyBars)
+  const safeSpyBars = guardMacroBars('SPY', spyBars)
+  const safeGdxBars = guardMacroBars('GDX', gdxBars)
+  const safeXleBars = guardMacroBars('XLE', xleBars)
+  const safeXlkBars = guardMacroBars('XLK', xlkBars)
+  const safeVixyBars = guardMacroBars('VIXY', vixyBars)
 
-  const sectorRotation = computeSectorRotation(gdxBars, xleBars, xlkBars, spyBars)
+  const spxSnapshot = computeSpxSnapshot(safeSpyBars)
+
+  const sectorRotation = computeSectorRotation(safeGdxBars, safeXleBars, safeXlkBars, safeSpyBars)
   const sectorRotationContext = formatSectorRotationContext(sectorRotation)
   console.log('[SECTOR_ROTATION]', JSON.stringify(sectorRotation))
 
-  const vixyChangePct = computeVixyChangePct(vixyBars)
+  const vixyChangePct = computeVixyChangePct(safeVixyBars)
   console.log('[BRIEFING] VIXY 1-day change:', vixyChangePct)
 
   let briefingNarrative = ''
