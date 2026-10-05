@@ -80,3 +80,4 @@ None.
 ## Decision
 
 **APPROVED** — No CRITICAL or HIGH findings. All 7 functional and 4 non-functional requirements satisfied, Protected Zone touch was authorized and correctly scoped, zero test regressions, build and type-check clean. Ready to commit.
+

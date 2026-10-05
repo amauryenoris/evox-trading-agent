@@ -175,6 +175,7 @@ export async function enforceExitRules(
     if (r.includes('PROFIT_TARGET'))    return 'PROFIT_TARGET'
     if (r.includes('TIME_STOP'))        return 'TIME_STOP'
     if (r.includes('FAIR_VALUE'))       return 'Z_SCORE_EXIT'
+    if (r.includes('MOVE_EXHAUSTED'))   return 'Z_SCORE_EXIT'
     if (r.includes('FELL_BELOW_EMA50')) return 'EMA_FAILURE'
     if (r.includes('TRAILING_STOP'))    return 'TRAILING_STOP'
     if (r.includes('CLOSED_ABOVE_SMA5')) return 'SMA5_RECLAIM'
@@ -279,9 +280,18 @@ export async function enforceExitRules(
 
     let exitReason: string | null = null
 
+    // Per-signal-type profit target — TREND_ZLE05 trial (see specs/trend-zle05-exit-rules-trial)
+    const PROFIT_TARGET_PCT: Record<string, number> = {
+      TREND_ZLE05: 0.05,
+      default: 0.10,
+    }
+    // Mirrors the TREND_ZLE05 entry ceiling (zScore <= 1.25 in trendZLE05Setup) — revisit if that literal changes.
+    const TREND_ZLE05_Z_EXIT = 1.25
+
     // Universal exits — checked first, always take priority over signal-type rules
-    if (pnlPct >= 0.10) {
-      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= 10%)`
+    const profitTargetPct = PROFIT_TARGET_PCT[signalType ?? 'default'] ?? PROFIT_TARGET_PCT['default']
+    if (pnlPct >= profitTargetPct) {
+      exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= ${(profitTargetPct * 100).toFixed(0)}%)`
     }
     if (!exitReason && daysOpen >= 20) {
       exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
@@ -294,10 +304,17 @@ export async function enforceExitRules(
       }
     }
 
-    // Trend exits (covers legacy TREND + new TREND_PULLBACK + TREND_ZLE05)
-    if (!exitReason && (signalType === 'TREND' || signalType === 'TREND_PULLBACK' || signalType === 'TREND_ZLE05')) {
+    // Trend exits (covers legacy TREND + new TREND_PULLBACK) — TREND_ZLE05 uses the z-score exhaustion rule below instead
+    if (!exitReason && (signalType === 'TREND' || signalType === 'TREND_PULLBACK')) {
       if (ind.ema50 !== null && ind.currentPrice < ind.ema50) {
         exitReason = `Exit rule: price $${ind.currentPrice.toFixed(2)} fell below EMA50 $${ind.ema50.toFixed(2)}`
+      }
+    }
+
+    // TREND_ZLE05 exit — z-score reached the entry ceiling, move exhausted (trial, replaces EMA50 break for this setup only)
+    if (!exitReason && signalType === 'TREND_ZLE05') {
+      if (Number.isFinite(zScore) && zScore >= TREND_ZLE05_Z_EXIT) {
+        exitReason = `Exit rule: z-score ${zScore.toFixed(2)} reached 1.25 (entry ceiling) — move exhausted`
       }
     }
 
