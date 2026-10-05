@@ -3,7 +3,17 @@ name: Security Audit
 on:
   schedule:
     - cron: "0 12 * * 1-5"  # 12:00 UTC weekdays, before the 13:30 UTC market open
-  workflow_dispatch:
+   workflow_dispatch:
+    inputs:
+      audit_level:
+        description: "Minimum severity that fails the audit (use moderate to test the alert)"
+        type: choice
+        options:
+          - critical
+          - high
+          - moderate
+          - low
+        default: critical
 
 concurrency:
   group: security-audit
@@ -33,8 +43,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          npm audit --audit-level=critical 2>&1 | tee audit.txt
-
+          npm audit --audit-level=${{ inputs.audit_level || 'critical' }} 2>&1 | tee audit.txt
       - name: Report critical advisory
         if: steps.audit.outcome == 'failure'
         uses: actions/github-script@v7
