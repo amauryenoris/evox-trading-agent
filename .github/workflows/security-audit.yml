@@ -1,0 +1,110 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: "0 12 * * 1-5"  # 12:00 UTC weekdays, before the 13:30 UTC market open
+  workflow_dispatch:
+
+concurrency:
+  group: security-audit
+  cancel-in-progress: false
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Security audit
+        id: audit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm audit --audit-level=critical 2>&1 | tee audit.txt
+
+      - name: Report critical advisory
+        if: steps.audit.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const ISSUE_TITLE = 'Security audit: critical advisory detected'
+
+            let excerpt = '(audit.txt not found)'
+            try {
+              excerpt = fs.readFileSync('audit.txt', 'utf8').split('\n').slice(0, 60).join('\n')
+            } catch (err) {
+              excerpt = `(could not read audit.txt: ${err.message})`
+            }
+            const body = '```\n' + excerpt + '\n```'
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            })
+            const existing = openIssues.find(i => !i.pull_request && i.title === ISSUE_TITLE)
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: 'Critical advisory still present:\n\n' + body,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: ISSUE_TITLE,
+                body,
+              })
+            }
+
+      - name: Close resolved advisory
+        if: steps.audit.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ISSUE_TITLE = 'Security audit: critical advisory detected'
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            })
+            const existing = openIssues.find(i => !i.pull_request && i.title === ISSUE_TITLE)
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: 'Audit is clean — no critical advisories found. Closing.',
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+              })
+            }
+
+      - name: Fail the run on critical advisory
+        if: steps.audit.outcome == 'failure'
+        run: exit 1
