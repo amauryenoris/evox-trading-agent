@@ -3,7 +3,7 @@ name: Security Audit
 on:
   schedule:
     - cron: "0 12 * * 1-5"  # 12:00 UTC weekdays, before the 13:30 UTC market open
-   workflow_dispatch:
+  workflow_dispatch:
     inputs:
       audit_level:
         description: "Minimum severity that fails the audit (use moderate to test the alert)"
