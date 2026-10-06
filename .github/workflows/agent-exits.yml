@@ -34,6 +34,5 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
-      - name: Security audit
-        run: npm audit --audit-level=critical
+      # npm audit runs in security-audit.yml (daily, alerts via GitHub issue); it does not gate this workflow
       - run: npm run exit-only

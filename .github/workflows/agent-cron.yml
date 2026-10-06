@@ -46,8 +46,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Security audit
-        run: npm audit --audit-level=critical
+      # npm audit runs in security-audit.yml (daily, alerts via GitHub issue); it does not gate this workflow
 
       - name: Run agent cycle
         run: npm run cycle
