@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getTradeEvaluations } from '@/lib/db'
+import { clampTradesLimit } from '@/lib/trade-views'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const trades = await getTradeEvaluations(50)
+    const { searchParams } = new URL(request.url)
+    const limit = clampTradesLimit(searchParams.get('limit'))
+    const trades = await getTradeEvaluations(limit)
     return NextResponse.json(trades)
   } catch (error) {
     console.error('[trades]:', error)
