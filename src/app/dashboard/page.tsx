@@ -16,6 +16,7 @@ import { HealthMonitorPanel } from '@/components/dashboard/HealthMonitorPanel'
 import { RejectedSetups } from '@/components/dashboard/RejectedSetups'
 import { ActiveCooldowns } from '@/components/dashboard/ActiveCooldowns'
 import { DailySummary } from '@/components/dashboard/DailySummary'
+import { LearningPanel } from '@/components/dashboard/LearningPanel'
 // ADAPTED: LogoutButton kept — auth layer requires it; absent in App.jsx (abstract Header)
 import { LogoutButton } from '@/components/dashboard/LogoutButton'
 import { DashboardTabs } from '@/components/dashboard/DashboardTabs'
@@ -57,12 +58,13 @@ async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
 }
 
 export default async function DashboardPage() {
-  const [portfolio, positions, agentLog, trades, patterns, reports, portfolioHistory] =
+  const [portfolio, positions, agentLog, trades, allTrades, patterns, reports, portfolioHistory] =
     await Promise.all([
       fetchJSON<PortfolioSummary | null>('/api/portfolio', null),
       fetchJSON<PositionDisplay[]>('/api/positions', []),
       fetchJSON<AgentLogEntry[]>('/api/agent-log', []),
       fetchJSON<TradeEvaluation[]>('/api/trades', []),
+      fetchJSON<TradeEvaluation[]>('/api/trades?limit=500', []),
       fetchJSON<TradingPattern[]>('/api/patterns', []),
       fetchJSON<ReportRecord[]>('/api/reports', []),
       // ADAPTED: PortfolioHistory shape — not a flat PortfolioHistoryPoint[], matches PnLChart prop
@@ -150,6 +152,16 @@ export default async function DashboardPage() {
           subtitle="Entry-vs-current technical state for every currently-open position, from the twice-daily health check."
         />
         <HealthMonitorPanel />
+      </div>
+    ),
+    learning: (
+      <div className="space-y-5">
+        <ZoneTitle
+          kicker="07 · Learning"
+          title="What closed trades teach the system"
+          subtitle="A chronological timeline of closed trades, broken down by symbol and by setup, with the conditions behind each outcome."
+        />
+        <LearningPanel allTrades={allTrades} />
       </div>
     ),
   }

@@ -18,6 +18,7 @@ export function PatternLibraryCard({ patterns }: Props) {
         <h3 className="text-sm font-semibold tracking-[0.18em] uppercase">Pattern Library</h3>
         <span className="text-[11px] text-muted">{patterns.length} discovered</span>
       </div>
+      <p className="px-6 pb-3 -mt-2 text-[11px] text-muted">Each card aggregates trades from several symbols</p>
 
       {ranked.length === 0 ? (
         <p className="px-6 pb-8 text-center text-sm text-muted">
@@ -26,8 +27,6 @@ export function PatternLibraryCard({ patterns }: Props) {
       ) : (
         <div className="divide-y divide-border max-h-[640px] overflow-y-auto">
           {ranked.map((p) => {
-            // ADAPTED: symbol extracted from id (no symbol field in TradingPattern)
-            const symbol   = p.id.split('_').pop() ?? ''
             // ADAPTED: winRate is 0–1 decimal — multiplied by 100 for display
             const winPct   = p.winRate * 100
             const isGood   = winPct >= 50
@@ -39,12 +38,12 @@ export function PatternLibraryCard({ patterns }: Props) {
               <div key={p.id} className="px-6 py-4 hover:bg-white/[0.015] transition">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2.5">
-                    {symbol && (
-                      <span className="font-semibold">{symbol}</span>
-                    )}
                     {/* ADAPTED: signalType passed directly — MEAN_REVERSION shows as neutral fallback in SignalBadge; acceptable since ui.tsx cannot be modified */}
                     <SignalBadge signal={p.signalType} />
                     <Badge tone={p.action === 'BUY' ? 'green' : 'red'} size="xs">{p.action}</Badge>
+                    {p.patternKey && (
+                      <span className="text-[10.5px] text-muted">{p.patternKey}</span>
+                    )}
                   </div>
                   <span className="text-[10.5px] text-muted num">{p.sampleCount} samples</span>
                 </div>
