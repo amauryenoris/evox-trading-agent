@@ -286,3 +286,55 @@ describe('executeIocWithRemainderRetry — weighted avgFillPrice', () => {
     expect(result.avgFillPrice).toBe(100)
   })
 })
+
+// Replicates the buyPrice resolution added inline at both saveOpenPositionContext call sites
+// in claude-agent.ts (~2386, ~2591). Kept in sync manually — update this if that expression changes.
+function resolveBuyPrice(avgFillPrice: number | null, currentPrice: number): number {
+  return avgFillPrice !== null && Number.isFinite(avgFillPrice) && avgFillPrice > 0
+    ? avgFillPrice
+    : currentPrice
+}
+
+describe('resolveBuyPrice — buyPrice resolution at the saveOpenPositionContext call sites', () => {
+  it('uses the fill price on a single full fill, not the quote/currentPrice', () => {
+    // Arrange / Act
+    const buyPrice = resolveBuyPrice(100.00, 99.50)
+
+    // Assert
+    expect(buyPrice).toBe(100.00)
+  })
+
+  it('uses the weighted average fill price from a retry sequence (41 @ 113.78 + 7 @ 113.77)', async () => {
+    // Arrange
+    const submitAndResolve = vi.fn()
+      .mockResolvedValueOnce(order({ id: 'ord-1', filled_qty: '41', filled_avg_price: '113.78', status: 'canceled' }))
+      .mockResolvedValueOnce(order({ id: 'ord-2', filled_qty: '7', filled_avg_price: '113.77', status: 'filled' }))
+    const getQuote = vi.fn().mockResolvedValue(freshQuote({ ask: 114.50 }))
+    const staleQuoteCurrentPrice = 113.5
+    const expectedWeightedAvg = (41 * 113.78 + 7 * 113.77) / 48
+
+    // Act
+    const fillResult = await executeIocWithRemainderRetry(48, 114.50, { submitAndResolve, getQuote })
+    const buyPrice = resolveBuyPrice(fillResult.avgFillPrice, staleQuoteCurrentPrice)
+
+    // Assert
+    expect(fillResult.avgFillPrice).toBeCloseTo(expectedWeightedAvg, 5)
+    expect(buyPrice).toBeCloseTo(expectedWeightedAvg, 5)
+    expect(buyPrice).not.toBe(staleQuoteCurrentPrice)
+  })
+
+  it('falls back to the supplied current price when avgFillPrice is null', () => {
+    // Arrange / Act
+    const buyPrice = resolveBuyPrice(null, 99.50)
+
+    // Assert
+    expect(buyPrice).toBe(99.50)
+  })
+
+  it('falls back to the supplied current price when avgFillPrice is 0 or not finite', () => {
+    // Arrange / Act / Assert
+    expect(resolveBuyPrice(0, 99.50)).toBe(99.50)
+    expect(resolveBuyPrice(Number.POSITIVE_INFINITY, 99.50)).toBe(99.50)
+    expect(resolveBuyPrice(Number.NaN, 99.50)).toBe(99.50)
+  })
+})

@@ -2383,10 +2383,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                           indicatorsAtBuy.zle05_zscore = zle05Z
                         }
 
+                        const buyPrice = fillResult.avgFillPrice !== null &&
+                          Number.isFinite(fillResult.avgFillPrice) &&
+                          fillResult.avgFillPrice > 0
+                          ? fillResult.avgFillPrice
+                          : indicators.currentPrice
+
                         await saveOpenPositionContext({
                           symbol,
                           buyTimestamp: timestamp,
-                          buyPrice: indicators.currentPrice,
+                          buyPrice,
                           quantity: filledQty,
                           indicators: indicatorsAtBuy,
                           claudeReasoning: decision.reasoning,
@@ -2588,10 +2594,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             bestIndicatorsAtBuy.zle05_zscore = rawBestZle05Z
           }
 
+          const buyPrice = fillResult.avgFillPrice !== null &&
+            Number.isFinite(fillResult.avgFillPrice) &&
+            fillResult.avgFillPrice > 0
+            ? fillResult.avgFillPrice
+            : best.indicators.currentPrice
+
           await saveOpenPositionContext({
             symbol: best.symbol,
             buyTimestamp: timestamp,
-            buyPrice: best.indicators.currentPrice,
+            buyPrice,
             quantity: filledQty,
             indicators: bestIndicatorsAtBuy,
             claudeReasoning: best.decision.reasoning,
