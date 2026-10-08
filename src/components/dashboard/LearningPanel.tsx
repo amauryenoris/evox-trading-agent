@@ -3,19 +3,22 @@
 import { useMemo, useState } from 'react'
 import type { TradeEvaluation } from '@/lib/types'
 import { buildTimeline, groupBySymbol, groupBySetup } from '@/lib/trade-views'
+import { getPatternStats } from '@/lib/pattern-stats'
 import { Card } from './ui'
 import { LearningTimeline } from './LearningTimeline'
 import { LearningBySymbol } from './LearningBySymbol'
 import { LearningBySetup } from './LearningBySetup'
+import { LearningPatterns } from './LearningPatterns'
 
 const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
 
-type SubView = 'timeline' | 'symbol' | 'setup'
+type SubView = 'timeline' | 'symbol' | 'setup' | 'patterns'
 
 const SUB_VIEWS: { id: SubView; label: string }[] = [
   { id: 'timeline', label: 'Timeline' },
   { id: 'symbol', label: 'By symbol' },
   { id: 'setup', label: 'By setup' },
+  { id: 'patterns', label: 'Patterns' },
 ]
 
 interface Props {
@@ -28,6 +31,7 @@ export function LearningPanel({ allTrades }: Props) {
   const timeline = useMemo(() => buildTimeline(allTrades), [allTrades])
   const bySymbol = useMemo(() => groupBySymbol(allTrades), [allTrades])
   const bySetup = useMemo(() => groupBySetup(allTrades), [allTrades])
+  const patternStats = useMemo(() => getPatternStats(allTrades), [allTrades])
 
   if (allTrades.length === 0) {
     return (
@@ -62,6 +66,7 @@ export function LearningPanel({ allTrades }: Props) {
         {activeView === 'timeline' && <LearningTimeline entries={timeline} />}
         {activeView === 'symbol' && <LearningBySymbol groups={bySymbol} />}
         {activeView === 'setup' && <LearningBySetup groups={bySetup} />}
+        {activeView === 'patterns' && <LearningPatterns patternStats={patternStats} allTrades={allTrades} />}
       </div>
     </Card>
   )

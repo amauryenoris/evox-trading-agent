@@ -3,7 +3,6 @@ import { PositionsTable } from '@/components/dashboard/PositionsTable'
 import { PnLChart, type PortfolioHistory } from '@/components/dashboard/PnLChart'
 import { TradeHistoryTable } from '@/components/dashboard/TradeHistoryTable'
 import { AgentReasoningLog } from '@/components/dashboard/AgentReasoningLog'
-import { PatternLibraryCard } from '@/components/dashboard/PatternLibraryCard'
 import { RunAgentButton } from '@/components/dashboard/RunAgentButton'
 import { MarketStatusBadge } from '@/components/dashboard/MarketStatusBadge'
 import { WeeklyReportsCard } from '@/components/dashboard/WeeklyReportsCard'
@@ -24,7 +23,7 @@ import { DashboardTabs } from '@/components/dashboard/DashboardTabs'
 import { SystemStatusBar } from '@/components/dashboard/SystemStatusBar'
 // ADAPTED: cookies forwarded so auth-protected API routes work server-side
 import { cookies } from 'next/headers'
-import type { PortfolioSummary, PositionDisplay, AgentLogEntry, TradeEvaluation, TradingPattern } from '@/lib/types'
+import type { PortfolioSummary, PositionDisplay, AgentLogEntry, TradeEvaluation } from '@/lib/types'
 import type { ReportRecord } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -58,14 +57,13 @@ async function fetchJSON<T>(path: string, fallback: T): Promise<T> {
 }
 
 export default async function DashboardPage() {
-  const [portfolio, positions, agentLog, trades, allTrades, patterns, reports, portfolioHistory] =
+  const [portfolio, positions, agentLog, trades, allTrades, reports, portfolioHistory] =
     await Promise.all([
       fetchJSON<PortfolioSummary | null>('/api/portfolio', null),
       fetchJSON<PositionDisplay[]>('/api/positions', []),
       fetchJSON<AgentLogEntry[]>('/api/agent-log', []),
       fetchJSON<TradeEvaluation[]>('/api/trades', []),
       fetchJSON<TradeEvaluation[]>('/api/trades?limit=500', []),
-      fetchJSON<TradingPattern[]>('/api/patterns', []),
       fetchJSON<ReportRecord[]>('/api/reports', []),
       // ADAPTED: PortfolioHistory shape — not a flat PortfolioHistoryPoint[], matches PnLChart prop
       fetchJSON<PortfolioHistory | null>('/api/portfolio-history', null),
@@ -119,7 +117,6 @@ export default async function DashboardPage() {
         <PerformanceAnalytics />
         <AgentReasoningLog entries={agentLog} />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          <PatternLibraryCard patterns={patterns} />
           <TradeHistoryTable trades={trades} />
         </div>
       </div>
