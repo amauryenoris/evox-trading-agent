@@ -8,6 +8,7 @@ import {
   computeEma50ExtensionBucket,
   computeDrop3dBucket,
   computeReentryBucket,
+  getTradeDimensionValue,
 } from '../pattern-stats'
 
 let nextId = 0
@@ -284,5 +285,24 @@ describe('getPatternStats — purity and output shape', () => {
     buildBucketReports(trades, 'MEAN_REVERSION')
 
     expect(JSON.parse(JSON.stringify(trades))).toEqual(snapshot)
+  })
+})
+
+describe('getTradeDimensionValue', () => {
+  it('returns the same bucket values the bucket reports are built from', () => {
+    const trade = makeTrade({
+      stateFingerprint: { signal_type: 'MEAN_REVERSION', spx_regime: null, market_regime: 'RANGING', adx_bucket: 'MID', z_bucket: 'DEEP', macd_bucket: 'NEGATIVE', atr_bucket: 'HIGH' },
+    })
+
+    expect(getTradeDimensionValue('adx_bucket', trade, [trade])).toBe('MID')
+    expect(getTradeDimensionValue('z_bucket', trade, [trade])).toBe('DEEP')
+    expect(getTradeDimensionValue('market_regime', trade, [trade])).toBe('RANGING')
+    expect(getTradeDimensionValue('ema50_extension_bucket', trade, [trade])).toBe(computeEma50ExtensionBucket(trade))
+    expect(getTradeDimensionValue('reentry_bucket', trade, [trade])).toBe('FIRST')
+  })
+
+  it('returns null for an unknown dimension', () => {
+    const trade = makeTrade()
+    expect(getTradeDimensionValue('confidence_bucket', trade, [trade])).toBeNull()
   })
 })

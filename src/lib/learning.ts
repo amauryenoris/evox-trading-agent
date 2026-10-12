@@ -15,9 +15,8 @@ import {
   getPatternLibrary,
   upsertPattern,
 } from './db'
-import { DIMENSION_IMPORTANCE } from './gate-importance'
-
-type StateFingerprint = NonNullable<TradeEvaluation['stateFingerprint']>
+import type { SetupName } from './pattern-schema'
+import { buildSetupLearningBlock, type LearningSnapshot } from './learning-context'
 
 // ============================================================
 // OPEN POSITION CONTEXT
@@ -288,110 +287,22 @@ export async function getRelevantPatterns(
 }
 
 // ============================================================
-// BUILD LEARNING CONTEXT STRING
+// BUILD LEARNING CONTEXT
 // ============================================================
 
-const FINGERPRINT_DIMENSIONS: { key: 'adx' | 'macd' | 'z' | 'regime'; label: string }[] = [
-  { key: 'adx', label: 'ADX' },
-  { key: 'macd', label: 'MACD' },
-  { key: 'z', label: 'Z' },
-  { key: 'regime', label: 'Regime' },
-]
+// PostgREST returns at most 1000 rows per request, so a larger limit would be capped anyway.
+export const LEARNING_TRADES_LIMIT = 1000
 
-function getFingerprintDimensionValue(fp: StateFingerprint, key: 'adx' | 'macd' | 'z' | 'regime'): string | null {
-  if (key === 'adx') return fp.adx_bucket
-  if (key === 'macd') return fp.macd_bucket
-  if (key === 'z') return fp.z_bucket
-  return fp.market_regime
-}
-
-function compareFingerprints(
-  current: StateFingerprint,
-  historical: StateFingerprint,
-  historicalSymbol: string
-): string | null {
-  const currentImportance = DIMENSION_IMPORTANCE[current.signal_type ?? '']
-  const historicalImportance = DIMENSION_IMPORTANCE[historical.signal_type ?? '']
-  if (!currentImportance || !historicalImportance) return null
-
-  const parts: string[] = []
-  FINGERPRINT_DIMENSIONS.forEach(({ key, label }) => {
-    const currentValue = getFingerprintDimensionValue(current, key)
-    const historicalValue = getFingerprintDimensionValue(historical, key)
-    if (currentValue === null || historicalValue === null) return
-    if (currentValue === historicalValue) {
-      parts.push(`${label} matches (both ${currentValue})`)
-      return
-    }
-    parts.push(
-      `${label} differs (yours: ${currentValue} [${currentImportance[key]} for ${current.signal_type}] · ${historicalSymbol}'s: ${historicalValue} [${historicalImportance[key]} for ${historical.signal_type}])`
-    )
-  })
-
-  return parts.length > 0 ? parts.join(' | ') : null
-}
-
-function buildRecentTradeLessonsLines(
-  evaluations: TradeEvaluation[],
-  currentFingerprint: StateFingerprint | null
-): string[] {
-  const recentEvals = evaluations.slice(0, 5)
-  if (recentEvals.length === 0) return []
-
-  const lines: string[] = ['', 'RECENT TRADE LESSONS (from your own operations):']
-  let hasRenderedComparison = false
-  recentEvals.forEach((e) => {
-    const pnl = e.pnlPct >= 0 ? `+${e.pnlPct.toFixed(1)}%` : `${e.pnlPct.toFixed(1)}%`
-    lines.push(`- ${e.symbol} (${e.buyTimestamp.split('T')[0]}): ${e.outcome.toUpperCase()} ${pnl}`)
-    const comparison = currentFingerprint && e.stateFingerprint
-      ? compareFingerprints(currentFingerprint, e.stateFingerprint, e.symbol)
-      : null
-    if (comparison) {
-      lines.push(`  Context vs. current trade: ${comparison}`)
-      hasRenderedComparison = true
-    }
-    e.lessonsLearned.slice(0, 2).forEach((lesson) => lines.push(`  → ${lesson}`))
-  })
-  if (hasRenderedComparison) {
-    lines.push('')
-    lines.push(
-      'Note: differences in dimensions that are not gated for either setup are generally less informative than differences in dimensions that are hard-gated for one or both setups.'
-    )
-  }
-  return lines
+export interface LearningContextInput {
+  setup: SetupName
+  symbol: string
+  indicators: TechnicalIndicators
+  asOf: string
 }
 
 export async function buildLearningContext(
-  indicators: TechnicalIndicators,
-  currentFingerprint: StateFingerprint | null = null
-): Promise<string> {
-  const [patterns, evaluations] = await Promise.all([
-    getRelevantPatterns(indicators, 5),
-    getTradeEvaluations(200),
-  ])
-
-  const lines: string[] = []
-
-  if (patterns.length > 0) {
-    lines.push('PATTERNS WITH BEST PERFORMANCE (similar to current conditions):')
-    patterns.forEach((p, i) => {
-      const winRatePct = (p.winRate * 100).toFixed(0)
-      const avgPnL = p.avgPnLPct >= 0 ? `+${p.avgPnLPct.toFixed(1)}%` : `${p.avgPnLPct.toFixed(1)}%`
-      lines.push(
-        `${i + 1}. "${p.description}" → ${p.action} → Win rate: ${winRatePct}% | Avg P&L: ${avgPnL} | ${p.sampleCount} trades`
-      )
-    })
-  }
-
-  lines.push(...buildRecentTradeLessonsLines(evaluations, currentFingerprint))
-
-  const allLessons = evaluations.flatMap((e) => e.lessonsLearned)
-  if (allLessons.length >= 5) {
-    lines.push('')
-    lines.push(`GENERAL LESSONS (from ${evaluations.length} completed trades):`)
-    const uniqueLessons = [...new Set(allLessons)].slice(-5)
-    uniqueLessons.forEach((l, i) => lines.push(`${i + 1}. ${l}`))
-  }
-
-  return lines.length > 0 ? lines.join('\n') : 'No trading history yet — this is your first analysis cycle.'
+  input: LearningContextInput
+): Promise<{ text: string; snapshot: LearningSnapshot }> {
+  const trades = await getTradeEvaluations(LEARNING_TRADES_LIMIT)
+  return buildSetupLearningBlock({ ...input, trades })
 }

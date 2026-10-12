@@ -46,6 +46,7 @@ import {
   markWatchlistTriggered,
 } from './watchlist-monitor'
 import { getActiveNearMissForSymbol } from './db'
+import { buildPatternIds, type LearningSnapshot } from './learning-context'
 import { upsertSymbolCooldown, getActiveCooldowns, cleanExpiredCooldowns } from './db-cooldowns'
 import type {
   AgentDecision,
@@ -1606,6 +1607,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
     entry: AgentLogEntry
     qty: number
     isAutoEntry: boolean
+    learningSnapshot: LearningSnapshot
   }> = []
   const slotsAvailable = maxPositions - openPositionsCount
 
@@ -2107,16 +2109,16 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         await detectNearMisses(symbol, indicators, thresholdMap).catch(() => {})
       }
 
-      // Build learning context (same for all symbols in this cycle — cached reads)
-      const currentFingerprint = {
-        signal_type: signalType,
-        spx_regime: spxSnapshot.spx_regime,
-        market_regime: indicators.marketRegime ?? null,
-        adx_bucket: getAdxBucket(adxValue),
-        z_bucket: getZBucket(zScore, signalType),
-        macd_bucket: getMacdBucket(macdHistogram),
+      if (signalType === null) {
+        console.warn(`[LEARNING] ${symbol}: reached learning context without a setup — skipping`)
+        continue
       }
-      const learningContext = await buildLearningContext(indicators, currentFingerprint)
+      const { text: learningContext, snapshot: learningSnapshot } = await buildLearningContext({
+        setup: signalType,
+        symbol,
+        indicators,
+        asOf: timestamp,
+      })
 
       // Fetch symbol-specific news
       const symbolNews = await getNewsForSymbols([symbol], 24, 5).catch(() => [] as AlpacaNewsArticle[])
@@ -2358,6 +2360,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                         indicatorsAtBuy.sectorRotationContext = sectorRotationContext
                         indicatorsAtBuy.requestedQty = qty
                         indicatorsAtBuy.fillAttempts = fillResult.attempts
+                        indicatorsAtBuy.learningContext = learningSnapshot
 
                         indicatorsAtBuy.state_fingerprint = {
                           signal_type:   signalType,
@@ -2396,7 +2399,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                           quantity: filledQty,
                           indicators: indicatorsAtBuy,
                           claudeReasoning: decision.reasoning,
-                          patternIdsUsed: [],
+                          patternIdsUsed: buildPatternIds(learningSnapshot),
                           stopOrderId,
                           signalType,
                         })
@@ -2457,7 +2460,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       }
 
       if (queuedForRanking) {
-        buyQueue.push({ symbol, zScore, confidence: decision.confidence, signalType, indicators, decision, entry, qty: buyQueueQty, isAutoEntry })
+        buyQueue.push({ symbol, zScore, confidence: decision.confidence, signalType, indicators, decision, entry, qty: buyQueueQty, isAutoEntry, learningSnapshot })
       } else {
         decisions.push(entry)
       }
@@ -2547,6 +2550,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           bestIndicatorsAtBuy.sectorRotationContext = sectorRotationContext
           bestIndicatorsAtBuy.requestedQty = best.qty
           bestIndicatorsAtBuy.fillAttempts = fillResult.attempts
+          bestIndicatorsAtBuy.learningContext = best.learningSnapshot
 
           const bestEntryIndicators = best.entry.indicators as TechnicalIndicators & Record<string, unknown>
           bestIndicatorsAtBuy.effectiveThreshold = bestEntryIndicators.effectiveThreshold
@@ -2607,7 +2611,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
             quantity: filledQty,
             indicators: bestIndicatorsAtBuy,
             claudeReasoning: best.decision.reasoning,
-            patternIdsUsed: [],
+            patternIdsUsed: buildPatternIds(best.learningSnapshot),
             stopOrderId,
             signalType: best.signalType as 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM' | null,
           })

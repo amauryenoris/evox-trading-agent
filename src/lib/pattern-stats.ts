@@ -142,6 +142,10 @@ function getDimensionValue(dimension: string, trade: TradeEvaluation, allTrades:
   }
 }
 
+export function getTradeDimensionValue(dimension: string, trade: TradeEvaluation, allTrades: TradeEvaluation[]): string | null {
+  return getDimensionValue(dimension, trade, allTrades)
+}
+
 function signOf(n: number): number {
   return n > 0 ? 1 : n < 0 ? -1 : 0
 }

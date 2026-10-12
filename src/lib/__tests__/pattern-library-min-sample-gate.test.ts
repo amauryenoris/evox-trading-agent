@@ -16,7 +16,7 @@ vi.mock('../db', () => ({
   upsertPattern: vi.fn(),
 }))
 
-import { getRelevantPatterns, buildLearningContext, MIN_PATTERN_SAMPLE_SIZE } from '../learning'
+import { getRelevantPatterns, buildLearningContext, MIN_PATTERN_SAMPLE_SIZE, LEARNING_TRADES_LIMIT } from '../learning'
 
 function makePattern(overrides: Partial<TradingPattern>): TradingPattern {
   return {
@@ -109,42 +109,39 @@ describe('getRelevantPatterns() — excludes sub-threshold patterns', () => {
   })
 })
 
-describe('buildLearningContext() — sub-threshold patterns never reach Claude\'s prompt text', () => {
-  it('omits a sampleCount=1 pattern from the formatted output entirely', async () => {
+describe("buildLearningContext() — pattern_library rows no longer reach Claude's prompt text", () => {
+  const INPUT = { setup: 'TREND_ZLE05' as const, symbol: 'AAPL', indicators: INDICATORS, asOf: '2026-10-12T14:00:00-04:00' }
+
+  it('omits pattern_library descriptions regardless of sampleCount', async () => {
     // Arrange
     mockGetPatternLibrary.mockResolvedValue([
       makePattern({ id: 'pat_low', description: 'UNIQUE_LOW_SAMPLE_MARKER', sampleCount: 1 }),
+      makePattern({ id: 'pat_high', description: 'UNIQUE_HIGH_SAMPLE_MARKER', sampleCount: 9 }),
     ])
     mockGetTradeEvaluations.mockResolvedValue([])
 
     // Act
-    const context = await buildLearningContext(INDICATORS)
+    const { text } = await buildLearningContext(INPUT)
 
     // Assert
-    expect(context).not.toContain('UNIQUE_LOW_SAMPLE_MARKER')
-    expect(context).not.toContain('PATTERNS WITH BEST PERFORMANCE')
+    expect(text).not.toContain('UNIQUE_LOW_SAMPLE_MARKER')
+    expect(text).not.toContain('UNIQUE_HIGH_SAMPLE_MARKER')
+    expect(text).not.toContain('PATTERNS WITH BEST PERFORMANCE')
   })
 
-  it('includes a sampleCount=5 pattern in the formatted output, unchanged format', async () => {
+  it('loads trades once with the learning limit and returns a snapshot matching the text', async () => {
     // Arrange
-    mockGetPatternLibrary.mockResolvedValue([
-      makePattern({
-        id: 'pat_high',
-        description: 'UNIQUE_HIGH_SAMPLE_MARKER',
-        sampleCount: 5,
-        winRate: 0.8,
-        avgPnLPct: 2.5,
-      }),
-    ])
+    mockGetTradeEvaluations.mockClear()
     mockGetTradeEvaluations.mockResolvedValue([])
 
     // Act
-    const context = await buildLearningContext(INDICATORS)
+    const { text, snapshot } = await buildLearningContext(INPUT)
 
     // Assert
-    expect(context).toContain('UNIQUE_HIGH_SAMPLE_MARKER')
-    expect(context).toContain('Win rate: 80%')
-    expect(context).toContain('5 trades')
+    expect(mockGetTradeEvaluations).toHaveBeenCalledTimes(1)
+    expect(mockGetTradeEvaluations).toHaveBeenCalledWith(LEARNING_TRADES_LIMIT)
+    expect(snapshot.text).toBe(text)
+    expect(snapshot.setup).toBe('TREND_ZLE05')
   })
 })
 
