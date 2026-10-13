@@ -95,7 +95,7 @@ describe('buildSetupLearningBlock — track record', () => {
     expect(snapshot.baseline.n).toBe(3)
   })
 
-  it('counts the current rule version using the latest boundary', () => {
+  it('counts entry rules using the latest buy-axis boundary and renders no exit line for a buy-only setup', () => {
     const trades = [
       makeTrade({ buyTimestamp: '2026-05-01T14:00:00Z' }),
       makeTrade({ buyTimestamp: '2026-07-01T14:00:00Z' }),
@@ -104,8 +104,19 @@ describe('buildSetupLearningBlock — track record', () => {
 
     const { text } = buildSetupLearningBlock(input({ trades }))
 
-    expect(text).toContain('ranging ADX gate added')
-    expect(text).toMatch(/Current rule version.*n=2/)
+    expect(text).toContain('Entry rules (ranging ADX gate added, since 2026-06-16): n=2 bought under them')
+    expect(text).not.toContain('Exit rules')
+    expect(text).not.toContain('Current rule version')
+  })
+
+  it('keeps the no-rule-changes line for a setup without boundaries', () => {
+    const trades = [makeTrade({ signal_type: 'TREND_PULLBACK_3DAY' }), makeTrade({ signal_type: 'TREND_PULLBACK_3DAY' })]
+
+    const { text } = buildSetupLearningBlock(input({ setup: 'TREND_PULLBACK_3DAY', trades }))
+
+    expect(text).toContain('Current rule version: n=2 (no rule changes recorded)')
+    expect(text).not.toContain('Entry rules')
+    expect(text).not.toContain('Exit rules')
   })
 
   it('states there are no closed trades when the setup is empty and drops sections a, b and d', () => {
@@ -121,6 +132,36 @@ describe('buildSetupLearningBlock — track record', () => {
     expect(text).toContain('This block informs; it never gates entries.')
     expect(snapshot.baseline.n).toBe(0)
     expect(snapshot.bucketsShown).toEqual([])
+  })
+})
+
+describe('buildSetupLearningBlock — rule axes', () => {
+  const zle = (buy: string, sell: string) => makeTrade({ signal_type: 'TREND_ZLE05', buyTimestamp: buy, sellTimestamp: sell })
+  const zleTrades = [
+    zle('2026-05-01T14:00:00Z', '2026-05-10T14:00:00Z'),
+    zle('2026-07-01T14:00:00Z', '2026-07-10T14:00:00Z'),
+    zle('2026-08-01T14:00:00Z', '2026-08-10T14:00:00Z'),
+    zle('2026-09-20T14:00:00Z', '2026-10-08T14:00:00Z'),
+  ]
+
+  it('renders the entry line before the exit line, each counted on its own axis', () => {
+    const { text } = buildSetupLearningBlock(input({ setup: 'TREND_ZLE05', trades: zleTrades }))
+
+    const entry = 'Entry rules (adaptive ADX gate stabilized, since 2026-06-04): n=3 bought under them'
+    const exit = 'Exit rules (new exit rules trial, since 2026-10-05): n=1 sold under them'
+    expect(text).toContain(entry)
+    expect(text).toContain(exit)
+    expect(text.indexOf(entry)).toBeLessThan(text.indexOf(exit))
+    expect(text).not.toContain('Current rule version')
+  })
+
+  it('does not change the entry count when a trade closes under the exit trial', () => {
+    const extra = zle('2026-05-02T14:00:00Z', '2026-10-09T14:00:00Z')
+
+    const { text } = buildSetupLearningBlock(input({ setup: 'TREND_ZLE05', trades: [...zleTrades, extra] }))
+
+    expect(text).toContain('n=3 bought under them')
+    expect(text).toContain('n=2 sold under them')
   })
 })
 
@@ -274,6 +315,87 @@ describe('buildSetupLearningBlock — lessons', () => {
   })
 })
 
+describe('buildSetupLearningBlock — lesson content filter', () => {
+  const rejected = [
+    'lost $11.16 on the stop',
+    'only a 17% win rate for this pattern',
+    'profit factor was 1.4',
+    'signal supported by volume',
+    'strong sector tailwinds',
+    'it moved strongly higher',
+  ]
+
+  it.each(rejected)('skips the lesson "%s" and shows none of its text', (lesson) => {
+    const trades = [makeTrade({ symbol: 'BAD', lessonsLearned: [lesson] })]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).not.toContain(lesson)
+    expect(text).not.toContain('Lessons from single trades')
+    expect(snapshot.lessonsShown).toEqual([])
+    expect(snapshot.filteredLessonCount).toBe(1)
+  })
+
+  it('lets a clean lesson through, including one that mentions a percent', () => {
+    const trades = [makeTrade({ symbol: 'OK', lessonsLearned: ['entry was 3% above EMA50'] })]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).toContain('entry was 3% above EMA50')
+    expect(snapshot.filteredLessonCount).toBe(0)
+  })
+
+  it('fills the slots with the next clean lessons, newest trade first', () => {
+    const trades = [
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-01T14:00:00Z', lessonsLearned: ['clean oldest'] }),
+      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-02T14:00:00Z', lessonsLearned: ['clean middle'] }),
+      makeTrade({ symbol: 'CCC', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: ['lost $5.00 here', 'clean newest'] }),
+    ]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).toContain('clean newest')
+    expect(text).toContain('clean middle')
+    expect(text).not.toContain('clean oldest')
+    expect(text).not.toContain('$5.00')
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(snapshot.filteredLessonCount).toBe(1)
+  })
+
+  it('counts rejects even when the lesson slots are already full', () => {
+    const trades = [
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-04T14:00:00Z', lessonsLearned: ['clean one', 'clean two'] }),
+      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: ['strong move'] }),
+    ]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(snapshot.filteredLessonCount).toBe(1)
+  })
+
+  it('does not count in filteredLessonCount a lesson already excluded by the sector-RS cutoff', () => {
+    const preFix = makeTrade({
+      buyTimestamp: '2026-10-05T10:00:00-04:00',
+      lessonsLearned: ['strong sector rs'],
+      buyIndicators: { ...makeIndicators(), sectorRotation: { gdx: 33 } } as TechnicalIndicators,
+    })
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades: [preFix] }))
+
+    expect(snapshot.excludedLessonCount).toBe(1)
+    expect(snapshot.filteredLessonCount).toBe(0)
+  })
+
+  it('does not count a lesson from another setup', () => {
+    const trades = [makeTrade({ signal_type: 'TREND_ZLE05', lessonsLearned: ['strong other setup'] }), makeTrade()]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.filteredLessonCount).toBe(0)
+  })
+})
+
 describe('buildSetupLearningBlock — footer, caps, wording', () => {
   it('ends with the footer', () => {
     const { text } = buildSetupLearningBlock(input({ trades: [makeTrade()] }))
@@ -307,6 +429,20 @@ describe('buildSetupLearningBlock — footer, caps, wording', () => {
     expect(text).not.toMatch(/\$/)
     expect(text.toLowerCase()).not.toMatch(/profit factor|supported|strong/)
   })
+
+  it('contains none of those terms in the whole text when every lesson carries one', () => {
+    const trades = [
+      makeTrade({ symbol: 'A', lessonsLearned: ['lost $11.16', 'strong tailwinds'] }),
+      makeTrade({ symbol: 'B', lessonsLearned: ['signal supported by volume', 'profit factor 1.4', 'a 17% win rate'] }),
+    ]
+
+    const { text } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).not.toMatch(/\$\s?\d/)
+    expect(text.toLowerCase()).not.toMatch(/profit factor|supported|strong/)
+    expect(text.split('\n').filter((l) => /win rate/i.test(l))).toHaveLength(1)
+    expect(text).toContain('SETUP TRACK RECORD')
+  })
 })
 
 describe('buildSetupLearningBlock — purity and snapshot', () => {
@@ -322,15 +458,15 @@ describe('buildSetupLearningBlock — purity and snapshot', () => {
     expect(second).toEqual(first)
   })
 
-  it('returns a version-1 snapshot whose text equals the block text', () => {
+  it('returns a version-2 snapshot whose text equals the block text', () => {
     const { text, snapshot } = buildSetupLearningBlock(input({ trades: [makeTrade()] }))
 
-    expect(snapshot.version).toBe(1)
+    expect(snapshot.version).toBe(2)
     expect(snapshot.setup).toBe('MEAN_REVERSION')
     expect(snapshot.asOf).toBe(ASOF)
     expect(snapshot.text).toBe(text)
     expect(Object.keys(snapshot).sort()).toEqual(
-      ['asOf', 'baseline', 'bucketsShown', 'excludedLessonCount', 'lessonsShown', 'setup', 'text', 'version']
+      ['asOf', 'baseline', 'bucketsShown', 'excludedLessonCount', 'filteredLessonCount', 'lessonsShown', 'setup', 'text', 'version']
     )
   })
 })
