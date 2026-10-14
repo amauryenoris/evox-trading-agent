@@ -6,8 +6,10 @@ on:
     - cron: "0 14-20 * * 1-5"
   workflow_dispatch: # Allow manual trigger from GitHub Actions tab
 
+# Shared with agent-exits.yml: both can close the same positions, so they must never run at the same time.
+# A pending run is replaced by a newer pending run; the cycle repeats the exit rules, so a dropped sweep is covered.
 concurrency:
-  group: trading-cycle
+  group: trading-positions
   cancel-in-progress: false
 
 jobs:

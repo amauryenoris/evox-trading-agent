@@ -6,8 +6,10 @@ on:
     - cron: "55 19 * * 1-5"  # 3:55 PM ET
   workflow_dispatch:
 
+# Shared with agent-cron.yml: both can close the same positions, so they must never run at the same time.
+# A pending run is replaced by a newer pending run; the cycle repeats the exit rules, so a dropped sweep is covered.
 concurrency:
-  group: exit-check
+  group: trading-positions
   cancel-in-progress: false
 
 jobs:
