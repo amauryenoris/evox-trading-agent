@@ -13,6 +13,8 @@ const WORKFLOW_BY_TARGET: Readonly<Record<string, string>> = {
 }
 
 const DISPATCH_REF = 'main'
+const DEFAULT_GITHUB_OWNER = 'amauryenoris'
+const DEFAULT_GITHUB_REPO = 'evox-trading-agent'
 const GITHUB_API_VERSION = '2022-11-28'
 const GITHUB_TIMEOUT_MS = 10_000
 const CALENDAR_TIMEOUT_MS = 3_000
@@ -50,12 +52,27 @@ function resolveWorkflow(target: string | null): string | null {
   return WORKFLOW_BY_TARGET[target]
 }
 
+const REDACTED = '[redacted]'
+
+function redactSecrets(text: string): string {
+  return [process.env.CRON_SECRET, process.env.GITHUB_TOKEN]
+    .filter((value): value is string => Boolean(value))
+    .reduce((out, value) => out.split(value).join(REDACTED), text)
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.stack ?? `${err.name}: ${err.message}`
+  return String(err)
+}
+
 function readGithubSettings(): GithubSettings | null {
   const token = process.env.GITHUB_TOKEN
-  const owner = process.env.GITHUB_OWNER
-  const repo = process.env.GITHUB_REPO
-  if (!token || !owner || !repo) return null
-  return { token, owner, repo }
+  if (!token) return null
+  return {
+    token,
+    owner: process.env.GITHUB_OWNER || DEFAULT_GITHUB_OWNER,
+    repo: process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO,
+  }
 }
 
 function marketDate(now: Date): string {
@@ -129,6 +146,15 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  try {
+    return await handlePost(req)
+  } catch (err) {
+    console.error(`[cron/run] unhandled error: ${redactSecrets(describeError(err))}`)
+    return failure(500, 'Internal server error')
+  }
+}
+
+async function handlePost(req: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET
   if (!secret) return failure(503, 'Service unavailable')
   if (!isAuthorized(req, secret)) return failure(401, 'Unauthorized')
@@ -139,7 +165,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const settings = readGithubSettings()
   if (!settings) {
-    logOutcome(target, 'failed', ' reason=missing_github_settings')
+    console.error(`[cron/run] target=${target} outcome=failed reason=missing_github_token missing=GITHUB_TOKEN`)
     return failure(500, 'Internal server error')
   }
 

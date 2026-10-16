@@ -230,14 +230,6 @@ describe('dispatch', () => {
     expect(logged.join('\n')).not.toContain(TOKEN)
   })
 
-  it.each([['GITHUB_TOKEN'], ['GITHUB_OWNER'], ['GITHUB_REPO']])('answers 500 and calls nothing when %s is missing', async (name) => {
-    vi.stubEnv(name, '')
-
-    const res = await route.POST(makeRequest('cycle'))
-
-    expect(res.status).toBe(500)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
 })
 
 describe('trading-day guard', () => {
@@ -329,6 +321,67 @@ describe('logging', () => {
     const all = logged.join('\n')
     expect(all).not.toContain(SECRET)
     expect(all).not.toContain(TOKEN)
+  })
+})
+
+describe('unexpected failures are visible in the logs', () => {
+  function throwingRequest(message: string): Request {
+    return {
+      url: 'https://example.com/api/cron/run?target=bars',
+      headers: { get: () => { throw new Error(message) } },
+    } as unknown as Request
+  }
+
+  it('names GITHUB_TOKEN in an error log and calls nothing when it is missing', async () => {
+    vi.stubEnv('GITHUB_TOKEN', '')
+
+    const res = await route.POST(makeRequest('bars'))
+
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ success: false, error: 'Internal server error' })
+    expect(logged.find((l) => l.includes('missing_github_token'))).toContain('GITHUB_TOKEN')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([['GITHUB_OWNER'], ['GITHUB_REPO']])('falls back to the default repository when %s is unset', async (name) => {
+    vi.stubEnv(name, undefined as unknown as string)
+
+    const res = await route.POST(makeRequest('bars'))
+
+    expect(res.status).toBe(200)
+    const [url] = fetchMock.mock.calls[0]
+    expect(String(url)).toContain(name === 'GITHUB_OWNER' ? '/repos/amauryenoris/test-repo/' : '/repos/test-owner/evox-trading-agent/')
+  })
+
+  it('uses both defaults when owner and repository are empty strings', async () => {
+    vi.stubEnv('GITHUB_OWNER', '')
+    vi.stubEnv('GITHUB_REPO', '')
+
+    await route.POST(makeRequest('bars'))
+
+    const [url] = fetchMock.mock.calls[0]
+    expect(String(url)).toContain('/repos/amauryenoris/evox-trading-agent/actions/workflows/daily-bars-sync.yml/dispatches')
+  })
+
+  it('answers a generic 500 and logs the real error when the handler throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error')
+
+    const res = await route.POST(throwingRequest('boom: real cause'))
+
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ success: false, error: 'Internal server error' })
+    const loggedByError = errorSpy.mock.calls.map((c) => c.map(String).join(' ')).join('\n')
+    expect(loggedByError).toContain('[cron/run]')
+    expect(loggedByError).toContain('boom: real cause')
+  })
+
+  it('redacts the token and the secret from a logged error', async () => {
+    await route.POST(throwingRequest(`failed with ${TOKEN} and ${SECRET}`))
+
+    const all = logged.join('\n')
+    expect(all).toContain('failed with')
+    expect(all).not.toContain(TOKEN)
+    expect(all).not.toContain(SECRET)
   })
 })
 
