@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getPositions } from '@/lib/alpaca'
 import { getAllOpenPositionContexts } from '@/lib/db'
+import { getProfitTargetPct } from '@/lib/protective-stop'
 import type { PositionDisplay } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,7 @@ export async function GET() {
         trailingActivated: ctx?.trailingActivated ?? false,
         trailingStop: ctx?.trailingStop ?? null,
         highSinceEntry: ctx?.highSinceEntry ?? null,
+        profitTargetPct: getProfitTargetPct(ctx?.signalType) * 100,
         buyPrice: ctx?.buyPrice ?? parseFloat(p.avg_entry_price),
         daysOpen: ctx?.buyTimestamp
           ? Math.floor((Date.now() - new Date(ctx.buyTimestamp).getTime()) / 86_400_000)

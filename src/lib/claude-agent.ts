@@ -34,7 +34,17 @@ import {
   saveOpenPositionContext,
   buildLearningContext,
 } from './learning'
-import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, tradeEvaluationExists, insertSelectionFailure } from './db'
+import { getAllOpenPositionContexts, getTodayBuyExecutions, insertAgentLogEntry, updatePositionContext, updatePositionProtectiveStop, tradeEvaluationExists, insertSelectionFailure } from './db'
+import {
+  computeProtectiveStop,
+  buildProtectiveStopSnapshot,
+  getProfitFloorSettings,
+  getProfitTargetPct,
+  isHigherByTick,
+  roundDownToTick,
+  TRAILING_ACTIVATION_PCT,
+} from './protective-stop'
+import { getPeakHighSinceLastCheck } from './peak-high'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome, SelectionStepError } from './stock-selector'
 import { newsIntelligenceLayer, getAggregateMacroSentiment } from './news-intelligence'
@@ -173,6 +183,7 @@ export async function enforceExitRules(
       return 'UNKNOWN'
     }
     const r = reason.trim().toUpperCase().replace(/[-\s]/g, '_')
+    if (r.includes('PROFIT_FLOOR'))     return 'TRAILING_STOP'
     if (r.includes('PROFIT_TARGET'))    return 'PROFIT_TARGET'
     if (r.includes('TIME_STOP'))        return 'TIME_STOP'
     if (r.includes('FAIR_VALUE'))       return 'Z_SCORE_EXIT'
@@ -281,16 +292,11 @@ export async function enforceExitRules(
 
     let exitReason: string | null = null
 
-    // Per-signal-type profit target — TREND_ZLE05 trial (see specs/trend-zle05-exit-rules-trial)
-    const PROFIT_TARGET_PCT: Record<string, number> = {
-      TREND_ZLE05: 0.05,
-      default: 0.10,
-    }
     // Mirrors the TREND_ZLE05 entry ceiling (zScore <= 1.25 in trendZLE05Setup) — revisit if that literal changes.
     const TREND_ZLE05_Z_EXIT = 1.25
 
     // Universal exits — checked first, always take priority over signal-type rules
-    const profitTargetPct = PROFIT_TARGET_PCT[signalType ?? 'default'] ?? PROFIT_TARGET_PCT['default']
+    const profitTargetPct = getProfitTargetPct(signalType)
     if (pnlPct >= profitTargetPct) {
       exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= ${(profitTargetPct * 100).toFixed(0)}%)`
     }
@@ -337,17 +343,7 @@ export async function enforceExitRules(
     // z-score exit NOT applied to unknown entries
 
     // ── TRAILING STOP ──────────────────────────────────────────
-    const ACTIVATION_PCT: Record<string, number> = {
-      MEAN_REVERSION: 0.05,
-      TREND:          0.06,
-      TREND_PULLBACK: 0.06,
-      TREND_ZLE05:    0.03,
-      EMA_RECLAIM:    0.04,
-      TREND_PULLBACK_3DAY: 0.06,
-      default:        0.05,
-    }
     const ATR_MULT: Record<string, number> = {
-      MEAN_REVERSION: 1.2,
       TREND:          1.5,
       TREND_PULLBACK: 1.5,
       TREND_ZLE05:    1.0,
@@ -358,20 +354,41 @@ export async function enforceExitRules(
     const MIN_DISTANCE_PCT = 0.015
     const currentPrice = parseFloat(position.current_price)
     const atr = ind.atr ?? null
+    const isProfitFloorSetup = getProfitFloorSettings(signalType) !== null
 
     // PASO 1 — Update high_since_entry first
     let highSinceEntry = ctx?.highSinceEntry ?? currentPrice
+    if (isProfitFloorSetup) {
+      const peakHigh = await getPeakHighSinceLastCheck(position.symbol, ctx.buyTimestamp)
+      if (peakHigh !== null && peakHigh > highSinceEntry) highSinceEntry = peakHigh
+    }
     const madeNewHigh = currentPrice > highSinceEntry
     if (madeNewHigh) highSinceEntry = currentPrice
 
-    // PASO 2 — Skip if ATR invalid
-    if (!atr || atr <= 0) {
+    let profitFloorStop: number | null = null
+
+    if (isProfitFloorSetup) {
+      const floor = await applyProfitFloor({
+        position,
+        ctx,
+        ind,
+        account,
+        positionCount: positions.length,
+        timestamp,
+        highSinceEntry,
+        currentPrice,
+        exitAlreadySet: exitReason !== null,
+      })
+      profitFloorStop = floor.stopPrice
+      if (!exitReason) exitReason = floor.exitReason
+    } else if (!atr || atr <= 0) {
+      // PASO 2 — Skip if ATR invalid
       await updatePositionContext(position.symbol, { highSinceEntry }).catch(
         (err: unknown) => console.error(`[EXIT-RULES] Failed to update trailing context for ${position.symbol}:`, err)
       )
     } else {
       // PASO 3 — Activate trailing (once only)
-      const activationPct = ACTIVATION_PCT[signalType ?? 'default'] ?? ACTIVATION_PCT['default']
+      const activationPct = TRAILING_ACTIVATION_PCT[signalType ?? 'default'] ?? TRAILING_ACTIVATION_PCT['default']
       let trailingActivated = ctx?.trailingActivated ?? false
       let justActivated = false
 
@@ -390,7 +407,7 @@ export async function enforceExitRules(
         const newStop = highSinceEntry - distance
 
         // Floor at buy_price — activation already guarantees profit, never give it back
-        const flooredStop = Math.max(newStop, ctx?.buyPrice ?? 0)
+        const flooredStop = roundDownToTick(Math.max(newStop, ctx?.buyPrice ?? 0))
 
         // Guardrail: ignore if stop is corrupt
         if (trailingStop !== null && trailingStop >= highSinceEntry) {
@@ -400,80 +417,21 @@ export async function enforceExitRules(
         }
 
         // ── TRAILING STOP-LIMIT ORDER REPLACEMENT ──────────────
-        const stopIncreased = trailingStop !== null && (previousStop === null || trailingStop > previousStop)
+        const stopIncreased = trailingStop !== null && (previousStop === null || isHigherByTick(trailingStop, previousStop))
         const needsSelfHeal = trailingActivated && !justActivated && !ctx?.trailingStopOrderId
-        const shouldReplaceStopOrder = justActivated || stopIncreased || needsSelfHeal
-        const replacementQty = ctx?.quantity
+        const shouldReplaceStopOrder = (justActivated || stopIncreased || needsSelfHeal) && !exitReason
 
-        if (shouldReplaceStopOrder && trailingStop !== null && replacementQty) {
-          const targetStop = trailingStop
-          const limitPrice = targetStop * (1 - 0.005)
-          const cancellingCapaA = !ctx?.trailingStopOrderId && !!ctx?.stopOrderId
-          const orderIdToCancel = cancellingCapaA ? ctx?.stopOrderId : ctx?.trailingStopOrderId
-
-          let cancelFailed = false
-          let cancelErrorMessage = ''
-          if (orderIdToCancel) {
-            try {
-              await cancelOrder(orderIdToCancel)
-            } catch (err) {
-              cancelFailed = true
-              cancelErrorMessage = (err as Error).message ?? String(err)
-              console.warn(`[TRAILING] Failed to cancel order ${orderIdToCancel} for ${position.symbol}:`, err)
-            }
-          }
-
-          if (cancelFailed) {
-            await insertAgentLogEntry({
-              id: randomUUID(),
-              timestamp,
-              symbol: position.symbol,
-              decision: {
-                action: 'HOLD',
-                symbol: position.symbol,
-                quantity: 0,
-                reasoning: `EXIT-RULES: trailing stop-limit CANCEL FAILED for order ${orderIdToCancel} — new stop $${targetStop.toFixed(2)}/limit $${limitPrice.toFixed(2)} not submitted — error: ${cancelErrorMessage}`,
-                confidence: 0,
-              },
-              indicators: ind,
-              portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
-              orderExecuted: false,
-              error: 'trailing_stop_naked',
-            }).catch((err) => console.error(`[EXIT-RULES] Failed to log trailing-stop naked alert for ${position.symbol}:`, err))
-          } else {
-            const replacement = await submitStopLimitWithRetry(position.symbol, replacementQty, targetStop, limitPrice)
-
-            if (replacement.stopOrderId) {
-              const contextUpdates: Partial<OpenPositionContext> = { trailingStopOrderId: replacement.stopOrderId }
-              if (cancellingCapaA) contextUpdates.stopOrderId = null
-              await updatePositionContext(position.symbol, contextUpdates).catch(
-                (err: unknown) => console.error(`[EXIT-RULES] Failed to persist trailing stop-limit order id for ${position.symbol}:`, err)
-              )
-            } else {
-              const contextUpdates: Partial<OpenPositionContext> = { trailingStopOrderId: null }
-              if (cancellingCapaA) contextUpdates.stopOrderId = null
-              await updatePositionContext(position.symbol, contextUpdates).catch(
-                (err: unknown) => console.error(`[EXIT-RULES] Failed to clear naked trailing stop-limit order id for ${position.symbol}:`, err)
-              )
-
-              await insertAgentLogEntry({
-                id: randomUUID(),
-                timestamp,
-                symbol: position.symbol,
-                decision: {
-                  action: 'HOLD',
-                  symbol: position.symbol,
-                  quantity: 0,
-                  reasoning: `EXIT-RULES: trailing stop-limit SUBMIT FAILED after cancelling ${orderIdToCancel ?? 'no prior order'} — attempted stop $${targetStop.toFixed(2)}/limit $${limitPrice.toFixed(2)} — error: ${replacement.failureReason}`,
-                  confidence: 0,
-                },
-                indicators: ind,
-                portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
-                orderExecuted: false,
-                error: 'trailing_stop_naked',
-              }).catch((err) => console.error(`[EXIT-RULES] Failed to log trailing-stop naked alert for ${position.symbol}:`, err))
-            }
-          }
+        if (shouldReplaceStopOrder && trailingStop !== null) {
+          await replaceProtectiveOrder({
+            position,
+            ctx,
+            ind,
+            account,
+            positionCount: positions.length,
+            timestamp,
+            targetStop: trailingStop,
+            limitPrice: roundDownToTick(trailingStop * (1 - 0.005)),
+          })
         }
         // ────────────────────────────────────────────────────────
       }
@@ -510,7 +468,7 @@ export async function enforceExitRules(
         id: randomUUID(),
         timestamp,
         symbol: position.symbol,
-        decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: `EXIT-RULES: no exit triggered — pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}, highSinceEntry=$${highSinceEntry.toFixed(2)}`, confidence: 0 },
+        decision: { action: 'HOLD', symbol: position.symbol, quantity: 0, reasoning: `EXIT-RULES: no exit triggered — pnlPct=${pnlPct.toFixed(4)}, zScore=${zScore.toFixed(3)}, signalType=${signalType}, daysOpen=${daysOpen}, highSinceEntry=$${highSinceEntry.toFixed(2)}${profitFloorStop !== null ? `, profitFloor=$${profitFloorStop.toFixed(2)}` : ''}`, confidence: 0 },
         indicators: ind,
         portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
         orderExecuted: false,
@@ -568,6 +526,174 @@ export async function enforceExitRules(
   }
 
   return { decisions: exitEntries, exitReasons: new Map(exitReasons) }
+}
+
+// ============================================================
+// PROTECTIVE ORDER HELPERS — trailing stop-limit and MEAN_REVERSION profit floor
+// ============================================================
+
+interface ProtectiveOrderParams {
+  position: AlpacaPosition
+  ctx: OpenPositionContext
+  ind: TechnicalIndicators
+  account: AlpacaAccount
+  positionCount: number
+  timestamp: string
+}
+
+interface ReplaceOrderParams extends ProtectiveOrderParams {
+  targetStop: number
+  // null submits a plain stop (market) order; a number submits a stop-limit with that limit
+  limitPrice: number | null
+}
+
+type ReplaceOutcome = 'skipped' | 'cancel_failed' | 'naked' | 'moved'
+
+async function logNakedStopAlert(p: ProtectiveOrderParams, reasoning: string): Promise<void> {
+  await insertAgentLogEntry({
+    id: randomUUID(),
+    timestamp: p.timestamp,
+    symbol: p.position.symbol,
+    decision: { action: 'HOLD', symbol: p.position.symbol, quantity: 0, reasoning, confidence: 0 },
+    indicators: p.ind,
+    portfolioSnapshot: { equity: p.account.equity, cash: p.account.cash, positionCount: p.positionCount },
+    orderExecuted: false,
+    error: 'trailing_stop_naked',
+  }).catch((err) => console.error(`[EXIT-RULES] Failed to log trailing-stop naked alert for ${p.position.symbol}:`, err))
+}
+
+async function cancelRegisteredStop(orderId: string | null | undefined, symbol: string): Promise<string | null> {
+  if (!orderId) return null
+  try {
+    await cancelOrder(orderId)
+    return null
+  } catch (err) {
+    console.warn(`[TRAILING] Failed to cancel order ${orderId} for ${symbol}:`, err)
+    return (err as Error).message ?? String(err)
+  }
+}
+
+async function replaceProtectiveOrder(
+  p: ReplaceOrderParams
+): Promise<{ outcome: ReplaceOutcome; stopOrderId: string | null }> {
+  const { position, ctx, targetStop, limitPrice } = p
+  if (!ctx.quantity) return { outcome: 'skipped', stopOrderId: null }
+
+  const orderLabel = limitPrice === null ? 'profit-floor stop' : 'trailing stop-limit'
+  const levels = limitPrice === null
+    ? `$${targetStop.toFixed(2)}`
+    : `$${targetStop.toFixed(2)}/limit $${limitPrice.toFixed(2)}`
+  const cancellingCapaA = !ctx.trailingStopOrderId && !!ctx.stopOrderId
+  const orderIdToCancel = cancellingCapaA ? ctx.stopOrderId : ctx.trailingStopOrderId
+
+  const cancelError = await cancelRegisteredStop(orderIdToCancel, position.symbol)
+  if (cancelError !== null) {
+    await logNakedStopAlert(p, `EXIT-RULES: ${orderLabel} CANCEL FAILED for order ${orderIdToCancel} — new stop ${levels} not submitted — error: ${cancelError}`)
+    return { outcome: 'cancel_failed', stopOrderId: ctx.trailingStopOrderId ?? null }
+  }
+
+  const replacement = limitPrice === null
+    ? await submitStopWithRetry(position.symbol, ctx.quantity, targetStop)
+    : await submitStopLimitWithRetry(position.symbol, ctx.quantity, targetStop, limitPrice)
+  const newOrderId = replacement.stopOrderId ?? null
+
+  const contextUpdates: Partial<OpenPositionContext> = { trailingStopOrderId: newOrderId }
+  if (cancellingCapaA) contextUpdates.stopOrderId = null
+  await updatePositionContext(position.symbol, contextUpdates).catch(
+    (err: unknown) => console.error(`[EXIT-RULES] Failed to persist ${orderLabel} order id for ${position.symbol}:`, err)
+  )
+
+  if (newOrderId) return { outcome: 'moved', stopOrderId: newOrderId }
+  await logNakedStopAlert(p, `EXIT-RULES: ${orderLabel} SUBMIT FAILED after cancelling ${orderIdToCancel ?? 'no prior order'} — attempted stop ${levels} — error: ${replacement.failureReason}`)
+  return { outcome: 'naked', stopOrderId: null }
+}
+
+interface ProfitFloorParams extends ProtectiveOrderParams {
+  highSinceEntry: number
+  currentPrice: number
+  exitAlreadySet: boolean
+}
+
+interface ProfitFloorOutcome {
+  exitReason: string | null
+  stopPrice: number | null
+}
+
+function logContextPersistError(symbol: string) {
+  return (err: unknown) => console.error(`[EXIT-RULES] Failed to update profit floor context for ${symbol}:`, err)
+}
+
+async function persistProtectiveStopSnapshot(
+  p: ProfitFloorParams,
+  entry: number,
+  stopPrice: number,
+  stopOrderId: string | null
+): Promise<void> {
+  const snapshot = buildProtectiveStopSnapshot({
+    setup: p.ctx.signalType,
+    entry,
+    high: p.highSinceEntry,
+    stopPrice,
+    stopOrderId,
+    activatedAt: p.ctx.indicators?.protectiveStop?.activatedAt ?? p.timestamp,
+  })
+  if (!snapshot) return
+  await updatePositionProtectiveStop(p.position.symbol, snapshot).catch(
+    (err: unknown) => console.error(`[EXIT-RULES] Failed to persist protectiveStop for ${p.position.symbol}:`, err)
+  )
+}
+
+async function applyProfitFloor(p: ProfitFloorParams): Promise<ProfitFloorOutcome> {
+  const { position, ctx, highSinceEntry } = p
+  const symbol = position.symbol
+  const avgEntry = parseFloat(position.avg_entry_price)
+  const entry = avgEntry > 0 ? avgEntry : ctx.buyPrice
+
+  const result = computeProtectiveStop({
+    setup: ctx.signalType,
+    entry,
+    high: highSinceEntry,
+    current: p.currentPrice,
+    existingStop: ctx.trailingStop ?? null,
+  })
+
+  if (!result.active || result.stopPrice === null) {
+    await updatePositionContext(symbol, { highSinceEntry }).catch(logContextPersistError(symbol))
+    return { exitReason: null, stopPrice: null }
+  }
+
+  const stopPrice = result.stopPrice
+  const activeState = { highSinceEntry, trailingStop: stopPrice, trailingActivated: true }
+
+  if (result.action === 'sell_now') {
+    await updatePositionContext(symbol, activeState).catch(logContextPersistError(symbol))
+    const floorPct = ((stopPrice / entry) - 1) * 100
+    const exitReason = p.exitAlreadySet
+      ? null
+      : `Exit rule: profit floor $${stopPrice.toFixed(2)} (+${floorPct.toFixed(2)}%) breached`
+    return { exitReason, stopPrice }
+  }
+
+  const needsOrder = result.action !== 'none' || !ctx.trailingStopOrderId
+  if (!needsOrder) {
+    await updatePositionContext(symbol, activeState).catch(logContextPersistError(symbol))
+    return { exitReason: null, stopPrice }
+  }
+
+  if (p.exitAlreadySet) {
+    await updatePositionContext(symbol, { highSinceEntry }).catch(logContextPersistError(symbol))
+    return { exitReason: null, stopPrice: ctx.trailingStop ?? null }
+  }
+
+  const move = await replaceProtectiveOrder({ ...p, targetStop: stopPrice, limitPrice: null })
+  if (move.outcome === 'cancel_failed' || move.outcome === 'skipped') {
+    await updatePositionContext(symbol, { highSinceEntry }).catch(logContextPersistError(symbol))
+    return { exitReason: null, stopPrice: ctx.trailingStop ?? null }
+  }
+
+  await updatePositionContext(symbol, activeState).catch(logContextPersistError(symbol))
+  await persistProtectiveStopSnapshot(p, entry, stopPrice, move.stopOrderId)
+  return { exitReason: null, stopPrice }
 }
 
 // ============================================================

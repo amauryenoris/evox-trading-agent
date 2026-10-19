@@ -1,17 +1,8 @@
 import type { PositionDisplay } from '@/lib/types'
+import { getProfitFloorSettings, getProfitTargetPct, TRAILING_ACTIVATION_PCT } from '@/lib/protective-stop'
 import { Card, SignalBadge, Dot, Progress } from './ui'
 
 const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
-
-// ADAPTED: mirrors claude-agent.ts ACTIVATION_PCT — same values, kept in sync manually
-const ACTIVATION_PCT: Record<string, number> = {
-  MEAN_REVERSION: 0.05,
-  TREND:          0.06,
-  TREND_PULLBACK: 0.06,
-  TREND_ZLE05:    0.03,
-  EMA_RECLAIM:    0.04,
-  TREND_PULLBACK_3DAY: 0.06,
-}
 
 // ADAPTED: MEAN_REVERSION → 'MR' because ui.tsx SignalBadge map uses shortcodes
 const toSignalCode = (s?: string | null) => s === 'MEAN_REVERSION' ? 'MR' : s
@@ -23,19 +14,41 @@ interface Props {
   positions: PositionDisplay[]
 }
 
+export interface ProtectionStatus {
+  state: 'active' | 'calculating' | 'inactive'
+  text: string
+}
+
+export function describeProtection(p: PositionDisplay): ProtectionStatus {
+  const signal = p.signalType ?? 'default'
+  const floor = getProfitFloorSettings(p.signalType)
+  const hasStop = !!(p.trailingActivated && p.trailingStop != null)
+  const isCalculating = !!(p.trailingActivated && p.trailingStop == null)
+
+  if (floor) {
+    if (hasStop && p.trailingStop != null) {
+      const floorPct = (p.trailingStop / p.avgEntryPrice - 1) * 100
+      return { state: 'active', text: `Floor $${p.trailingStop.toFixed(2)} (+${floorPct.toFixed(2)}%)` }
+    }
+    if (isCalculating) return { state: 'calculating', text: 'Floor calculating...' }
+    return { state: 'inactive', text: `Profit lock inactive - activates at +${floor.activationPct}%` }
+  }
+
+  if (hasStop && p.trailingStop != null) {
+    const distPct = ((p.currentPrice - p.trailingStop) / p.currentPrice) * 100
+    return { state: 'active', text: `Trail $${p.trailingStop.toFixed(2)} · ${distPct.toFixed(2)}% to stop` }
+  }
+  if (isCalculating) return { state: 'calculating', text: 'Trail calculating...' }
+  const activatePct = ((TRAILING_ACTIVATION_PCT[signal] ?? TRAILING_ACTIVATION_PCT.default) * 100).toFixed(0)
+  return { state: 'inactive', text: `Trail inactive · activates at +${activatePct}%` }
+}
+
 function PositionCard({ p }: { p: PositionDisplay }) {
   const up = p.unrealizedPnL >= 0
-  const profitTarget = 10
+  const profitTarget = p.profitTargetPct ?? getProfitTargetPct(p.signalType) * 100
   const progress = Math.max(0, Math.min(1, p.unrealizedPnLPct / profitTarget))
 
-  const trailActive = !!(p.trailingActivated && p.trailingStop != null)
-  const trailCalc   = !!(p.trailingActivated && p.trailingStop == null)
-  const trailDistPct = trailActive && p.trailingStop != null
-    ? ((p.currentPrice - p.trailingStop) / p.currentPrice) * 100
-    : null
-
-  const signal       = p.signalType ?? 'default'
-  const activatePct  = ((ACTIVATION_PCT[signal] ?? 0.05) * 100).toFixed(0)
+  const protection = describeProtection(p)
   const pnlSign      = p.unrealizedPnL >= 0 ? '+' : ''
 
   return (
@@ -69,25 +82,22 @@ function PositionCard({ p }: { p: PositionDisplay }) {
         </div>
       </div>
 
-      {/* trailing stop status */}
+      {/* protective stop status */}
       <div className="flex items-center gap-2 mb-3.5">
-        {trailActive && p.trailingStop != null ? (
+        {protection.state === 'active' ? (
           <>
             <Dot tone="green" pulse />
-            <span className="text-[11px] num text-green">
-              Trail ${p.trailingStop.toFixed(2)}
-              <span className="opacity-80"> · {trailDistPct?.toFixed(2)}% to stop</span>
-            </span>
+            <span className="text-[11px] num text-green">{protection.text}</span>
           </>
-        ) : trailCalc ? (
+        ) : protection.state === 'calculating' ? (
           <>
             <Dot tone="amber" />
-            <span className="text-[11px] text-amber">Trail calculating...</span>
+            <span className="text-[11px] text-amber">{protection.text}</span>
           </>
         ) : (
           <>
             <Dot tone="muted" />
-            <span className="text-[11px] text-muted">Trail inactive · activates at +{activatePct}%</span>
+            <span className="text-[11px] text-muted">{protection.text}</span>
           </>
         )}
       </div>

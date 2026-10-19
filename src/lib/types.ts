@@ -130,6 +130,18 @@ export interface TechnicalIndicators {
   mrRiskFactors?: string[] | null
   requestedQty?: number
   fillAttempts?: FillAttempt[]
+  protectiveStop?: ProtectiveStopSnapshot
+}
+
+export interface ProtectiveStopSnapshot {
+  design: 'R'
+  activationPct: number
+  floorPct: number
+  ratchetPp: number
+  activatedAt: string
+  highPct: number
+  stopPrice: number
+  stopOrderId: string | null
 }
 
 export interface FillAttempt {
@@ -340,6 +352,7 @@ export interface PositionDisplay {
   highSinceEntry?: number | null
   buyPrice?: number
   daysOpen?: number | null
+  profitTargetPct?: number
 }
 
 export interface NewsEvent {

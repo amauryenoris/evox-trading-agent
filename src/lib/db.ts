@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type {
   AgentLogEntry,
   OpenPositionContext,
+  ProtectiveStopSnapshot,
   TradeEvaluation,
   TradingPattern,
   SelectionDecision,
@@ -222,6 +223,24 @@ export async function updatePositionContext(
     })
     .eq('symbol', symbol)
   if (error) throw new Error(`Failed to update position context for ${symbol}: ${error.message}`)
+}
+
+export async function updatePositionProtectiveStop(
+  symbol: string,
+  protectiveStop: ProtectiveStopSnapshot
+): Promise<void> {
+  const db = getClient()
+  const { data, error: readError } = await db.from('open_position_contexts')
+    .select('indicators')
+    .eq('symbol', symbol)
+    .single()
+  if (readError) throw new Error(`Failed to read indicators for ${symbol}: ${readError.message}`)
+
+  const indicators = { ...((data?.indicators as Record<string, unknown> | null) ?? {}), protectiveStop }
+  const { error } = await db.from('open_position_contexts')
+    .update({ indicators })
+    .eq('symbol', symbol)
+  if (error) throw new Error(`Failed to persist protectiveStop for ${symbol}: ${error.message}`)
 }
 
 export async function deleteOpenPositionContext(symbol: string): Promise<void> {

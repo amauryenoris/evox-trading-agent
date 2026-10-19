@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react'
 import type { AgentLogEntry } from '@/lib/types'
+import { getProfitTargetPct } from '@/lib/protective-stop'
 
 /* ──────────────────────────────────────────────────────────
    AgentReasoningLog — structured per-entry-type display
@@ -26,6 +27,7 @@ type ParsedEntry = {
   daysOpen?: number
   highSinceEntry?: number
   trail?: number
+  floor?: number
   adx?: number
   threshold?: number
   rsi?: number
@@ -46,7 +48,7 @@ type ParsedEntry = {
 const num = (s: string | null | undefined): number | undefined =>
   s == null ? undefined : Number(s)
 
-function parseEntry(text: string | undefined | null): ParsedEntry {
+export function parseEntry(text: string | undefined | null): ParsedEntry {
   if (!text) return {}
   const p: ParsedEntry = {}
   const rx = (re: RegExp): string | null => { const m = text.match(re); return m ? m[1] : null }
@@ -57,6 +59,7 @@ function parseEntry(text: string | undefined | null): ParsedEntry {
   p.daysOpen       = num(rx(/daysOpen\s*=\s*(\d+)/i))
   p.highSinceEntry = num(rx(/highSinceEntry\s*=\s*\$?(-?\d+\.?\d*)/i))
   p.trail          = num(rx(/trail(?:Price|Stop)?\s*[=:]?\s*\$?(-?\d+\.?\d*)/i))
+  p.floor          = num(rx(/profitFloor\s*=\s*\$?(-?\d+\.?\d*)/i))
   p.adx            = num(rx(/adx\s*[=:]?\s*(-?\d+\.?\d*)/i))
   p.threshold      = num(rx(/z-score [0-9.-]+ > ([0-9.-]+)/))
   p.rsi            = num(rx(/rsi\s*[=:]?\s*(-?\d+\.?\d*)/i))
@@ -71,6 +74,7 @@ function parseEntry(text: string | undefined | null): ParsedEntry {
   p.ghostClose     = /ghost.?close|alpaca\s*gtc/i.test(text)
 
   if (/profit\s*target/i.test(text))       p.exitRule = 'profit target'
+  else if (/profit\s*floor/i.test(text))   p.exitRule = 'profit floor'
   else if (/trailing\s*stop/i.test(text))  p.exitRule = 'trailing stop'
   else if (/ema50/i.test(text))            p.exitRule = 'EMA50 exit'
   else if (/time\s*stop/i.test(text))      p.exitRule = 'time stop (20d)'
@@ -357,6 +361,9 @@ function HoldingCard({ entry, parsed }: { entry: AgentLogEntry; parsed: ParsedEn
   const sig       = entry.decision.signal_type as string | undefined
   const pnlPctRaw = parsed.pnlPct
   const pnlPct    = pnlPctRaw != null && Math.abs(pnlPctRaw) < 5 ? pnlPctRaw * 100 : pnlPctRaw
+  const targetPct = Math.round(getProfitTargetPct(sig ?? parsed.signalType) * 100)
+  const stopLabel = parsed.floor != null ? 'Floor' : 'Trail'
+  const stopValue = parsed.floor ?? parsed.trail
   // ADAPTED: prefer entry.indicators.kalman?.zScore over parsed text extraction
   const z      = entry.indicators.kalman?.zScore ?? parsed.zScore
   const zLabel = z == null ? null : z >= 0.5 ? 'overvalued' : z <= -0.5 ? 'undervalued' : 'near FV'
@@ -380,8 +387,8 @@ function HoldingCard({ entry, parsed }: { entry: AgentLogEntry; parsed: ParsedEn
                 {pnlPct != null ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%` : '—'}
               </span>
             </div>
-            <MiniBar value={pnlPct ?? 0} max={10} tone={pnlPct != null && pnlPct >= 0 ? 'green' : 'red'} />
-            <div className="mt-0.5 text-[9.5px] text-slate-600 font-mono tabular-nums">→ +10% target</div>
+            <MiniBar value={pnlPct ?? 0} max={targetPct} tone={pnlPct != null && pnlPct >= 0 ? 'green' : 'red'} />
+            <div className="mt-0.5 text-[9.5px] text-slate-600 font-mono tabular-nums">→ +{targetPct}% target</div>
           </div>
 
           {/* Days */}
@@ -407,11 +414,11 @@ function HoldingCard({ entry, parsed }: { entry: AgentLogEntry; parsed: ParsedEn
           <div className="flex items-baseline justify-between sm:justify-start sm:gap-3 flex-wrap">
             <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">High</span>
             <span className="font-mono tabular-nums text-slate-300">{fmt$(parsed.highSinceEntry)}</span>
-            {parsed.trail != null && (
+            {stopValue != null && (
               <>
                 <span className="text-slate-700">·</span>
-                <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Trail</span>
-                <span className="font-mono tabular-nums text-[#00B386]">{fmt$(parsed.trail)}</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{stopLabel}</span>
+                <span className="font-mono tabular-nums text-[#00B386]">{fmt$(stopValue)}</span>
               </>
             )}
           </div>

@@ -75,13 +75,14 @@ export async function isMarketOpen(): Promise<boolean> {
  */
 export async function getBars(
   symbol: string,
-  timeframe: '1Day' | '1Hour' | '5Min' = '1Day',
+  timeframe: '1Day' | '1Hour' | '5Min' | '1Min' = '1Day',
   daysBack = 260,
-  limit = 250
+  limit = 250,
+  startIso?: string
 ): Promise<AlpacaBar[]> {
   const start = new Date()
   start.setDate(start.getDate() - daysBack)
-  const startStr = start.toISOString().split('T')[0]
+  const startStr = startIso ?? start.toISOString().split('T')[0]
 
   const url = new URL(`${dataUrl()}/v2/stocks/${symbol}/bars`)
   url.searchParams.set('timeframe', timeframe)
