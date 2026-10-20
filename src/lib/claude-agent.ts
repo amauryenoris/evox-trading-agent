@@ -45,6 +45,7 @@ import {
   TRAILING_ACTIVATION_PCT,
 } from './protective-stop'
 import { getPeakHighSinceLastCheck } from './peak-high'
+import { isSma5ExitConditionMet, evaluateSma5EntryGate, buildTrend3DayAboveSma5Reason } from './sma5-exit'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome, SelectionStepError } from './stock-selector'
 import { newsIntelligenceLayer, getAggregateMacroSentiment } from './news-intelligence'
@@ -334,8 +335,8 @@ export async function enforceExitRules(
 
     // TREND_PULLBACK_3DAY exit — price reclaims SMA5
     if (!exitReason && signalType === 'TREND_PULLBACK_3DAY') {
-      if (ind.sma5 != null && ind.currentPrice > ind.sma5) {
-        exitReason = `Exit rule: price $${ind.currentPrice.toFixed(2)} closed above SMA5 $${ind.sma5.toFixed(2)}`
+      if (isSma5ExitConditionMet(ind.currentPrice, ind.sma5)) {
+        exitReason = `Exit rule: price $${ind.currentPrice.toFixed(2)} closed above SMA5 $${ind.sma5?.toFixed(2)}`
       }
     }
 
@@ -1995,8 +1996,20 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         indicators.closeMinus2 < indicators.closeMinus3 &&
         indicators.closeMinus3 < indicators.closeMinus4
 
-      const trendPullback3DaySetup =
+      const trendPullback3DayCandidate =
         trendPullback3DayUptrendOk && trendPullback3DayStreakOk
+
+      // Entry gate = negation of the 3DAY exit (same function): never enter where the exit would fire at once.
+      const trendPullback3DaySma5Gate = trendPullback3DayCandidate
+        ? evaluateSma5EntryGate(indicators.currentPrice, indicators.sma5)
+        : 'allowed'
+      if (trendPullback3DaySma5Gate === 'sma5_unusable') {
+        console.warn(`[TREND_3DAY] ${symbol}: SMA5 missing or not finite — SMA5 entry gate skipped`)
+      }
+      const trendPullback3DayBlockedAboveSma5 = trendPullback3DaySma5Gate === 'blocked'
+
+      const trendPullback3DaySetup =
+        trendPullback3DayCandidate && !trendPullback3DayBlockedAboveSma5
 
       // TREND_PULLBACK: uptrend structure, z-score <= 0, momentum + quality confirmed
       const trendPullbackMomentumOk =
@@ -2208,6 +2221,24 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
           error: qualityError,
         })
         continue
+      }
+
+      if (trendPullback3DayBlockedAboveSma5) {
+        const sma5Reason = buildTrend3DayAboveSma5Reason(indicators.currentPrice, indicators.sma5)
+        console.log(`[SETUP-GATE] ${symbol}: ${sma5Reason}`)
+        if (!setup_detected) {
+          decisions.push({
+            id: randomUUID(),
+            timestamp,
+            symbol,
+            decision: { action: 'HOLD', symbol, quantity: 0, reasoning: sma5Reason, confidence: 0 },
+            indicators,
+            portfolioSnapshot: { equity: account.equity, cash: account.cash, positionCount: positions.length },
+            orderExecuted: false,
+            error: sma5Reason,
+          })
+          continue
+        }
       }
 
       if (!setup_detected) {
