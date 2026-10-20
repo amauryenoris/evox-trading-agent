@@ -359,7 +359,10 @@ export async function enforceExitRules(
     // PASO 1 — Update high_since_entry first
     let highSinceEntry = ctx?.highSinceEntry ?? currentPrice
     if (isProfitFloorSetup) {
-      const peakHigh = await getPeakHighSinceLastCheck(position.symbol, ctx.buyTimestamp)
+      const peakHigh = await getPeakHighSinceLastCheck(position.symbol, ctx.buyTimestamp, new Date(), {
+        storedHigh: highSinceEntry,
+        entry: resolveEntryPrice(position, ctx),
+      })
       if (peakHigh !== null && peakHigh > highSinceEntry) highSinceEntry = peakHigh
     }
     const madeNewHigh = currentPrice > highSinceEntry
@@ -643,11 +646,29 @@ async function persistProtectiveStopSnapshot(
   )
 }
 
+function resolveEntryPrice(position: AlpacaPosition, ctx: OpenPositionContext): number {
+  const avgEntry = parseFloat(position.avg_entry_price)
+  return avgEntry > 0 ? avgEntry : ctx.buyPrice
+}
+
+async function handleFloorSellNow(
+  p: ProfitFloorParams,
+  entry: number,
+  stopPrice: number,
+  activeState: Partial<OpenPositionContext>
+): Promise<ProfitFloorOutcome> {
+  await updatePositionContext(p.position.symbol, activeState).catch(logContextPersistError(p.position.symbol))
+  const floorPct = ((stopPrice / entry) - 1) * 100
+  const exitReason = p.exitAlreadySet
+    ? null
+    : `Exit rule: profit floor $${stopPrice.toFixed(2)} (+${floorPct.toFixed(2)}%) breached`
+  return { exitReason, stopPrice }
+}
+
 async function applyProfitFloor(p: ProfitFloorParams): Promise<ProfitFloorOutcome> {
   const { position, ctx, highSinceEntry } = p
   const symbol = position.symbol
-  const avgEntry = parseFloat(position.avg_entry_price)
-  const entry = avgEntry > 0 ? avgEntry : ctx.buyPrice
+  const entry = resolveEntryPrice(position, ctx)
 
   const result = computeProtectiveStop({
     setup: ctx.signalType,
@@ -665,14 +686,7 @@ async function applyProfitFloor(p: ProfitFloorParams): Promise<ProfitFloorOutcom
   const stopPrice = result.stopPrice
   const activeState = { highSinceEntry, trailingStop: stopPrice, trailingActivated: true }
 
-  if (result.action === 'sell_now') {
-    await updatePositionContext(symbol, activeState).catch(logContextPersistError(symbol))
-    const floorPct = ((stopPrice / entry) - 1) * 100
-    const exitReason = p.exitAlreadySet
-      ? null
-      : `Exit rule: profit floor $${stopPrice.toFixed(2)} (+${floorPct.toFixed(2)}%) breached`
-    return { exitReason, stopPrice }
-  }
+  if (result.action === 'sell_now') return handleFloorSellNow(p, entry, stopPrice, activeState)
 
   const needsOrder = result.action !== 'none' || !ctx.trailingStopOrderId
   if (!needsOrder) {

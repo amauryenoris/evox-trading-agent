@@ -342,6 +342,30 @@ describe('enforceExitRules — MEAN_REVERSION profit floor', () => {
       decision: expect.objectContaining({ reasoning: expect.stringContaining('profitFloor=$103.00') }),
     }))
   })
+
+  it('passes the stored high and the entry to the peak computation for the jump guard', async () => {
+    const ctx = makeCtx({ highSinceEntry: 104 })
+
+    await run(makePosition(103), ctx)
+
+    expect(mocks.getPeakHighSinceLastCheck).toHaveBeenCalledWith('SOFI', ctx.buyTimestamp, expect.any(Date), { storedHigh: 104, entry: ENTRY })
+  })
+
+  it('uses the current price as the stored base when no high is stored', async () => {
+    const ctx = makeCtx({ highSinceEntry: null })
+
+    await run(makePosition(103), ctx)
+
+    expect(mocks.getPeakHighSinceLastCheck).toHaveBeenCalledWith('SOFI', ctx.buyTimestamp, expect.any(Date), { storedHigh: 103, entry: ENTRY })
+  })
+
+  it('falls back to the context buy price as entry when avg_entry_price is not positive', async () => {
+    const ctx = makeCtx({ highSinceEntry: 104, buyPrice: 99 })
+
+    await run(makePosition(103, { avg_entry_price: '0' }), ctx)
+
+    expect(mocks.getPeakHighSinceLastCheck).toHaveBeenCalledWith('SOFI', ctx.buyTimestamp, expect.any(Date), { storedHigh: 104, entry: 99 })
+  })
 })
 
 describe('enforceExitRules — other setups keep their trailing with tick safety', () => {
