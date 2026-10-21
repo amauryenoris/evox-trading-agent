@@ -45,6 +45,7 @@ import {
   TRAILING_ACTIVATION_PCT,
 } from './protective-stop'
 import { getPeakHighSinceLastCheck } from './peak-high'
+import { computeBuyQuantity, regimeMultiplier } from './position-sizing'
 import { isSma5ExitConditionMet, evaluateSma5EntryGate, buildTrend3DayAboveSma5Reason } from './sma5-exit'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome, SelectionStepError } from './stock-selector'
@@ -1034,56 +1035,6 @@ function checkTradingHours(): boolean {
 async function checkOvertradingLimit(): Promise<boolean> {
   const count = await getTodayBuyExecutions()
   return count < 5
-}
-
-function regimeMultiplier(regime: string | null): number {
-  const map: Record<string, number> = {
-    TRENDING: 1.0,
-    TRANSITION: 0.75,
-    RANGING: 0.5,
-    HIGH_VOLATILITY: 0.25,
-  }
-  return regime ? (map[regime] ?? 1.0) : 1.0
-}
-
-// ============================================================
-// POSITION SIZING
-// ============================================================
-
-// Kovner 1-2% Rule: risk at most 1% of equity per trade
-// risk_per_share = entry_price * stop_loss_pct
-// quantity = capital_at_risk / risk_per_share
-// regime multiplier applied first, then undertrade halving if Kalman NEUTRAL
-function calculateBuyQuantity(
-  currentPrice: number,
-  portfolioEquity: number,
-  availableCash: number,
-  kalmanSignal?: string,
-  marketRegime?: string | null
-): number {
-  const riskPct = parseFloat(process.env.RISK_PCT ?? '0.01')
-  const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
-
-  const capitalAtRisk = portfolioEquity * riskPct
-  const riskPerShare = currentPrice * stopLossPct
-  if (riskPerShare === 0) return 0
-
-  let qty = Math.floor(capitalAtRisk / riskPerShare)
-
-  // Regime multiplier (applied before Kalman undertrade)
-  const regimeMult = regimeMultiplier(marketRegime ?? null)
-  qty = Math.floor(qty * regimeMult)
-
-  // Undertrade mandate (Seykota): halve position if no Kalman confirmation
-  if (!kalmanSignal || kalmanSignal === 'NEUTRAL') {
-    qty = Math.floor(qty / 2)
-  }
-
-  // Safety cap A: never exceed 95% of available cash
-  const maxAffordable = Math.floor((availableCash * 0.95) / currentPrice)
-  // Safety cap B: never exceed 10% of total equity (prevents oversizing on cheap stocks)
-  const maxByEquity = Math.floor((portfolioEquity * 0.10) / currentPrice)
-  return Math.max(0, Math.min(qty, Math.min(maxAffordable, maxByEquity)))
 }
 
 // ============================================================
@@ -2451,26 +2402,20 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
                   decision.action = 'HOLD'
                 } else {
                   // All gates passed — size position
-                  const baseShares = calculateBuyQuantity(
-                    indicators.currentPrice,
-                    parseFloat(account.equity),
-                    parseFloat(account.buying_power),
-                    indicators.kalman?.signal,
-                    indicators.marketRegime
-                  )
-                  // Confidence-based position sizing with 50% floor
-                  const confidenceMultiplier = Math.max(0.50, Math.min(decision.confidence, 1.0))
-                  let adjustedShares = Math.round(baseShares * confidenceMultiplier)
-                  // Edge override: extreme z-score gets full size (applied last, never overwritten)
-                  if (zScore <= -2.0) {
-                    adjustedShares = baseShares
-                  }
-                  const emaReclaimMultiplier = 0.75
-                  let finalShares = adjustedShares
-                  if (signalType === 'EMA_RECLAIM') {
-                    finalShares = Math.round(adjustedShares * emaReclaimMultiplier)
-                  }
-                  const qty = finalShares
+                  const sizing = computeBuyQuantity({
+                    equity: parseFloat(account.equity),
+                    buyingPower: parseFloat(account.buying_power),
+                    price: indicators.currentPrice,
+                    riskPct: parseFloat(process.env.RISK_PCT ?? '0.01'),
+                    stopLossPct: parseFloat(process.env.STOP_LOSS_PCT ?? '0.05'),
+                    kalmanSignal: indicators.kalman?.signal,
+                    regime: indicators.marketRegime,
+                    confidence: decision.confidence,
+                    zScore,
+                    signalType,
+                  })
+                  const { baseShares, adjustedShares, confidenceFactor: confidenceMultiplier } = sizing.breakdown
+                  const qty = sizing.quantity
                   requestedQty = qty
                   const allGatesPassed = true  // reached this point — all gates cleared
                   const wouldExecute = setup_detected && allGatesPassed
