@@ -3,11 +3,19 @@ import type { TradeEvaluation, TechnicalIndicators } from '../types'
 import {
   buildSetupLearningBlock,
   buildPatternIds,
+  isHardRuleLesson,
+  HARD_RULE_LESSON_PATTERNS,
+  LESSONS_PER_TRADE,
+  HARD_RULE_FILTER_ENABLED,
+  SHOW_EXPLORATORY_BUCKETS,
   SECTOR_RS_RELIABLE_FROM,
   MAX_BLOCK_LINES,
   MAX_BLOCK_CHARS,
   type SetupLearningInput,
+  type StoredLearningSnapshot,
 } from '../learning-context'
+import { REAL_LESSONS, buildRegressionCases } from './fixtures/lessons-real-samples'
+import golden from './fixtures/lessons-block-golden.json'
 
 const ASOF = '2026-10-12T14:00:00-04:00'
 let nextId = 0
@@ -204,7 +212,11 @@ describe('buildSetupLearningBlock — matching conditions', () => {
       stateFingerprint: { ...fp(i < 8 ? 'MID' : 'LOW'), macd_bucket: i % 2 === 0 ? 'NEGATIVE' : 'POSITIVE' },
     }))
 
-    const { text } = buildSetupLearningBlock(input({ trades, indicators: makeIndicators({ macd: { macdLine: 0, signalLine: 0, histogram: -1 } }) }))
+    const { text } = buildSetupLearningBlock(input({
+      trades,
+      indicators: makeIndicators({ macd: { macdLine: 0, signalLine: 0, histogram: -1 } }),
+      options: { showExploratoryBuckets: true },
+    }))
 
     const macdLine = text.split('\n').find((l) => l.includes('macd_bucket='))
     expect(macdLine).toContain('exploratory')
@@ -321,8 +333,6 @@ describe('buildSetupLearningBlock — lesson content filter', () => {
     'only a 17% win rate for this pattern',
     'profit factor was 1.4',
     'signal supported by volume',
-    'strong sector tailwinds',
-    'it moved strongly higher',
   ]
 
   it.each(rejected)('skips the lesson "%s" and shows none of its text', (lesson) => {
@@ -364,8 +374,9 @@ describe('buildSetupLearningBlock — lesson content filter', () => {
 
   it('counts rejects even when the lesson slots are already full', () => {
     const trades = [
-      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-04T14:00:00Z', lessonsLearned: ['clean one', 'clean two'] }),
-      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: ['strong move'] }),
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-05T14:00:00Z', lessonsLearned: ['clean one'] }),
+      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-04T14:00:00Z', lessonsLearned: ['clean two'] }),
+      makeTrade({ symbol: 'CCC', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: ['lost $4.00 on it'] }),
     ]
 
     const { snapshot } = buildSetupLearningBlock(input({ trades }))
@@ -377,7 +388,7 @@ describe('buildSetupLearningBlock — lesson content filter', () => {
   it('does not count in filteredLessonCount a lesson already excluded by the sector-RS cutoff', () => {
     const preFix = makeTrade({
       buyTimestamp: '2026-10-05T10:00:00-04:00',
-      lessonsLearned: ['strong sector rs'],
+      lessonsLearned: ['lost $9.00 on sector rs'],
       buyIndicators: { ...makeIndicators(), sectorRotation: { gdx: 33 } } as TechnicalIndicators,
     })
 
@@ -388,7 +399,7 @@ describe('buildSetupLearningBlock — lesson content filter', () => {
   })
 
   it('does not count a lesson from another setup', () => {
-    const trades = [makeTrade({ signal_type: 'TREND_ZLE05', lessonsLearned: ['strong other setup'] }), makeTrade()]
+    const trades = [makeTrade({ signal_type: 'TREND_ZLE05', lessonsLearned: ['lost $7.00 other setup'] }), makeTrade()]
 
     const { snapshot } = buildSetupLearningBlock(input({ trades }))
 
@@ -408,7 +419,8 @@ describe('buildSetupLearningBlock — footer, caps, wording', () => {
     const trades = [
       ...manyTrades(8, 'MID', 1),
       ...manyTrades(8, 'LOW', -1),
-      makeTrade({ symbol: 'L1', sellTimestamp: '2026-09-30T14:00:00Z', lessonsLearned: [long, long] }),
+      makeTrade({ symbol: 'L1', sellTimestamp: '2026-09-30T14:00:00Z', lessonsLearned: [long] }),
+      makeTrade({ symbol: 'L2', sellTimestamp: '2026-09-29T14:00:00Z', lessonsLearned: [long] }),
     ]
 
     const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
@@ -432,7 +444,7 @@ describe('buildSetupLearningBlock — footer, caps, wording', () => {
 
   it('contains none of those terms in the whole text when every lesson carries one', () => {
     const trades = [
-      makeTrade({ symbol: 'A', lessonsLearned: ['lost $11.16', 'strong tailwinds'] }),
+      makeTrade({ symbol: 'A', lessonsLearned: ['lost $11.16', 'lost $2.50 more'] }),
       makeTrade({ symbol: 'B', lessonsLearned: ['signal supported by volume', 'profit factor 1.4', 'a 17% win rate'] }),
     ]
 
@@ -458,15 +470,15 @@ describe('buildSetupLearningBlock — purity and snapshot', () => {
     expect(second).toEqual(first)
   })
 
-  it('returns a version-2 snapshot whose text equals the block text', () => {
+  it('returns a version-3 snapshot whose text equals the block text', () => {
     const { text, snapshot } = buildSetupLearningBlock(input({ trades: [makeTrade()] }))
 
-    expect(snapshot.version).toBe(2)
+    expect(snapshot.version).toBe(3)
     expect(snapshot.setup).toBe('MEAN_REVERSION')
     expect(snapshot.asOf).toBe(ASOF)
     expect(snapshot.text).toBe(text)
     expect(Object.keys(snapshot).sort()).toEqual(
-      ['asOf', 'baseline', 'bucketsShown', 'excludedLessonCount', 'filteredLessonCount', 'lessonsShown', 'setup', 'text', 'version']
+      ['asOf', 'baseline', 'bucketsShown', 'excludedLessonCount', 'exploratoryHidden', 'filteredLessonCount', 'hardRuleLessonsFiltered', 'lessonsShown', 'setup', 'text', 'version']
     )
   })
 })
@@ -483,5 +495,256 @@ describe('buildPatternIds', () => {
     const { snapshot } = buildSetupLearningBlock(input({ trades: [] }))
 
     expect(buildPatternIds(snapshot)).toEqual([])
+  })
+
+  it('accepts a stored version-2 snapshot', () => {
+    const { snapshot } = buildSetupLearningBlock(input({ trades: [] }))
+    const stored: StoredLearningSnapshot = {
+      version: 2,
+      setup: 'MEAN_REVERSION',
+      asOf: ASOF,
+      text: '',
+      baseline: snapshot.baseline,
+      bucketsShown: [{ dimension: 'adx_bucket', bucket: 'MID', n: 8 }],
+      lessonsShown: [],
+      excludedLessonCount: 0,
+      filteredLessonCount: 0,
+    }
+
+    expect(buildPatternIds(stored)).toEqual(['MEAN_REVERSION|adx_bucket|MID'])
+  })
+})
+
+describe('switch constants', () => {
+  it('ships one lesson per trade, the hard-rule filter on and exploratory buckets hidden', () => {
+    expect(LESSONS_PER_TRADE).toBe(1)
+    expect(HARD_RULE_FILTER_ENABLED).toBe(true)
+    expect(SHOW_EXPLORATORY_BUCKETS).toBe(false)
+  })
+})
+
+describe('isHardRuleLesson', () => {
+  it.each([
+    REAL_LESSONS.neverAdx30,
+    REAL_LESSONS.veto,
+    REAL_LESSONS.hardFilter,
+    REAL_LESSONS.avoidEntries,
+    'Do not enter TREND_PULLBACK setups when the MACD histogram is deeply negative.',
+    'A trade like this must not be taken.',
+    'The entry should be rejected outright.',
+    'It should be automatically disqualified.',
+    'It is not wise: never enter a long position when EXIT_LONG is set.',
+  ])('flags prohibition or veto wording: "%s"', (lesson) => {
+    expect(isHardRuleLesson(lesson)).toBe(true)
+  })
+
+  it.each([
+    REAL_LESSONS.notHardGate,
+    REAL_LESSONS.notDisqualifying,
+    REAL_LESSONS.strongDowntrend,
+    REAL_LESSONS.stronglyTrending,
+    REAL_LESSONS.cleanOne,
+    'This is not a veto condition.',
+    'Weak ADX is not a hard filter for this setup.',
+  ])('does not flag a lesson that merely discusses a rule or has no rule wording: "%s"', (lesson) => {
+    expect(isHardRuleLesson(lesson)).toBe(false)
+  })
+
+  it('exports the patterns as a non-empty list of regular expressions', () => {
+    expect(HARD_RULE_LESSON_PATTERNS.length).toBeGreaterThan(0)
+    expect(HARD_RULE_LESSON_PATTERNS.every((p) => p instanceof RegExp)).toBe(true)
+  })
+})
+
+describe('buildSetupLearningBlock — one lesson per trade', () => {
+  const threeLessons = (symbol: string, sell: string, tag: string) =>
+    makeTrade({ symbol, sellTimestamp: sell, lessonsLearned: [`${tag} first`, `${tag} second`, `${tag} third`] })
+
+  it('never shows two lessons from the same trade when every trade has three lessons', () => {
+    const trades = [
+      threeLessons('AAA', '2026-09-01T14:00:00Z', 'oldest'),
+      threeLessons('BBB', '2026-09-02T14:00:00Z', 'middle'),
+      threeLessons('CCC', '2026-09-03T14:00:00Z', 'newest'),
+    ]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(new Set(snapshot.lessonsShown.map((l) => l.tradeId)).size).toBe(2)
+    expect(text).toContain('newest first (CCC')
+    expect(text).toContain('middle first (BBB')
+    expect(text).not.toContain('newest second')
+    expect(text).not.toContain('oldest')
+  })
+
+  it('shows a single lesson when only one trade has lessons', () => {
+    const { snapshot } = buildSetupLearningBlock(input({ trades: [threeLessons('AAA', '2026-09-01T14:00:00Z', 'only')] }))
+
+    expect(snapshot.lessonsShown).toHaveLength(1)
+  })
+
+  it('skips a trade without eligible lessons and moves to the next older trade', () => {
+    const trades = [
+      makeTrade({ symbol: 'NEW', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: ['lost $3.00 here'] }),
+      makeTrade({ symbol: 'MID', sellTimestamp: '2026-09-02T14:00:00Z', lessonsLearned: [] }),
+      threeLessons('OLD', '2026-09-01T14:00:00Z', 'older'),
+    ]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.lessonsShown.map((l) => l.symbol)).toEqual(['OLD'])
+  })
+
+  it('takes the first eligible lesson of a trade in stored order', () => {
+    const trades = [makeTrade({ symbol: 'AAA', lessonsLearned: ['lost $3.00 here', 'second is eligible', 'third is eligible'] })]
+
+    const { text } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).toContain('second is eligible')
+    expect(text).not.toContain('third is eligible')
+  })
+
+  it('with three lessons per trade allowed it takes both slots from the newest trade, as before', () => {
+    const trades = [threeLessons('CCC', '2026-09-03T14:00:00Z', 'newest'), threeLessons('BBB', '2026-09-02T14:00:00Z', 'middle')]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades, options: { lessonsPerTrade: 3 } }))
+
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(snapshot.lessonsShown.every((l) => l.symbol === 'CCC')).toBe(true)
+  })
+})
+
+describe('buildSetupLearningBlock — lesson filters after the change', () => {
+  it('lets lessons through that use "strong" or "strongly" descriptively', () => {
+    const trades = [
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-02T14:00:00Z', lessonsLearned: [REAL_LESSONS.strongDowntrend] }),
+      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-01T14:00:00Z', lessonsLearned: [REAL_LESSONS.stronglyTrending] }),
+    ]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).toContain('against a strong downtrend')
+    expect(text).toContain('ranging rather than strongly trending')
+    expect(snapshot.filteredLessonCount).toBe(0)
+  })
+
+  it('drops hard-rule lessons and counts them in hardRuleLessonsFiltered only', () => {
+    const trades = [
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: [REAL_LESSONS.neverAdx30, REAL_LESSONS.veto, REAL_LESSONS.cleanOne] }),
+    ]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(text).not.toContain('Never execute')
+    expect(text).not.toContain('veto condition')
+    expect(text).toContain('Extreme Kalman filter z-scores')
+    expect(snapshot.hardRuleLessonsFiltered).toBe(2)
+    expect(snapshot.filteredLessonCount).toBe(0)
+  })
+
+  it('counts hard-rule lessons even when the slots are already full', () => {
+    const trades = [
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-05T14:00:00Z', lessonsLearned: ['clean one'] }),
+      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-04T14:00:00Z', lessonsLearned: ['clean two'] }),
+      makeTrade({ symbol: 'CCC', sellTimestamp: '2026-09-03T14:00:00Z', lessonsLearned: [REAL_LESSONS.hardFilter] }),
+    ]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(snapshot.hardRuleLessonsFiltered).toBe(1)
+  })
+
+  it('does not count a lesson twice when it matches both filters', () => {
+    const trades = [makeTrade({ symbol: 'AAA', lessonsLearned: ['lost $5.00, so never enter a trade like this'] })]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.filteredLessonCount).toBe(1)
+    expect(snapshot.hardRuleLessonsFiltered).toBe(0)
+  })
+
+  it('keeps lessons that only discuss a rule', () => {
+    const trades = [
+      makeTrade({ symbol: 'AAA', sellTimestamp: '2026-09-02T14:00:00Z', lessonsLearned: [REAL_LESSONS.notHardGate] }),
+      makeTrade({ symbol: 'BBB', sellTimestamp: '2026-09-01T14:00:00Z', lessonsLearned: [REAL_LESSONS.notDisqualifying] }),
+    ]
+
+    const { snapshot } = buildSetupLearningBlock(input({ trades }))
+
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(snapshot.hardRuleLessonsFiltered).toBe(0)
+  })
+
+  it('keeps hard-rule lessons and counts none when the filter is disabled', () => {
+    const trades = [makeTrade({ symbol: 'AAA', lessonsLearned: [REAL_LESSONS.neverAdx30] })]
+
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades, options: { hardRuleFilterEnabled: false } }))
+
+    expect(text).toContain('Never execute a mean-reversion trade when ADX exceeds 30')
+    expect(snapshot.hardRuleLessonsFiltered).toBe(0)
+  })
+})
+
+describe('buildSetupLearningBlock — exploratory buckets', () => {
+  const trades = [...manyTrades(8, 'MID', 1), ...manyTrades(8, 'LOW', -1)].map((t, i) => ({
+    ...t,
+    stateFingerprint: { ...fp(i < 8 ? 'MID' : 'LOW'), macd_bucket: i % 2 === 0 ? 'NEGATIVE' : 'POSITIVE' },
+  }))
+  const indicators = makeIndicators({ macd: { macdLine: 0, signalLine: 0, histogram: -1 } })
+
+  it('hides exploratory lines by default and keeps the snapshot equal to what the model saw', () => {
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades, indicators }))
+
+    expect(text).not.toContain('exploratory')
+    expect(text).not.toContain('macd_bucket=')
+    expect(text).toContain('adx_bucket=MID')
+    expect(snapshot.bucketsShown.map((b) => b.dimension)).not.toContain('macd_bucket')
+    expect(buildPatternIds(snapshot).some((id) => id.includes('macd_bucket'))).toBe(false)
+    expect(snapshot.exploratoryHidden).toBeGreaterThan(0)
+  })
+
+  it('shows them after the confirmatory ones when enabled and reports none hidden', () => {
+    const { text, snapshot } = buildSetupLearningBlock(input({ trades, indicators, options: { showExploratoryBuckets: true } }))
+
+    expect(text).toContain('macd_bucket=NEGATIVE [exploratory]')
+    expect(text.indexOf('adx_bucket=')).toBeLessThan(text.indexOf('macd_bucket='))
+    expect(snapshot.bucketsShown.map((b) => b.dimension)).toContain('macd_bucket')
+    expect(snapshot.exploratoryHidden).toBe(0)
+  })
+
+  it('counts the hidden lines as the difference between the two settings', () => {
+    const hidden = buildSetupLearningBlock(input({ trades, indicators }))
+    const shown = buildSetupLearningBlock(input({ trades, indicators, options: { showExploratoryBuckets: true } }))
+
+    expect(shown.snapshot.bucketsShown.length - hidden.snapshot.bucketsShown.length).toBe(hidden.snapshot.exploratoryHidden)
+  })
+})
+
+describe('buildSetupLearningBlock — regression with the switches at their old values', () => {
+  const OLD = { lessonsPerTrade: 3, hardRuleFilterEnabled: false, showExploratoryBuckets: true }
+  const goldenByName = golden as unknown as Record<string, { text: string; lessonTradeIds: string[]; bucketsShown: unknown[] }>
+
+  it.each(buildRegressionCases().map((c) => [c.name, c] as const))('reproduces the pre-change block: %s', (name, c) => {
+    const { text, snapshot } = buildSetupLearningBlock({ ...c.input, options: OLD })
+
+    expect(text).toBe(goldenByName[name].text)
+    expect(snapshot.lessonsShown.map((l) => l.tradeId)).toEqual(goldenByName[name].lessonTradeIds)
+    expect(snapshot.bucketsShown).toEqual(goldenByName[name].bucketsShown)
+  })
+
+  it('with the shipped settings the MR block has no hard-rule wording, two distinct trades and no exploratory line', () => {
+    const c = buildRegressionCases()[0]
+
+    const { text, snapshot } = buildSetupLearningBlock(c.input)
+
+    expect(text).not.toMatch(/hard filter|Never execute|veto condition/)
+    expect(text).not.toContain('exploratory')
+    expect(new Set(snapshot.lessonsShown.map((l) => l.tradeId)).size).toBe(snapshot.lessonsShown.length)
+    expect(snapshot.lessonsShown).toHaveLength(2)
+    expect(text).toContain('soft caution flag rather than a hard gate')
+    expect(text).toContain('Price remaining well above SMA200')
+    expect(text).toContain('Lessons from single trades; hypotheses that may be wrong:')
+    expect(text.trimEnd().endsWith('This block informs; it never gates entries.')).toBe(true)
   })
 })

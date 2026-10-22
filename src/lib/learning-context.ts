@@ -20,14 +20,35 @@ export const MAX_BLOCK_CHARS = 3000
 export const MAX_LESSONS = 2
 export const SAME_SYMBOL_HISTORY_COUNT = 3
 
+// Switches. Three, false, true restore the pre-change block (the "strong/strongly" fix is not switchable).
+export const LESSONS_PER_TRADE = 1
+export const HARD_RULE_FILTER_ENABLED = true
+export const SHOW_EXPLORATORY_BUCKETS = false
+
 // Lessons are free text written by Claude and may carry figures the module must not generate; such lessons are skipped whole.
 const STATISTIC_LESSON_PATTERNS: readonly RegExp[] = [
   /\$\s?\d/,
   /\bwin[- ]?rate\b/i,
   /\bprofit[- ]factor\b/i,
   /\bsupported\b/i,
-  /\bstrong(ly)?\b/i,
 ]
+
+// Strong tier: explicit prohibition or veto wording. Such lessons read as rules, which this block must not carry.
+export const HARD_RULE_LESSON_PATTERNS: readonly RegExp[] = [
+  /\bhard[- ](filter|veto|gate|block|stop|stops|rule|pass)\b/i,
+  /\bveto\b/i,
+  /\bdisqualif\w*/i,
+  /\bnever\s+(enter|execute|initiate|apply|override|open|take)\b/i,
+  /\b(do not|don't)\s+(enter|execute|take|open|initiate)\b/i,
+  /\bavoid\s+(entering|initiating|trend|taking|entries)\b/i,
+  /\b(must not|should never|must never)\b/i,
+  /\b(should|must)\s+(be\s+)?(automatically\s+)?(rejected|skipped|disabled|suppressed)\b|\bblocked or deferred\b|\bshould (have been )?blocked\b|\bautomatically (disqualified|rejected)\b/i,
+]
+
+// A match inside a negation ("not a hard gate", "should not be blocked") only discusses a rule and is kept.
+const NEGATION_BEFORE_MATCH = /\b(not|n't|no longer|rather than|without|nor|cannot|should not|does not|did not)\b[^.;—]{0,45}$/i
+const NEGATION_LOOKBACK_CHARS = 60
+const IMPERATIVE_MATCH_START = /^(never|do not|don't|must not|should never|must never|avoid)/i
 
 const FOOTER ='This block informs; it never gates entries.'
 const LESSONS_HEADER = 'Lessons from single trades; hypotheses that may be wrong'
@@ -39,19 +60,26 @@ const LABEL_TEXT: Record<BucketLabel, string> = {
   DIFFERS_NEG: 'differs (-)',
 }
 
+export interface SetupLearningOptions {
+  lessonsPerTrade?: number
+  hardRuleFilterEnabled?: boolean
+  showExploratoryBuckets?: boolean
+}
+
 export interface SetupLearningInput {
   setup: SetupName
   symbol: string
   indicators: TechnicalIndicators
   asOf: string
   trades: TradeEvaluation[]
+  options?: SetupLearningOptions
 }
 
 export interface BucketShown { dimension: string; bucket: string; n: number }
 export interface LessonShown { tradeId: string; symbol: string; setup: string }
 
 export interface LearningSnapshot {
-  version: 2
+  version: 3
   setup: SetupName
   asOf: string
   text: string
@@ -60,6 +88,22 @@ export interface LearningSnapshot {
   lessonsShown: LessonShown[]
   excludedLessonCount: number
   filteredLessonCount: number
+  hardRuleLessonsFiltered: number
+  exploratoryHidden: number
+}
+
+// Snapshots saved before version 3 stay in the database; readers must accept both.
+export type LearningSnapshotV2 = Omit<LearningSnapshot, 'version' | 'hardRuleLessonsFiltered' | 'exploratoryHidden'> & { version: 2 }
+export type StoredLearningSnapshot = LearningSnapshotV2 | LearningSnapshot
+
+interface ResolvedOptions { lessonsPerTrade: number; hardRuleFilterEnabled: boolean; showExploratoryBuckets: boolean }
+
+function resolveOptions(options: SetupLearningOptions | undefined): ResolvedOptions {
+  return {
+    lessonsPerTrade: options?.lessonsPerTrade ?? LESSONS_PER_TRADE,
+    hardRuleFilterEnabled: options?.hardRuleFilterEnabled ?? HARD_RULE_FILTER_ENABLED,
+    showExploratoryBuckets: options?.showExploratoryBuckets ?? SHOW_EXPLORATORY_BUCKETS,
+  }
 }
 
 interface MatchLine { line: string; shown: BucketShown; isExploratory: boolean }
@@ -162,26 +206,54 @@ function isCleanLesson(text: string): boolean {
   return !STATISTIC_LESSON_PATTERNS.some((p) => p.test(text))
 }
 
-function collectLessons(setupTrades: TradeEvaluation[]): { lessons: LessonLine[]; excludedLessonCount: number; filteredLessonCount: number } {
+function hasUnnegatedMatch(text: string, pattern: RegExp): boolean {
+  for (const match of text.matchAll(new RegExp(pattern.source, 'gi'))) {
+    const before = text.slice(Math.max(0, (match.index ?? 0) - NEGATION_LOOKBACK_CHARS), match.index)
+    if (IMPERATIVE_MATCH_START.test(match[0]) || !NEGATION_BEFORE_MATCH.test(before)) return true
+  }
+  return false
+}
+
+export function isHardRuleLesson(text: string): boolean {
+  return HARD_RULE_LESSON_PATTERNS.some((pattern) => hasUnnegatedMatch(text, pattern))
+}
+
+interface CollectedLessons {
+  lessons: LessonLine[]
+  excludedLessonCount: number
+  filteredLessonCount: number
+  hardRuleLessonsFiltered: number
+}
+
+const NO_LESSONS: CollectedLessons = { lessons: [], excludedLessonCount: 0, filteredLessonCount: 0, hardRuleLessonsFiltered: 0 }
+
+function collectLessons(setupTrades: TradeEvaluation[], options: ResolvedOptions): CollectedLessons {
   const withLessons = setupTrades.filter((t) => t.lessonsLearned.length > 0).sort(bySellDesc)
   const excludedLessonCount = withLessons.filter(isPreFixSectorTrade).length
   const lessons: LessonLine[] = []
   let filteredLessonCount = 0
+  let hardRuleLessonsFiltered = 0
   for (const t of withLessons.filter((x) => !isPreFixSectorTrade(x))) {
     const setupName = getStatsSetupName(t)
+    let takenFromTrade = 0
     for (const text of t.lessonsLearned) {
       if (!isCleanLesson(text)) {
         filteredLessonCount += 1
         continue
       }
-      if (lessons.length === MAX_LESSONS) continue
+      if (options.hardRuleFilterEnabled && isHardRuleLesson(text)) {
+        hardRuleLessonsFiltered += 1
+        continue
+      }
+      if (lessons.length === MAX_LESSONS || takenFromTrade >= options.lessonsPerTrade) continue
+      takenFromTrade += 1
       lessons.push({
         line: `- ${text} (${t.symbol} ${setupName} ${fmtDate(t.sellTimestamp)} ${fmtPct(t.pnlPct)})`,
         shown: { tradeId: t.id, symbol: t.symbol, setup: setupName },
       })
     }
   }
-  return { lessons, excludedLessonCount, filteredLessonCount }
+  return { lessons, excludedLessonCount, filteredLessonCount, hardRuleLessonsFiltered }
 }
 
 function render(head: string[], matches: MatchLine[], symbolLines: string[], lessons: LessonLine[]): string {
@@ -200,15 +272,18 @@ function fitsCaps(text: string): boolean {
 }
 
 export function buildSetupLearningBlock(input: SetupLearningInput): { text: string; snapshot: LearningSnapshot } {
+  const options = resolveOptions(input.options)
   const records = buildSetupTrackRecords(input.trades)
   const record = records.find((r) => r.setup === input.setup) as SetupTrackRecord
   const setupTrades = input.trades.filter((t) => getStatsSetupName(t) === input.setup)
   const isEmptySetup = setupTrades.length === 0
 
   const head = isEmptySetup ? [`No closed trades for ${input.setup} yet.`] : trackRecordLines(input.setup, record)
-  const allMatches = isEmptySetup ? [] : matchingConditions(input)
+  const producedMatches = isEmptySetup ? [] : matchingConditions(input)
+  const allMatches = options.showExploratoryBuckets ? producedMatches : producedMatches.filter((m) => !m.isExploratory)
+  const exploratoryHidden = producedMatches.length - allMatches.length
   const symbolLines = sameSymbolLines(input)
-  const collected = isEmptySetup ? { lessons: [], excludedLessonCount: 0, filteredLessonCount: 0 } : collectLessons(setupTrades)
+  const collected = isEmptySetup ? NO_LESSONS : collectLessons(setupTrades, options)
 
   let lessonCount = collected.lessons.length
   let matchCount = allMatches.length
@@ -220,7 +295,7 @@ export function buildSetupLearningBlock(input: SetupLearningInput): { text: stri
   }
 
   const snapshot: LearningSnapshot = {
-    version: 2,
+    version: 3,
     setup: input.setup,
     asOf: input.asOf,
     text,
@@ -229,10 +304,12 @@ export function buildSetupLearningBlock(input: SetupLearningInput): { text: stri
     lessonsShown: collected.lessons.slice(0, lessonCount).map((l) => l.shown),
     excludedLessonCount: collected.excludedLessonCount,
     filteredLessonCount: collected.filteredLessonCount,
+    hardRuleLessonsFiltered: collected.hardRuleLessonsFiltered,
+    exploratoryHidden,
   }
   return { text, snapshot }
 }
 
-export function buildPatternIds(snapshot: LearningSnapshot): string[] {
+export function buildPatternIds(snapshot: Pick<StoredLearningSnapshot, 'setup' | 'bucketsShown'>): string[] {
   return snapshot.bucketsShown.map((b) => `${snapshot.setup}|${b.dimension}|${b.bucket}`)
 }
