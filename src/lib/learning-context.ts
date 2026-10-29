@@ -11,6 +11,7 @@ import {
 } from './pattern-stats'
 import type { RuleVersionAxis, SetupName } from './pattern-schema'
 import type { BucketLabel } from './pattern-labels'
+import { buildEarningsPromptLine, type EarningsFlag } from './earnings-window'
 
 // Sector relative strength was computed from stale bars before the macro-bars fix (c18a449, 2026-10-05).
 // Commit time is not deploy time, so the cutoff is the first full trading day after it.
@@ -73,6 +74,7 @@ export interface SetupLearningInput {
   asOf: string
   trades: TradeEvaluation[]
   options?: SetupLearningOptions
+  earnings?: EarningsFlag
 }
 
 export interface BucketShown { dimension: string; bucket: string; n: number }
@@ -90,6 +92,7 @@ export interface LearningSnapshot {
   filteredLessonCount: number
   hardRuleLessonsFiltered: number
   exploratoryHidden: number
+  earnings?: EarningsFlag
 }
 
 // Snapshots saved before version 3 stay in the database; readers must accept both.
@@ -278,7 +281,9 @@ export function buildSetupLearningBlock(input: SetupLearningInput): { text: stri
   const setupTrades = input.trades.filter((t) => getStatsSetupName(t) === input.setup)
   const isEmptySetup = setupTrades.length === 0
 
-  const head = isEmptySetup ? [`No closed trades for ${input.setup} yet.`] : trackRecordLines(input.setup, record)
+  const headLines = isEmptySetup ? [`No closed trades for ${input.setup} yet.`] : trackRecordLines(input.setup, record)
+  const earningsLine = buildEarningsPromptLine(input.earnings)
+  const head = earningsLine ? [...headLines, earningsLine] : headLines
   const producedMatches = isEmptySetup ? [] : matchingConditions(input)
   const allMatches = options.showExploratoryBuckets ? producedMatches : producedMatches.filter((m) => !m.isExploratory)
   const exploratoryHidden = producedMatches.length - allMatches.length
@@ -306,6 +311,7 @@ export function buildSetupLearningBlock(input: SetupLearningInput): { text: stri
     filteredLessonCount: collected.filteredLessonCount,
     hardRuleLessonsFiltered: collected.hardRuleLessonsFiltered,
     exploratoryHidden,
+    ...(input.earnings && { earnings: input.earnings }),
   }
   return { text, snapshot }
 }

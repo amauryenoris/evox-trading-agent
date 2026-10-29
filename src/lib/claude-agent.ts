@@ -47,6 +47,8 @@ import {
 import { getPeakHighSinceLastCheck } from './peak-high'
 import { computeBuyQuantity, regimeMultiplier } from './position-sizing'
 import { isSma5ExitConditionMet, evaluateSma5EntryGate, buildTrend3DayAboveSma5Reason } from './sma5-exit'
+import { createEarningsCycleContext, buildEarningsBlockEntry } from './earnings-gate-context'
+import { buildEarningsBlockReason } from './earnings-window'
 import { isNewPositionAllowed } from './risk-manager'
 import { selectStocksForAnalysis, recordSelectionOutcome, SelectionStepError } from './stock-selector'
 import { newsIntelligenceLayer, getAggregateMacroSentiment } from './news-intelligence'
@@ -1683,6 +1685,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
   // 6. Analysis cycle for each symbol
   // Seed decisions with any deterministic exits that already fired this cycle
   const decisions: AgentLogEntry[] = [...exitRuleEntries]
+  const earningsCycle = createEarningsCycleContext(new Date())
 
   const maxPositions = parseInt(process.env.MAX_POSITIONS ?? '5', 10)
   const maxBuysPerDay = 5
@@ -2229,6 +2232,21 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
       const zscore = indicators.kalman?.zScore ?? 0
       if (zscore <= -1.0) {
         await detectNearMisses(symbol, indicators, thresholdMap).catch(() => {})
+      }
+
+      const earningsFlag = await earningsCycle.evaluate(symbol)
+      if (earningsFlag.blocked && earningsFlag.nextReportDate && earningsFlag.session) {
+        const earningsReason = buildEarningsBlockReason(symbol, earningsFlag.nextReportDate, earningsFlag.session)
+        console.log(`[SETUP-GATE] ${symbol}: ${earningsReason}`)
+        decisions.push(buildEarningsBlockEntry({
+          symbol,
+          timestamp,
+          indicators,
+          account: { equity: account.equity, cash: account.cash },
+          positionCount: positions.length,
+          reason: earningsReason,
+        }))
+        continue
       }
 
       if (signalType === null) {

@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { Card, Badge } from './ui'
+import { REJECTED_LABELS, type RejectedKind } from '@/lib/rejected-classification'
 
 const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
 
 interface RejectedEntry {
   symbol: string
-  kind: 'TREND_ZGT125' | 'TREND_QUALITY_FAIL' | 'SPREAD_GATE' | 'MR_RANGING_ADX_GATE'
+  kind: RejectedKind
   reason: string
   z: number | null
   adx: number | null
@@ -75,10 +76,7 @@ export function RejectedSetups() {
                   <td className="py-3 pr-4 font-semibold">{r.symbol}</td>
                   <td className="py-3 pr-4">
                     <Badge tone="amber" size="xs">
-                      {r.kind === 'TREND_ZGT125' ? 'Z>1.25'
-                        : r.kind === 'TREND_QUALITY_FAIL' ? 'QUALITY'
-                        : r.kind === 'SPREAD_GATE' ? 'SPREAD'
-                        : 'MR RANGING'}
+                      {REJECTED_LABELS[r.kind]}
                     </Badge>
                   </td>
                   <td className="py-3 pr-4 text-mute2 text-[12.5px]">{r.reason}</td>

@@ -830,3 +830,11 @@ export {
   upsertMarketDailyBriefing,
   getLatestBriefing,
 } from './db-market-briefing'
+
+export {
+  getNextEarningsReport,
+  upsertEarningsRows,
+  getEarningsCacheFreshness,
+  deleteEarningsBefore,
+  deleteUnrefreshedEarnings,
+} from './db-earnings'

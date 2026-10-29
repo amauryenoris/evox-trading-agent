@@ -12,6 +12,7 @@ import {
 import { createClient } from '@supabase/supabase-js'
 import type { AgentLogEntry, TradeEvaluation, TradingPattern } from './types'
 import { MIN_PATTERN_SAMPLE_SIZE } from './learning'
+import { isEarningsBlockError } from './earnings-window'
 
 // ============================================================
 // DESIGN TOKENS
@@ -100,6 +101,7 @@ function toDateString(d: Date): string {
 interface HoldsBreakdown {
   total: number
   noSetupDetected: number
+  earningsBlocked: number
   gate1Liquidity: number
   gate2Hours: number
   gate3Overtrading: number
@@ -231,6 +233,7 @@ function calculateDiagnostics(
   // ── HOLDs Breakdown ─────────────────────────────────────────
   const nonExecuted = weekEntries.filter((e) => !e.orderExecuted)
   let noSetupDetected = 0
+  let earningsBlocked = 0
   let gate1Liquidity = 0
   let gate2Hours = 0
   let gate3Overtrading = 0
@@ -249,6 +252,8 @@ function calculateDiagnostics(
       gate2Hours++
     } else if (err.includes('Overtrading gate')) {
       gate3Overtrading++
+    } else if (isEarningsBlockError(err)) {
+      earningsBlocked++
     } else if (err.includes('MR_RANGING_ADX_GATE')) {
       noSetupDetected++
     } else if (err.includes('gate') || err.includes('Gate') || err.includes('Market closed')) {
@@ -330,6 +335,7 @@ function calculateDiagnostics(
     holdsBreakdown: {
       total: nonExecuted.length,
       noSetupDetected,
+      earningsBlocked,
       gate1Liquidity,
       gate2Hours,
       gate3Overtrading,
@@ -691,6 +697,7 @@ function generatePDF(
     doc.fontSize(10).fillColor(C_BLACK)
     const holdRows: [string, number, number][] = [
       [`No setup detected`,         hb.noSetupDetected,     hb.total],
+      [`Earnings block`,            hb.earningsBlocked,     hb.total],
       [`Gate 1 — Low liquidity`,    hb.gate1Liquidity,      hb.total],
       [`Gate 2 — Outside hours`,    hb.gate2Hours,          hb.total],
       [`Gate 3 — Max positions`,    hb.gate3Overtrading,    hb.total],

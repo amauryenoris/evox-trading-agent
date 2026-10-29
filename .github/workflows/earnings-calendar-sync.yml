@@ -1,0 +1,32 @@
+name: Earnings Calendar Sync
+
+on:
+  schedule:
+    - cron: "17 11 * * 1-5"   # 11:17 UTC = 7:17 AM ET (EDT) / 6:17 AM ET (EST): after 6 AM ET in both regimes, before the 13:30 UTC open
+  workflow_dispatch:
+
+concurrency:
+  group: earnings-calendar-sync
+  cancel-in-progress: false
+
+jobs:
+  earnings-calendar-sync:
+    name: Earnings Calendar Sync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      RUN_EARNINGS_CALENDAR_SYNC: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run earnings-calendar-sync
