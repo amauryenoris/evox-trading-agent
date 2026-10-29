@@ -1,29 +1,17 @@
 -- earnings_calendar: daily cache of upcoming earnings report dates (source: Nasdaq calendar).
--- DRAFT for review. NOT applied by the agent; the owner's other tool applies it.
--- Idempotent: safe to run twice.
+-- This is the DDL ALREADY APPLIED to the database by the owner (2026-10-29).
+-- Kept in the repo only so the file matches production. Do not apply from the agent.
 
-CREATE TABLE IF NOT EXISTS earnings_calendar (
-  symbol      TEXT        NOT NULL,
-  report_date DATE        NOT NULL,
-  session     TEXT        NOT NULL CHECK (session IN ('BMO', 'AMC', 'UNKNOWN')),
-  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (symbol, report_date)
+create table if not exists public.earnings_calendar (
+  symbol text not null,
+  report_date date not null,
+  session text not null default 'UNKNOWN' check (session in ('BMO','AMC','UNKNOWN')),
+  fetched_at timestamptz not null default now(),
+  primary key (symbol, report_date)
 );
-
-CREATE INDEX IF NOT EXISTS earnings_calendar_report_date_idx
-  ON earnings_calendar (report_date);
-
-ALTER TABLE earnings_calendar ENABLE ROW LEVEL SECURITY;
-
--- Public market data, read-only for the browser roles. Writes go through service_role (bypasses RLS).
-DROP POLICY IF EXISTS earnings_calendar_select ON earnings_calendar;
-CREATE POLICY earnings_calendar_select
-  ON earnings_calendar
-  FOR SELECT
-  TO anon, authenticated
-  USING (true);
-
-GRANT SELECT ON earnings_calendar TO anon;
-GRANT ALL    ON earnings_calendar TO authenticated;
-GRANT ALL    ON earnings_calendar TO service_role;
--- Note: "authenticated ALL" is limited to SELECT in practice, because the only policy is SELECT.
+create index if not exists earnings_calendar_report_date_idx on public.earnings_calendar (report_date);
+alter table public.earnings_calendar enable row level security;
+-- RLS on, no anon policy (deny-all for the Data API); service role bypasses RLS.
+grant select on public.earnings_calendar to anon;
+grant select, insert, update, delete on public.earnings_calendar to authenticated;
+grant all on public.earnings_calendar to service_role;

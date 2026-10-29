@@ -2258,6 +2258,7 @@ export async function runAgentCycle(): Promise<AgentCycleResult> {
         symbol,
         indicators,
         asOf: timestamp,
+        earnings: earningsFlag,
       })
 
       // Fetch symbol-specific news

@@ -5,7 +5,7 @@
 - [x] Amaury has reviewed and approved this spec
 - [x] Protected Zone confirmed: `claude-agent.ts` gate (given); O-3 extra line in `claude-agent.ts` and optional type in `learning.ts` (pending)
 - [x] O-1 to O-7 answered or defaults accepted
-- [x] `migration.sql` reviewed and applied by the owner's tool (before the first live run)
+- [ ] `migration.sql` reviewed and applied by the owner's tool (before the first live run) — applied by the owner 2026-10-29
 
 ## Implementation Checklist
 
@@ -34,7 +34,7 @@
 ### Phase 5 — Snapshot and prompt (⚠️ O-3)
 - [x] T-15: Tests in `learning-context.test.ts`: `earnings` present in the snapshot; version 2 and 3 snapshots still readable; `buildPatternIds` unchanged; the line appears only for status OK within 5 trading days; absent for UNKNOWN, STALE and 6+ days; the footer is unchanged; the line survives the size-trimming loop.
 - [x] T-16: `learning-context.ts`: optional input, line in the head, optional snapshot field.
-- [ ] T-17: `learning.ts` type property and the `claude-agent.ts` call-site property (only if O-3 is approved).
+- [x] T-17: `learning.ts` type property and the `claude-agent.ts` call-site property (only if O-3 is approved).
 
 ### Phase 6 — Dashboard and reports
 - [x] T-18: Tests: Rejected-today route (filter contains both new prefixes; kind and reason for each), report-generator classification (new bucket, placed before the generic "gate" branch; `MR_RANGING_ADX_GATE` unchanged).

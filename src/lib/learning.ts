@@ -17,6 +17,7 @@ import {
 } from './db'
 import type { SetupName } from './pattern-schema'
 import { buildSetupLearningBlock, type LearningSnapshot } from './learning-context'
+import type { EarningsFlag } from './earnings-window'
 
 // ============================================================
 // OPEN POSITION CONTEXT
@@ -298,6 +299,7 @@ export interface LearningContextInput {
   symbol: string
   indicators: TechnicalIndicators
   asOf: string
+  earnings?: EarningsFlag
 }
 
 export async function buildLearningContext(
