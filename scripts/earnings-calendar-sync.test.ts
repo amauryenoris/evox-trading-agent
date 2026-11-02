@@ -20,6 +20,10 @@ import {
   parseNasdaqRows,
   exceedsFailureThreshold,
   runEarningsSync,
+  isFarFutureDay,
+  shouldFailRun,
+  formatDoneLine,
+  NEAR_WINDOW_CALENDAR_DAYS,
 } from './earnings-calendar-sync'
 
 const RUN_START = '2026-10-29T11:17:00.000Z'
@@ -193,5 +197,122 @@ describe('runEarningsSync', () => {
     await runEarningsSync({ ...options(fetchFn), sleep })
     expect(sleep).toHaveBeenCalledWith(MIN_REQUEST_INTERVAL_MS)
     expect(MIN_REQUEST_INTERVAL_MS).toBeGreaterThanOrEqual(250)
+  })
+})
+
+describe('isFarFutureDay', () => {
+  it('treats offset 35 as near and offset 36 as far', () => {
+    expect(NEAR_WINDOW_CALENDAR_DAYS).toBe(35)
+    expect(isFarFutureDay('2026-10-29', '2026-12-03')).toBe(false)
+    expect(isFarFutureDay('2026-10-29', '2026-12-04')).toBe(true)
+    expect(isFarFutureDay('2026-10-29', '2026-10-29')).toBe(false)
+  })
+})
+
+describe('far-future days', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUpsert.mockResolvedValue(undefined)
+    mockDeleteUnrefreshed.mockResolvedValue(undefined)
+    mockDeleteBefore.mockResolvedValue(undefined)
+  })
+
+  const FAR_START = '2026-12-04'
+  const options = (fetchFn: ReturnType<typeof vi.fn>) => ({
+    today: '2026-10-29',
+    lookaheadDays: 40,
+    runStartIso: RUN_START,
+    isLive: true,
+    fetchFn: fetchFn as unknown as typeof fetch,
+    sleep: noSleep,
+  })
+  const farUrl = (url: string) => url.slice(-10) >= FAR_START
+
+  it('skips far days that return no data object, logs them and keeps their cached rows', async () => {
+    const fetchFn = vi.fn(async (url: string) =>
+      farUrl(url) ? okResponse({}) : okResponse(payload([{ symbol: 'A', time: 'time-not-supplied' }]))
+    )
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const result = await runEarningsSync(options(fetchFn))
+
+    expect(result.skippedFarDays).toEqual(['2026-12-04', '2026-12-07', '2026-12-08'])
+    expect(result.failedDays).toEqual([])
+    expect(logs.mock.calls.flat().join(' ')).toContain('[EARNINGS_SYNC_SKIPPED_FAR_FUTURE] 2026-12-04')
+    expect(errors).not.toHaveBeenCalled()
+    const refreshed = mockDeleteUnrefreshed.mock.calls.map((c) => c[0])
+    expect(refreshed).not.toContain('2026-12-04')
+    errors.mockRestore()
+    logs.mockRestore()
+  })
+
+  it('still counts a near day that returns no data object as a failure', async () => {
+    const fetchFn = vi.fn(async (url: string) =>
+      url.includes('2026-10-30') ? okResponse({}) : okResponse(payload([{ symbol: 'A', time: 'time-not-supplied' }]))
+    )
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await runEarningsSync(options(fetchFn))
+
+    expect(result.failedDays).toEqual(['2026-10-30'])
+    expect(result.skippedFarDays).toEqual([])
+    expect(errors.mock.calls.flat().join(' ')).toContain('no data object')
+    errors.mockRestore()
+  })
+
+  it('excludes other far-day failures from the threshold but logs them as errors', async () => {
+    const fetchFn = vi.fn(async (url: string) =>
+      farUrl(url)
+        ? { ok: false, status: 503, json: async () => ({}) }
+        : okResponse(payload([{ symbol: 'A', time: 'time-not-supplied' }]))
+    )
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await runEarningsSync(options(fetchFn))
+
+    expect(result.failedDays).toEqual([])
+    expect(result.skippedFarDays).toEqual([])
+    expect(errors.mock.calls.flat().join(' ')).toContain('2026-12-04')
+    errors.mockRestore()
+  })
+
+  it('uses only the near days as the denominator', async () => {
+    const fetchFn = vi.fn(async (url: string) => okResponse(payload([{ symbol: 'A', time: 'time-not-supplied' }])))
+    const result = await runEarningsSync(options(fetchFn))
+    expect(result.nearDayCount).toBe(result.days.length - 3)
+    expect(result.nearDayCount).toBe(26)
+  })
+})
+
+describe('shouldFailRun', () => {
+  const base = { failedNearDays: 0, nearDayCount: 25, rowCount: 100, isLive: true }
+
+  it('passes at 1 of 25 near failures and fails at 2 of 25', () => {
+    expect(shouldFailRun({ ...base, failedNearDays: 1 })).toBe(false)
+    expect(shouldFailRun({ ...base, failedNearDays: 2 })).toBe(true)
+  })
+
+  it('fails on zero rows in a live run but not in a dry run', () => {
+    expect(shouldFailRun({ ...base, rowCount: 0 })).toBe(true)
+    expect(shouldFailRun({ ...base, rowCount: 0, isLive: false })).toBe(false)
+  })
+
+  it('passes a healthy run', () => {
+    expect(shouldFailRun(base)).toBe(false)
+  })
+})
+
+describe('formatDoneLine', () => {
+  const result = { days: new Array(43).fill('d'), failedDays: [], skippedFarDays: ['a', 'b', 'c', 'd', 'e'], nearDayCount: 38, rowCount: 3455 }
+
+  it('prints the final line in the requested format', () => {
+    expect(formatDoneLine(result, true)).toBe('[EARNINGS_SYNC_DONE] days=43 failed_near=0 skipped_far=5 rows=3455')
+  })
+
+  it('appends the dry run suffix only in a dry run', () => {
+    expect(formatDoneLine(result, false)).toBe(
+      '[EARNINGS_SYNC_DONE] days=43 failed_near=0 skipped_far=5 rows=3455 (dry run, nothing written)'
+    )
   })
 })

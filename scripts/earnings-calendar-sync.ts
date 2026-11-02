@@ -18,6 +18,7 @@ export const LOOKAHEAD_CALENDAR_DAYS = 60
 export const PRUNE_AFTER_DAYS = 14
 export const MIN_REQUEST_INTERVAL_MS = 250
 export const MAX_FAILED_DAY_FRACTION = 0.05
+export const NEAR_WINDOW_CALENDAR_DAYS = 35
 export const EARNINGS_USER_AGENT = 'Mozilla/5.0 (compatible; EVOX-Paquito-EarningsSync/1.0)'
 
 const NASDAQ_URL = 'https://api.nasdaq.com/api/calendar/earnings'
@@ -52,11 +53,32 @@ export interface SyncOptions {
 export interface SyncResult {
   days: string[]
   failedDays: string[]
+  skippedFarDays: string[]
+  nearDayCount: number
   rowCount: number
+}
+
+type DayOutcome =
+  | { kind: 'rows'; rows: EarningsRow[] }
+  | { kind: 'no_data' }
+  | { kind: 'failed' }
+
+export class NasdaqNoDataError extends Error {
+  constructor() {
+    super('Nasdaq payload has no data object')
+  }
 }
 
 function addDays(isoDate: string, days: number): string {
   return new Date(new Date(`${isoDate}T00:00:00Z`).getTime() + days * MS_PER_DAY).toISOString().slice(0, 10)
+}
+
+function dayOffset(today: string, day: string): number {
+  return Math.round((new Date(`${day}T00:00:00Z`).getTime() - new Date(`${today}T00:00:00Z`).getTime()) / MS_PER_DAY)
+}
+
+export function isFarFutureDay(today: string, day: string): boolean {
+  return dayOffset(today, day) > NEAR_WINDOW_CALENDAR_DAYS
 }
 
 export function buildWeekdays(today: string, lookaheadDays: number): string[] {
@@ -76,7 +98,7 @@ export function mapSession(label: string | null | undefined): EarningsSession {
 export function parseNasdaqRows(body: unknown, reportDate: string, fetchedAt: string): EarningsRow[] {
   const parsed = body as { data?: { rows?: NasdaqRow[] | null } | null; status?: { rCode?: number } } | null
   if (!parsed || typeof parsed !== 'object' || !parsed.data || typeof parsed.data !== 'object') {
-    throw new Error('Nasdaq payload has no data object')
+    throw new NasdaqNoDataError()
   }
   if (parsed.status?.rCode !== undefined && parsed.status.rCode !== 200) {
     throw new Error(`Nasdaq payload status ${parsed.status.rCode}`)
@@ -109,17 +131,23 @@ async function fetchDay(date: string, fetchFn: FetchFn, runStartIso: string): Pr
   return parseNasdaqRows(await res.json(), date, runStartIso)
 }
 
-async function fetchDayWithRetry(date: string, options: SyncOptions): Promise<EarningsRow[] | null> {
+async function fetchDayWithRetry(date: string, options: SyncOptions): Promise<DayOutcome> {
+  const isFar = isFarFutureDay(options.today, date)
   for (let attempt = 1; attempt <= 2; attempt++) {
     await options.sleep(MIN_REQUEST_INTERVAL_MS)
     try {
-      return await fetchDay(date, options.fetchFn, options.runStartIso)
+      return { kind: 'rows', rows: await fetchDay(date, options.fetchFn, options.runStartIso) }
     } catch (err) {
+      if (attempt < 2) continue
+      if (isFar && err instanceof NasdaqNoDataError) {
+        console.log(`[EARNINGS_SYNC_SKIPPED_FAR_FUTURE] ${date}: not published yet`)
+        return { kind: 'no_data' }
+      }
       const reason = err instanceof Error ? err.message : String(err)
-      if (attempt === 2) console.error(`[EARNINGS_SYNC_ERROR] ${date}: failed after retry: ${reason}`)
+      console.error(`[EARNINGS_SYNC_ERROR] ${date}: failed after retry: ${reason}`)
     }
   }
-  return null
+  return { kind: 'failed' }
 }
 
 async function persist(rows: EarningsRow[], successDays: string[], options: SyncOptions): Promise<void> {
@@ -135,19 +163,43 @@ export async function runEarningsSync(options: SyncOptions): Promise<SyncResult>
   const rows: EarningsRow[] = []
   const successDays: string[] = []
   const failedDays: string[] = []
+  const skippedFarDays: string[] = []
 
   for (const day of days) {
-    const dayRows = await fetchDayWithRetry(day, options)
-    if (dayRows === null) {
+    const outcome = await fetchDayWithRetry(day, options)
+    if (outcome.kind === 'rows') {
+      rows.push(...outcome.rows)
+      successDays.push(day)
+    } else if (outcome.kind === 'no_data') {
+      skippedFarDays.push(day)
+    } else if (!isFarFutureDay(options.today, day)) {
       failedDays.push(day)
-      continue
     }
-    rows.push(...dayRows)
-    successDays.push(day)
   }
 
   if (options.isLive) await persist(rows, successDays, options)
-  return { days, failedDays, rowCount: rows.length }
+  const nearDayCount = days.filter((day) => !isFarFutureDay(options.today, day)).length
+  return { days, failedDays, skippedFarDays, nearDayCount, rowCount: rows.length }
+}
+
+interface RunVerdictInput {
+  failedNearDays: number
+  nearDayCount: number
+  rowCount: number
+  isLive: boolean
+}
+
+export function shouldFailRun(input: RunVerdictInput): boolean {
+  if (exceedsFailureThreshold(input.failedNearDays, input.nearDayCount)) return true
+  return input.isLive && input.rowCount === 0
+}
+
+export function formatDoneLine(result: SyncResult, isLive: boolean): string {
+  const suffix = isLive ? '' : ' (dry run, nothing written)'
+  return (
+    `[EARNINGS_SYNC_DONE] days=${result.days.length} failed_near=${result.failedDays.length}` +
+    ` skipped_far=${result.skippedFarDays.length} rows=${result.rowCount}${suffix}`
+  )
 }
 
 async function main() {
@@ -162,12 +214,20 @@ async function main() {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   })
 
-  const mode = isLive ? '' : ' (dry run, nothing written)'
-  console.log(`[EARNINGS_SYNC_DONE] days=${result.days.length} failed=${result.failedDays.length} rows=${result.rowCount}${mode}`)
-  if (exceedsFailureThreshold(result.failedDays.length, result.days.length)) {
-    console.error(`[EARNINGS_SYNC_ERROR] more than ${MAX_FAILED_DAY_FRACTION * 100}% of days failed: ${result.failedDays.join(', ')}`)
-    process.exit(1)
+  console.log(formatDoneLine(result, isLive))
+  const verdict = {
+    failedNearDays: result.failedDays.length,
+    nearDayCount: result.nearDayCount,
+    rowCount: result.rowCount,
+    isLive,
   }
+  if (!shouldFailRun(verdict)) return
+  if (exceedsFailureThreshold(verdict.failedNearDays, verdict.nearDayCount)) {
+    console.error(`[EARNINGS_SYNC_ERROR] more than ${MAX_FAILED_DAY_FRACTION * 100}% of near days failed: ${result.failedDays.join(', ')}`)
+  } else {
+    console.error('[EARNINGS_SYNC_ERROR] zero rows collected in a live run')
+  }
+  process.exit(1)
 }
 
 if (require.main === module) {
