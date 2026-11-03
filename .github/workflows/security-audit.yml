@@ -29,24 +29,38 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: "npm"
 
       - run: npm ci
 
+      - name: Validate audit level
+        env:
+          AUDIT_LEVEL: ${{ inputs.audit_level || 'critical' }}
+        run: |
+          case "$AUDIT_LEVEL" in
+            low|moderate|high|critical) ;;
+            *)
+              echo "::error::audit_level must be one of: low, moderate, high, critical"
+              exit 1
+              ;;
+          esac
+
       - name: Security audit
         id: audit
         continue-on-error: true
+        env:
+          AUDIT_LEVEL: ${{ inputs.audit_level || 'critical' }}
         run: |
           set -o pipefail
-          npm audit --audit-level=${{ inputs.audit_level || 'critical' }} 2>&1 | tee audit.txt
+          npm audit --audit-level="$AUDIT_LEVEL" 2>&1 | tee audit.txt
       - name: Report critical advisory
         if: steps.audit.outcome == 'failure'
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs')
@@ -86,7 +100,7 @@ jobs:
 
       - name: Close resolved advisory
         if: steps.audit.outcome == 'success'
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const ISSUE_TITLE = 'Security audit: critical advisory detected'
