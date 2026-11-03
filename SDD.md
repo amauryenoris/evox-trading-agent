@@ -255,7 +255,8 @@ Claude's `action` field in the response is **always overwritten to `'HOLD'`** by
 | Full agent cycle | `agent-cron.yml` | Hourly, 14–20 UTC (10am–4pm ET), Mon–Fri | `npm run cycle` |
 | Exit-only sweep | `agent-exits.yml` | 13:30 UTC (9:30am ET) + 19:55 UTC (3:55pm ET), Mon–Fri | `npm run exit-only` |
 | Weekly report | `weekly-report.yml` | Friday 21:00 UTC (5pm ET) | `npm run report` |
-| Keepalive | `keepalive.yml` | Monday noon UTC | GitHub Actions keepalive |
+
+Scheduled workflows can be disabled by GitHub after 60 days without repo activity; check Actions if the repo goes quiet.
 
 All workflows run with Node 24, `npm ci`, and `npm audit --audit-level=critical`.
 

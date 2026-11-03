@@ -248,10 +248,6 @@ schedule: "55 19 * * 1-5"       # 3:55pm ET (19:55 UTC) — closing sweep
 # .github/workflows/weekly-report.yml
 # Weekly report generation
 schedule: "0 21 * * 5"          # Friday 5pm ET (21:00 UTC)
-
-# .github/workflows/keepalive.yml
-# Prevents GitHub from disabling scheduled workflows after 60 days of inactivity
-schedule: "0 12 * * 1"          # Every Monday noon UTC
 ```
 
 All workflows run `npm ci` + `npm audit --audit-level=critical` before executing.
