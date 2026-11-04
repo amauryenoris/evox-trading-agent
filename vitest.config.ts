@@ -16,7 +16,7 @@ export default defineConfig({
     },
     coverage: {
       provider: 'v8',
-      include: ['src/lib/db.ts'],
+      include: ['src/lib/db.ts', 'src/lib/claude-agent.ts'],
     },
   },
 })

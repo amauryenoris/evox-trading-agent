@@ -1,0 +1,86 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "HOLD",
+            "error": "Error: claude boom",
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "Analysis failed",
+            "symbol": "AAA"
+          },
+          {
+            "action": "BUY",
+            "effectiveThreshold": -1.3,
+            "error": "Error: broker rejected the order",
+            "mrRiskFactors": [
+              "RANGING"
+            ],
+            "newsAdjustment": 0,
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "Scripted analysis: indicators consistent with the detected setup.",
+            "requestedQty": 120,
+            "symbol": "BBB"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "getBars {\"symbol\":\"BBB\"}",
+    "news.layer {\"symbols\":[\"AAA\",\"BBB\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "watchlist.detectNearMisses {\"opts\":null,\"symbol\":\"AAA\"}",
+    "getNewsForSymbols {\"symbols\":[\"AAA\"]}",
+    "watchlist.detectNearMisses {\"opts\":null,\"symbol\":\"BBB\"}",
+    "getNewsForSymbols {\"symbols\":[\"BBB\"]}",
+    "getQuote {\"symbol\":\"BBB\"}",
+    "risk.isNewPositionAllowed {\"symbol\":\"BBB\"}",
+    "submitLimitOrder {\"limitPrice\":50,\"qty\":120,\"side\":\"buy\",\"symbol\":\"BBB\",\"type\":\"limit\"}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [],
+  "decisions": [
+    {
+      "action": "HOLD",
+      "error": "Error: claude boom",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "AAA"
+    },
+    {
+      "action": "BUY",
+      "error": "Error: broker rejected the order",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "BBB"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": [
+    {
+      "qty": 120,
+      "side": "buy",
+      "symbol": "BBB",
+      "type": "limit"
+    }
+  ]
+}

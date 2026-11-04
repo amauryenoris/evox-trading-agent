@@ -1,0 +1,32 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": []
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getMacroNews {}",
+    "news.layer {\"symbols\":[]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [],
+  "decisions": [],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": []
+}

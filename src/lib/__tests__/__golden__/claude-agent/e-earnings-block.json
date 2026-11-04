@@ -1,0 +1,51 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "HOLD",
+            "error": "EARNINGS_BLOCK: AAA reports 2026-11-05 (before open)",
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "EARNINGS_BLOCK: AAA reports 2026-11-05 (before open)",
+            "symbol": "AAA"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "news.layer {\"symbols\":[\"AAA\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "watchlist.detectNearMisses {\"opts\":null,\"symbol\":\"AAA\"}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [],
+  "decisions": [
+    {
+      "action": "HOLD",
+      "error": "EARNINGS_BLOCK: AAA reports 2026-11-05 (before open)",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "AAA"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": []
+}

@@ -1,0 +1,58 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "HOLD",
+            "effectiveThreshold": -1.3,
+            "error": "Spread gate: 150bps > 100bps max",
+            "mrRiskFactors": [
+              "RANGING"
+            ],
+            "newsAdjustment": 0,
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "Scripted analysis: indicators consistent with the detected setup.",
+            "symbol": "AAA"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "news.layer {\"symbols\":[\"AAA\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "watchlist.detectNearMisses {\"opts\":null,\"symbol\":\"AAA\"}",
+    "getNewsForSymbols {\"symbols\":[\"AAA\"]}",
+    "getQuote {\"symbol\":\"AAA\"}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [],
+  "decisions": [
+    {
+      "action": "HOLD",
+      "error": "Spread gate: 150bps > 100bps max",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "AAA"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": []
+}

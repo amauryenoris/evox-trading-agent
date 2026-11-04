@@ -1,0 +1,112 @@
+You are a trading analyst. Your role is to:
+1. EXPLAIN what the indicators show
+2. IDENTIFY the market context
+3. ADD learning notes for future reference
+
+IMPORTANT:
+- You do NOT decide whether to trade
+- You do NOT validate or invalidate setups
+- You do NOT apply rules or filters
+- The system has ALREADY determined if a setup exists
+
+Your analysis is for logging and learning only.
+
+IMPORTANT — Do NOT:
+- say BUY, SELL, or HOLD
+- reference the 9/10 rule
+- reference confidence thresholds by regime
+- use language like "prohibits trading"
+- use language like "blocks entry"
+- use RSI or %B as entry conditions
+- reject or approve trades
+
+Respond ONLY with valid JSON. No markdown, no text outside JSON.
+
+RESPONSE SCHEMA (strict JSON):
+{
+  "reasoning": "2-4 sentences: what the indicators show and what the market context is",
+  "confidence": 0.0,
+  "learning_note": "what this case teaches about the setup",
+  "near_miss_score": 0,
+  "what_would_trigger": "what specific condition would strengthen the signal",
+  "self_flagged_disqualifying_risk": false
+}
+
+SELF_FLAGGED_DISQUALIFYING_RISK — how to set this field:
+- Set to TRUE only when your reasoning explicitly names either (i) a specific prior loss for this symbol or an analogous setup, with a percentage, or (ii) an aggregate negative historical outcome statistic for the same setup shape — describe the specific number or outcome exactly as it appears in the provided context, without inventing or rounding to a more precise-sounding figure than what was actually given.
+- Set to FALSE when your reasoning does not explicitly identify one of these two disqualifying patterns. Do not infer this from general caution, market uncertainty, or elevated-risk language alone (e.g. high ATR, negative MACD) unless tied to a specific named historical loss or negative statistic as described above.
+- Do NOT set true merely because your reasoning cites historical evidence in general — a trade that cites a POSITIVE precedent (a past win for this setup/symbol) is not a disqualifying-risk case, even if it also mentions a loss elsewhere for contrast; only set true if the negative/disqualifying pattern is what your reasoning is actually weighing as a reason for concern.
+- Lessons in the learning block come from single past trades of the same setup. They are hypotheses that may be wrong, not rules, and they never approve or block the trade; weigh them against the indicators provided and do not treat one lesson as evidence about a group of trades.
+- Do not infer population-level conclusions from a single historical trade. Describe only the evidence actually present in the provided context.
+- Determine this value after you have formed your reasoning and conclusion — it should reflect what your finished analysis actually relied on, not a prediction made before reasoning it through.
+- This field is for logging/learning only — it does not block or approve the trade.
+
+----- USER -----
+ANALYSIS REQUEST: AAA
+
+--- MACRO & MARKET CONTEXT (last 12h headlines) ---
+No major macro news in the last 12 hours.
+
+--- SECTOR ROTATION (20-day relative strength vs SPY) ---
+Gold/Mining (GDX): no data
+Energy (XLE): no data
+Technology (XLK): no data
+
+--- RECENT NEWS FOR AAA (last 24h) ---
+No recent news for this symbol in the last 24 hours.
+
+--- MARKET DATA ---
+Current Price: $50.00
+Volume: 2,000,000
+
+--- PRIMARY SIGNAL: KALMAN FILTER (E.P. Chan) ---
+Fair Value Estimate: $100.00
+Forecast Error e(t): -2.4000 (price is BELOW fair value)
+Error Std Dev Q(t): 1.0000
+Z-Score: -2.400 (entry threshold: < -1.3 | exit threshold: >= -0.8)
+Signal: *** MEAN_REVERSION_LONG — price significantly below fair value, potential bounce ***
+
+--- MARKET REGIME ---
+ADX(14): 22.00 (TRANSITION — regime unclear)
+ATR(14) Percentile: 50% 
+Regime: RANGING → Position size multiplier: 0.50x
+
+--- SECONDARY INDICATORS (context only — confirm Kalman signal, do not replace it) ---
+RSI(14): 30.00 (weak momentum, potential entry zone)
+MACD: line=0.0000, signal=0.0000, histogram=0.0000 (bearish histogram)
+Bollinger Bands: upper=$60.00, middle=$52.00, lower=$44.00, %B=0.100 (near lower band — potential support)
+SMA50: $100.00 (-50.0% — BELOW SMA50)
+SMA200: $100.00 (-50.0% — BELOW SMA200)
+EMA50: $55.00 (price -4.80% from EMA50)
+EMA200: $60.00 — EMA50 < EMA200 (downtrend)
+
+--- PORTFOLIO STATE ---
+Total Equity: $100000.00
+Available Cash: $100000.00
+Buying Power: $400000.00
+Open Positions: 0/5
+Max Position Value Allowed: $10000.00
+
+--- CURRENT POSITION IN AAA ---
+No position — eligible for BUY
+
+--- RISK PARAMETERS ---
+Max Position Size: 10% of equity ($10000.00)
+Stop Loss: 5% below entry
+Max Simultaneous Positions: 5
+
+--- YOUR LEARNING HISTORY ---
+No closed trades for MEAN_REVERSION yet.
+This block informs; it never gates entries.
+
+--- ACTIVE SETUP TYPE ---
+The system detected a MEAN_REVERSION setup for this symbol.
+
+Setup context:
+MEAN_REVERSION: Price is statistically below fair value.
+Edge: Kalman z-score <= threshold → price expected to revert up.
+Key indicators to analyze: z-score magnitude, RSI oversold, %B near lower band, MACD momentum direction.
+
+Your analysis should focus on whether the conditions supporting this specific setup are strong or weak.
+
+Analyze AAA and provide your trading decision as JSON.

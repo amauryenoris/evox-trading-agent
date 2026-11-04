@@ -1,0 +1,54 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "HOLD",
+            "error": "MR_RANGING_ADX_GATE: z-score -2.400 met entry threshold -1.30, blocked — regime=RANGING, ADX=12.0 < 18",
+            "mrRiskFactors": [
+              "LOW_ADX",
+              "RANGING"
+            ],
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "Mean reversion signal triggered (z-score -2.400 <= -1.30) but blocked by RANGING+low-ADX g",
+            "symbol": "AAA"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "news.layer {\"symbols\":[\"AAA\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [],
+  "decisions": [
+    {
+      "action": "HOLD",
+      "error": "MR_RANGING_ADX_GATE: z-score -2.400 met entry threshold -1.30, blocked — regime=RANGING, ADX=12.0 < 18",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "AAA"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": []
+}
