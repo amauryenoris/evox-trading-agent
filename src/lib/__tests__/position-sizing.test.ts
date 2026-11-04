@@ -49,9 +49,9 @@ function base(overrides: Partial<BuyQuantityInput> = {}): BuyQuantityInput {
 }
 
 describe('constants', () => {
-  it('keeps the cap at 10% of equity and the z override on', () => {
+  it('keeps the cap at 10% of equity and the z override off', () => {
     expect(MAX_POSITION_EQUITY_FRACTION).toBe(0.10)
-    expect(Z_SIZING_OVERRIDE_ENABLED).toBe(true)
+    expect(Z_SIZING_OVERRIDE_ENABLED).toBe(false)
   })
 })
 
@@ -69,6 +69,7 @@ describe('golden quantities from the production entries (switch true)', () => {
       confidence: g.confidence,
       zScore: g.zScore,
       signalType: g.setup,
+      zOverrideEnabled: true,
     }
 
     // Act
@@ -105,7 +106,7 @@ describe('differential check against the frozen pre-refactor code (switch true)'
             // Act
             const result = computeBuyQuantity({
               equity, buyingPower, price, riskPct: parseFloat(risk), stopLossPct: parseFloat(stop),
-              kalmanSignal: kalman, regime, confidence, zScore, signalType,
+              kalmanSignal: kalman, regime, confidence, zScore, signalType, zOverrideEnabled: true,
             })
 
             // Assert
@@ -216,9 +217,65 @@ describe('individual rules', () => {
   })
 })
 
+describe('default switch (false)', () => {
+  it('applies the confidence factor 0.5 to z -2.13 at confidence 0.32', () => {
+    // Arrange
+    const input = base({ zScore: -2.13, confidence: 0.32 })
+
+    // Act
+    const { quantity, breakdown } = computeBuyQuantity(input)
+
+    // Assert
+    expect(breakdown.confidenceFactor).toBe(0.5)
+    expect(breakdown.zOverrideApplied).toBe(false)
+    expect(quantity).toBe(Math.round(breakdown.baseShares * 0.5))
+    expect(quantity).toBeLessThan(breakdown.baseShares)
+  })
+
+  it('applies the confidence factor 0.80 to z -2.13 at confidence 0.80', () => {
+    const { quantity, breakdown } = computeBuyQuantity(base({ zScore: -2.13, confidence: 0.8 }))
+
+    expect(breakdown.confidenceFactor).toBe(0.8)
+    expect(breakdown.zOverrideApplied).toBe(false)
+    expect(quantity).toBe(Math.round(breakdown.baseShares * 0.8))
+  })
+
+  it('applies the confidence factor exactly at the z threshold of -2.0', () => {
+    const { quantity, breakdown } = computeBuyQuantity(base({ zScore: -2, confidence: 0.8 }))
+
+    expect(breakdown.zOverrideApplied).toBe(false)
+    expect(quantity).toBe(Math.round(breakdown.baseShares * 0.8))
+  })
+
+  it('keeps the old full-size behaviour when the override is enabled explicitly', () => {
+    const { quantity, breakdown } = computeBuyQuantity(base({ zScore: -2.13, confidence: 0.32, zOverrideEnabled: true }))
+
+    expect(breakdown.zOverrideApplied).toBe(true)
+    expect(quantity).toBe(breakdown.baseShares)
+  })
+})
+
 describe('breakdown', () => {
-  it('reports every step for MP 2026-10-13', () => {
+  it('reports every step for MP 2026-10-13 with the default switch (false)', () => {
     const { quantity, breakdown } = computeBuyQuantity(base())
+
+    expect(breakdown).toEqual({
+      baseShares: 250,
+      regimeMultiplier: 0.75,
+      kalmanHalved: false,
+      buyingPowerCap: Math.floor((400_000 * 0.95) / 42.545),
+      equityCap: 250,
+      confidenceFactor: 0.5,
+      zOverrideApplied: false,
+      setupFactor: 1,
+      adjustedShares: 125,
+      final: 125,
+    })
+    expect(quantity).toBe(breakdown.final)
+  })
+
+  it('reports every step for MP 2026-10-13 with the override enabled', () => {
+    const { quantity, breakdown } = computeBuyQuantity(base({ zOverrideEnabled: true }))
 
     expect(breakdown).toEqual({
       baseShares: 250,

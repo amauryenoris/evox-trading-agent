@@ -1,7 +1,7 @@
 export const MAX_POSITION_EQUITY_FRACTION = 0.10
 
-// With true, z <= -2.0 discards the confidence step (current behavior). With false the confidence step applies to every entry.
-export const Z_SIZING_OVERRIDE_ENABLED = true
+// With true, z <= -2.0 discards the confidence step. With false (current behavior) the confidence step applies to every entry.
+export const Z_SIZING_OVERRIDE_ENABLED = false
 
 const BUYING_POWER_FRACTION = 0.95
 const Z_OVERRIDE_THRESHOLD = -2.0
