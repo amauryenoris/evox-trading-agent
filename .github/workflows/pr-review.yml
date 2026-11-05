@@ -78,6 +78,7 @@ jobs:
             "src/lib/news-intelligence.ts"
             "src/lib/watchlist-monitor.ts"
             "src/lib/learning.ts"
+            "src/lib/prompt-builder.ts"
           )
           CHANGED=$(git diff "origin/${{ github.base_ref }}...HEAD" --name-only 2>/dev/null || true)
           FOUND=""
