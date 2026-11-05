@@ -5,6 +5,8 @@ import type { TechnicalIndicators, TradeEvaluation } from '../../../types'
 const w = await vi.hoisted(async () => (await import('./world')).createWorld())
 export const world = w
 
+const CORE_PARAMS = new Set(['model', 'max_tokens', 'system', 'messages'])
+
 vi.mock('../../../alpaca', async (orig) => ({ ...(await orig<typeof import('../../../alpaca')>()), ...w.alpaca }))
 
 vi.mock('../../../indicators', async (orig) => ({
@@ -97,9 +99,15 @@ vi.mock('crypto', async (orig) => {
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class FakeAnthropic {
     messages = {
-      create: async (params: { model: string; max_tokens: number; system: string; messages: Array<{ content: string }> }) => {
-        const user = params.messages[0].content
-        w.rec('claude.create', { model: params.model, maxTokens: params.max_tokens, system: params.system, user })
+      create: async (params: Record<string, unknown>) => {
+        const messages = params.messages as Array<{ role: string; content: string }>
+        const user = messages[0].content
+        w.prompts.push({ system: String(params.system), user })
+        w.rec('claude.create', {
+          model: params.model, maxTokens: params.max_tokens, paramKeys: Object.keys(params).sort(),
+          messageRoles: messages.map((m) => m.role), systemIsString: typeof params.system === 'string',
+          extraParams: Object.fromEntries(Object.entries(params).filter(([k]) => !CORE_PARAMS.has(k))),
+        })
         return { content: [{ type: 'text', text: w.cfg.claude(user) }] }
       },
     }

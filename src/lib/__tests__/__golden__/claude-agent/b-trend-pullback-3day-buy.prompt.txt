@@ -1,3 +1,19 @@
+CLAUDE CALL PARAMS {
+  "model": "claude-sonnet-4-6",
+  "maxTokens": 1024,
+  "paramKeys": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system"
+  ],
+  "messageRoles": [
+    "user"
+  ],
+  "systemIsString": true,
+  "extraParams": {}
+}
+
 ANALYSIS REQUEST: AAA
 
 --- MACRO & MARKET CONTEXT (last 12h headlines) ---

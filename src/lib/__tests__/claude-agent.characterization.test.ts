@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { pump, installHarness, world } from './support/claude-agent/harness'
-import { buildRecord, lastPrompt } from './support/claude-agent/record'
+import { buildRecord, claudeCallAt, promptAt } from './support/claude-agent/record'
 import { context, kalman, makeIndicators, mrIndicators, position, quote, trend3DayIndicators } from './support/claude-agent/builders'
 import { claudeJson } from './support/claude-agent/world'
 import { runAgentCycle } from '../claude-agent'
@@ -17,6 +17,10 @@ async function runAndRecord(): Promise<{ record: string; result: Awaited<ReturnT
   return { record: buildRecord(world, result), result }
 }
 
+function callHeader(): string {
+  return `CLAUDE CALL PARAMS ${JSON.stringify(claudeCallAt(world), null, 2)}`
+}
+
 function heldIndicators(zScore: number) {
   return makeIndicators({ kalman: kalman(zScore), ema50: 95, ema200: 90 })
 }
@@ -28,8 +32,8 @@ describe('entries', () => {
     const { record } = await runAndRecord()
 
     await expect(record).toMatchFileSnapshot(`${GOLDEN}/a-mean-reversion-buy.json`)
-    const prompt = lastPrompt(world)
-    await expect(`${prompt?.system}\n\n----- USER -----\n${prompt?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/a-mean-reversion-buy.prompt.txt`)
+    const prompt = promptAt(world)
+    await expect(`${callHeader()}\n\n${prompt?.system}\n\n----- USER -----\n${prompt?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/a-mean-reversion-buy.prompt.txt`)
   })
 
   it('(a) auto-entry BUY: QUIRK entryLogId passed to markWatchlistTriggered never equals the persisted log entry id', async () => {
@@ -52,8 +56,8 @@ describe('entries', () => {
     const { record } = await runAndRecord()
 
     await expect(record).toMatchFileSnapshot(`${GOLDEN}/b-trend-pullback-3day-buy.json`)
-    const prompt = lastPrompt(world)
-    await expect(`${prompt?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/b-trend-pullback-3day-buy.prompt.txt`)
+    const prompt = promptAt(world)
+    await expect(`${callHeader()}\n\n${prompt?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/b-trend-pullback-3day-buy.prompt.txt`)
   })
 
   it('(l) ranking with one free slot: the z <= -2 candidate wins and the other is logged as outranked', async () => {
@@ -80,6 +84,50 @@ describe('entries', () => {
     const { record } = await runAndRecord()
 
     await expect(record).toMatchFileSnapshot(`${GOLDEN}/k-ioc-zero-fill.json`)
+  })
+})
+
+describe('Claude API call parameters (read from the mocked client)', () => {
+  const EXPECTED_PARAM_KEYS = ['max_tokens', 'messages', 'model', 'system']
+
+  function arrangeSingleSymbol(): void {
+    world.reset({ watchlist: [SYMBOL], indicators: { [SYMBOL]: mrIndicators() }, quotes: { [SYMBOL]: quote() } })
+  }
+
+  it.each([
+    ['model', (c: Record<string, unknown>) => c.model, 'claude-sonnet-4-6'],
+    ['max_tokens', (c: Record<string, unknown>) => c.maxTokens, 1024],
+    ['parameter keys (no temperature, tools or other)', (c: Record<string, unknown>) => c.paramKeys, EXPECTED_PARAM_KEYS],
+    ['extra parameters beyond model, max_tokens, system, messages', (c: Record<string, unknown>) => c.extraParams, {}],
+    ['message roles (a single user message)', (c: Record<string, unknown>) => c.messageRoles, ['user']],
+    ['system prompt is passed as a string in the system field', (c: Record<string, unknown>) => c.systemIsString, true],
+  ])('%s', async (_name, pick, expected) => {
+    arrangeSingleSymbol()
+
+    await runAndRecord()
+
+    expect(pick(claudeCallAt(world) as Record<string, unknown>)).toEqual(expected)
+  })
+
+  it('keeps the system prompt separate from the user message (user text is not in the system field)', async () => {
+    arrangeSingleSymbol()
+
+    await runAndRecord()
+
+    const prompt = promptAt(world)
+    expect(prompt?.system.length).toBeGreaterThan(0)
+    expect(prompt?.system).not.toContain('ANALYSIS REQUEST')
+    expect(prompt?.user).toContain(`ANALYSIS REQUEST: ${SYMBOL}`)
+  })
+
+  it('calls Claude exactly once per analysed symbol', async () => {
+    world.reset({
+      watchlist: [SYMBOL, 'BBB'], indicators: { [SYMBOL]: mrIndicators(), BBB: mrIndicators() }, quotes: { [SYMBOL]: quote(), BBB: quote() },
+    })
+
+    await runAndRecord()
+
+    expect(world.calls.filter((c) => c.fn === 'claude.create')).toHaveLength(2)
   })
 })
 

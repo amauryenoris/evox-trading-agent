@@ -4,7 +4,7 @@ import type { Call, World } from './world'
 const ISO_TS = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
 const ORDER_FNS = new Set(['submitLimitOrder', 'submitStopOrder', 'submitStopLimitOrder', 'closePosition'])
 const CONTEXT_FNS = new Set(['db.saveOpenPositionContext', 'db.updatePositionContext', 'db.updatePositionProtectiveStop', 'db.deleteOpenPositionContext'])
-const NOISE_FNS = new Set(['claude.create', 'agentLog.append', 'db.insertAgentLogEntry'])
+const NOISE_FNS = new Set(['agentLog.append', 'db.insertAgentLogEntry'])
 const SAVED_INDICATOR_KEYS = ['effectiveThreshold', 'newsAdjustment', 'requestedQty', 'fillAttempts', 'state_fingerprint', 'spx_regime', 'tp_population_bucket', 'zle05_population_bucket']
 
 function maskTimestamps(value: unknown): unknown {
@@ -34,10 +34,12 @@ function summarizeContextCall(call: Call) {
   }
 }
 
-export function lastPrompt(world: World, nth = 0): { system: string; user: string } | null {
-  const prompts = world.calls.filter((c) => c.fn === 'claude.create')
-  const call = prompts[nth]
-  return call ? { system: String(call.args.system), user: String(call.args.user) } : null
+export function promptAt(world: World, nth = 0) {
+  return world.prompts[nth] ?? null
+}
+
+export function claudeCallAt(world: World, nth = 0): Record<string, unknown> | null {
+  return world.calls.filter((c) => c.fn === 'claude.create')[nth]?.args ?? null
 }
 
 export function buildRecord(world: World, result: AgentCycleResult) {

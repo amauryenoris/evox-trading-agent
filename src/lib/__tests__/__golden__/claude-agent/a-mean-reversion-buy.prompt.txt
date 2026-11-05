@@ -1,3 +1,19 @@
+CLAUDE CALL PARAMS {
+  "model": "claude-sonnet-4-6",
+  "maxTokens": 1024,
+  "paramKeys": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system"
+  ],
+  "messageRoles": [
+    "user"
+  ],
+  "systemIsString": true,
+  "extraParams": {}
+}
+
 You are a trading analyst. Your role is to:
 1. EXPLAIN what the indicators show
 2. IDENTIFY the market context
