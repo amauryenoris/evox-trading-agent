@@ -81,6 +81,9 @@ reference confidence thresholds by regime, use language like "prohibits" or "blo
 |------|-------------|
 | `config.ts` | **PROTECTED ZONE** — trading parameters (see below) |
 | `claude-agent.ts` | Main agent loop — `runAgentCycle()`, signal detection, exit rules, position sizing |
+| `prompt-builder.ts` | Builds the exact system prompt and per-symbol user prompt sent to Claude (pure; env values passed as an argument) — changes alter analyst input |
+| `position-sizing.ts` | BUY quantity: Kovner formula, regime multipliers, Kalman halving, buying-power and equity caps, confidence factor; `Z_SIZING_OVERRIDE_ENABLED` (false) |
+| `protective-stop.ts` | Profit target, profit-floor and trailing-activation settings and protective-stop calculations (pure) |
 | `run-cycle.ts` | Exit-only runner — calls `enforceExitRules()` without entry analysis |
 | `indicators.ts` | Kalman filter, RSI, MACD, Bollinger Bands, ADX, ATR, EMA calculations |
 | `alpaca.ts` | Alpaca API client — orders, positions, bars, quotes, news |
@@ -176,7 +179,7 @@ Universal exits (all signal types):
 | `MAX_POSITIONS` | 5 | Max simultaneous positions |
 | `TRADING_WATCHLIST` | fallback list | Static symbols if screener fails |
 
-Position sizing: `qty = (equity × RISK_PCT) / (price × STOP_LOSS_PCT)` × regime multiplier × confidence multiplier (floor 50%). Halved if no Kalman confirmation (Seykota undertrade mandate).
+Position sizing: `qty = (equity × RISK_PCT) / (price × STOP_LOSS_PCT)` × regime multiplier × confidence multiplier (floor 50%). Halved if no Kalman confirmation (Seykota undertrade mandate). The z <= -2 sizing override is **disabled** (`Z_SIZING_OVERRIDE_ENABLED = false` in `position-sizing.ts`, code path kept dormant), so the confidence factor `max(0.5, confidence)` applies to every entry, including z <= -2.
 
 Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 50bps) → trading hours (9:45am–3:30pm ET) → max 5 buys/day → portfolio risk check.
 
@@ -206,6 +209,7 @@ Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 5
 | `src/lib/news-intelligence.ts` | Threshold adjustment logic |
 | `src/lib/watchlist-monitor.ts` | Auto-entry logic |
 | `src/lib/learning.ts` | Trade evaluation and learning loop |
+| `src/lib/prompt-builder.ts` | Builds the exact text Claude receives — changes alter analyst input |
 | `.env` / `.env.local` | Secrets and broker config |
 | `vercel.json` | Deployment config |
 | Any DB migration | Supabase schema changes |
@@ -250,7 +254,8 @@ schedule: "55 19 * * 1-5"       # 3:55pm ET (19:55 UTC) — closing sweep
 schedule: "0 21 * * 5"          # Friday 5pm ET (21:00 UTC)
 ```
 
-All workflows run `npm ci` + `npm audit --audit-level=critical` before executing.
+Every workflow installs dependencies with `npm ci` on Node 24. `npm audit` runs only in `security-audit.yml` (weekdays 12:00 UTC; level `critical` unless a manual run chooses another; it opens or closes a GitHub issue); no other workflow runs it.
+Other workflows not listed above: `daily-bars-sync.yml`, `earnings-calendar-sync.yml`, `position-health.yml`, `security-audit.yml` and `pr-review.yml` — see `.github/workflows/` for their triggers.
 Env vars injected per workflow — see each `.github/workflows/*.yml` for the full list.
 
 ---

@@ -85,7 +85,8 @@ Position Sizing (Kovner formula):
       × ½ if Kalman NEUTRAL (Seykota undertrade mandate)
       × confidenceMultiplier (floor 0.50, capped 1.0)
       × 0.75 if EMA_RECLAIM signal
-      = baseShares if zScore ≤ -2.0 (extreme edge override)
+      (z ≤ -2.0 override: disabled — Z_SIZING_OVERRIDE_ENABLED = false, code path kept dormant;
+       the confidence multiplier above applies to every entry)
   capped by: min(95% of cash / price, 10% of equity / price)
          │
          ▼
@@ -258,7 +259,7 @@ Claude's `action` field in the response is **always overwritten to `'HOLD'`** by
 
 Scheduled workflows can be disabled by GitHub after 60 days without repo activity; check Actions if the repo goes quiet.
 
-All workflows run with Node 24, `npm ci`, and `npm audit --audit-level=critical`.
+All workflows run with Node 24 and `npm ci`. `npm audit` runs only in `security-audit.yml` (weekdays 12:00 UTC; level `critical` unless a manual run chooses another); no other workflow runs it.
 
 ---
 

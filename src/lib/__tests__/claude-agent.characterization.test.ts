@@ -60,6 +60,25 @@ describe('entries', () => {
     await expect(`${callHeader()}\n\n${prompt?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/b-trend-pullback-3day-buy.prompt.txt`)
   })
 
+  it('(m) MEAN_REVERSION BUY with non-default env values: the prompt, the quantity and the stop price use them', async () => {
+    world.reset({ watchlist: [SYMBOL], indicators: { [SYMBOL]: mrIndicators() }, quotes: { [SYMBOL]: quote() }, claude: () => claudeJson(0.32) })
+    process.env.MAX_POSITIONS = '7'
+    process.env.MAX_POSITION_SIZE = '0.20'
+    process.env.STOP_LOSS_PCT = '0.07'
+
+    const { record } = await runAndRecord()
+
+    // QUIRK: MAX_POSITION_SIZE only changes the prompt text; the order quantity is capped by the fixed 10% equity constant.
+    const text = promptAt(world)?.user ?? ''
+    expect(text).toContain('Open Positions: 0/7')
+    expect(text).toContain('Max Position Value Allowed: $20000.00')
+    expect(text).toContain('Max Position Size: 20% of equity ($20000.00)')
+    expect(text).toContain('Stop Loss: 7% below entry')
+    expect(text).toContain('Max Simultaneous Positions: 7')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/m-non-default-env-buy.json`)
+    await expect(`${callHeader()}\n\n${text}\n`).toMatchFileSnapshot(`${GOLDEN}/m-non-default-env-buy.prompt.txt`)
+  })
+
   it('(l) ranking with one free slot: the z <= -2 candidate wins and the other is logged as outranked', async () => {
     const held = ['P1', 'P2', 'P3', 'P4']
     world.reset({
