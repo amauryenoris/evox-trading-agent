@@ -56,7 +56,7 @@ Kalman Filter + RSI + MACD + BB + ADX + ATR + EMA50/200
          ▼
 Setup Detection Gate ──── NO_SETUP ──→ log HOLD, skip
          │
-         │ setup detected (any of 4 signal types)
+         │ setup detected (any of 5 signal types)
          ▼
 News Intelligence Layer (threshold adjustment per symbol)
          │
@@ -104,27 +104,32 @@ Persist AgentLogEntry → agent_log (Supabase)
 
 | Signal | Entry Conditions | Exit Condition |
 |--------|-----------------|----------------|
-| `MEAN_REVERSION` | `RANGING` regime, z-score ≤ effectiveThreshold (base: -1.3), RSI < 45, %B < 0.2 | z-score ≥ -0.8 |
-| `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, EMA50 slope rising, ADX ≥ 20, momentum ok | price < EMA50 |
-| `TREND_ZLE05` | price > EMA50 > EMA200, 0 < z-score ≤ 1.25, EMA50 slope rising, ADX ≥ 18 (or ≥ 15 with MACD > 0.25), MACD histogram > 0 | price < EMA50 |
+| `MEAN_REVERSION` | z-score ≤ effectiveThreshold (base: -1.3); blocked when regime is `RANGING` and ADX < 18 | z-score ≥ -0.8 |
+| `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, EMA50 slope rising, ADX ≥ 20 (or ADX unavailable), MACD histogram > -2.0 | price < EMA50 |
+| `TREND_PULLBACK_3DAY` | previous close > SMA200, three consecutive lower closes before it, price not above SMA5 (no z-score, ADX or MACD condition) | price > SMA5 (`SMA5_RECLAIM`) |
+| `TREND_ZLE05` | price > EMA50 > EMA200, 0 < z-score ≤ 1.25, EMA50 slope rising, ADX ≥ 18 (or ≥ 15 with MACD > 0.25), MACD histogram > 0 | z-score ≥ 1.25 (EMA50 break is not an exit) |
 | `EMA_RECLAIM` | price crossed above EMA50 from below (prev day ≤ ema50Prev), z-score < 0, distance > 0.2%, momentum ok | price < EMA50 |
 
-All signals share universal exits: +10% profit target, 20-day time stop, -5% stop loss (dual-layer), trailing stop.
+Classification priority when several match: `TREND_PULLBACK_3DAY` > `MEAN_REVERSION` > `TREND_PULLBACK` > `TREND_ZLE05` > `EMA_RECLAIM`.
+
+All signals share these exits: profit target (5% for `TREND_ZLE05`, 10% for the others), 20-trading-day time stop, -5% stop loss (dual-layer). Each also has one protective stop: a profit floor for `MEAN_REVERSION` only, the ATR trailing stop for every other setup (section 5).
 
 ---
 
 ## 5. Trailing Stop System
 
-Activation thresholds (profit %, by signal):
+Activation thresholds (profit %, by signal). `MEAN_REVERSION` uses the profit floor below instead of the ATR trailing stop:
 
 | Signal | Activation | ATR Multiplier |
 |--------|-----------|----------------|
-| MEAN_REVERSION | 5% | 1.2× |
-| TREND / TREND_PULLBACK | 6% | 1.5× |
+| MEAN_REVERSION | 5% (profit floor, no ATR) | — |
+| TREND / TREND_PULLBACK / TREND_PULLBACK_3DAY | 6% | 1.5× |
 | TREND_ZLE05 | 3% | 1.0× |
 | EMA_RECLAIM | 4% | 1.0× |
 
-Logic:
+Profit floor (`MEAN_REVERSION` only): active once `highSinceEntry` ≥ entry × 1.05; stop = entry × (1 + max(3%, high% − 3 pp)), never lowered.
+
+ATR trailing logic (all other setups):
 1. Track `highSinceEntry` — updated each cycle if new high is made
 2. Activate once (one-way flag) when P&L ≥ activation threshold
 3. `trailingStop = max(highSinceEntry - ATR_MULT × ATR, highSinceEntry × 0.985)`

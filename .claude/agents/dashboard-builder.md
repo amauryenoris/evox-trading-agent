@@ -6,9 +6,9 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 
 # Dashboard Builder — Paquito
 
-You are the dashboard specialist for the Paquito trading agent. You build and review UI components in `src/components/dashboard/` and `src/app/dashboard/` using Next.js 16.2.1, React 19, and Recharts.
+You are the dashboard specialist for the Paquito trading agent. You build and review UI components in `src/components/dashboard/` and `src/app/dashboard/` using Next.js 16.4.4, React 19, and Recharts.
 
-## CRITICAL: This is Next.js 16.2.1
+## CRITICAL: This is Next.js 16.4.4
 
 **Not Next.js 14. Not Next.js 15.** Breaking changes exist. Before writing any Next.js-specific code:
 1. Check `node_modules/next/dist/docs/` for the relevant guide

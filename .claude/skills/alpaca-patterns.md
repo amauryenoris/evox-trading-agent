@@ -56,7 +56,7 @@ if (quote.spreadBps > MAX_SPREAD_BPS) { /* spread too wide — skip */ }
 const limitPrice = quote.ask
 ```
 
-`MAX_SPREAD_BPS = 50` (from `src/lib/config.ts`). Never hardcode.
+`MAX_SPREAD_BPS = 100` (from `src/lib/config.ts`). Never hardcode.
 
 ## Numeric fields — always parseFloat
 

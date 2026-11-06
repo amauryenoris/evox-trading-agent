@@ -105,14 +105,14 @@ CRON_SECRET
 | `asset not tradeable` | Symbol in blacklist or halted | Verify `INSTRUMENT_BLACKLIST` in `config.ts` and stock status |
 | `market is closed` | Order submitted outside trading hours gate | Gate: 9:45am–3:30pm ET — check `claude-agent.ts` hours check |
 | Quote age error | Quote older than `MAX_QUOTE_AGE_SECONDS = 60` | Fresh quote fetch before order |
-| `spread too wide` | Bid-ask spread > `MAX_SPREAD_BPS = 50` | Spread gate should have caught this — trace gate execution |
+| `spread too wide` | Bid-ask spread > `MAX_SPREAD_BPS = 100` | Spread gate should have caught this — trace gate execution |
 | IOC order unfilled | No liquidity at price point | Expected behavior for IOC — log and continue |
 | `too many requests` | Rate limit hit | Add exponential backoff in `alpaca.ts` |
 
 ### Gate Order (must run in this sequence)
 
 1. Liquidity: ≥ 1M previous day volume
-2. Spread: ≤ 50bps (derived from fresh quote)
+2. Spread: ≤ 100bps (derived from fresh quote)
 3. Trading hours: 9:45am–3:30pm ET
 4. Max 5 buys/day
 5. Portfolio risk check

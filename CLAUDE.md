@@ -62,7 +62,7 @@ reference confidence thresholds by regime, use language like "prohibits" or "blo
 
 | Layer        | Technology                                 |
 |--------------|--------------------------------------------|
-| Framework    | Next.js 16.2.1 + React 19 + TypeScript 5  |
+| Framework    | Next.js 16.4.4 + React 19 + TypeScript 5  |
 | Broker       | Alpaca Markets API                         |
 | Database     | Supabase (PostgreSQL + Auth)               |
 | AI           | Claude API — `claude-sonnet-4-6`           |
@@ -152,20 +152,28 @@ INSTRUMENT_BLACKLIST            // Inverse + leveraged ETFs — never trade
 
 ---
 
-## 4 Trading Signals
+## Trading Signals
 
-| Signal | Condition | Exit |
-|--------|-----------|------|
-| `MEAN_REVERSION` | Ranging market, z-score ≤ -1.3, RSI < 45, %B < 0.2 | z-score ≥ -0.8 (reverted to fair value) |
-| `TREND_PULLBACK` | Uptrend (price > EMA50 > EMA200), z-score ≤ 0, momentum + ADX ≥ 20, EMA50 slope rising | Price falls below EMA50 |
-| `TREND_ZLE05` | Same uptrend, z-score 0–1.25, positive MACD histogram, EMA50 slope rising | Price falls below EMA50 |
-| `EMA_RECLAIM` | Price crossed above EMA50 from below (confirmed by prior day), z-score < 0, momentum confirmed | Price falls back below EMA50 |
+| Signal | Entry | Setup exit | Profit target |
+|--------|-------|------------|---------------|
+| `MEAN_REVERSION` | z-score ≤ effective threshold (base -1.3, news-adjusted); blocked when regime is RANGING and ADX < 18 | z-score ≥ -0.8 (Kalman `EXIT_LONG`) | 10% |
+| `TREND_PULLBACK` | Uptrend (price > EMA50 > EMA200), z-score ≤ 0, EMA50 slope rising, ADX ≥ 20 (or ADX unavailable), MACD histogram > -2.0 | Price falls below EMA50 | 10% |
+| `TREND_PULLBACK_3DAY` | Previous close > SMA200, three consecutive lower closes before it, price not above SMA5 (no z-score, ADX or MACD condition) | Price closes above SMA5 (`SMA5_RECLAIM`) | 10% |
+| `TREND_ZLE05` | Same uptrend, 0 < z-score ≤ 1.25, EMA50 slope rising, ADX ≥ 18 (or ≥ 15 with MACD histogram > 0.25), MACD histogram > 0 | z-score ≥ 1.25 (EMA50 break is not an exit for this setup) | 5% |
+| `EMA_RECLAIM` | Price above EMA50 by more than 0.2%, previous close ≤ previous EMA50, z-score < 0, momentum confirmed | Price falls back below EMA50 | 10% |
 
-Universal exits (all signal types):
-- **+10% profit target** — close immediately
+When several setups match, the classification priority is `TREND_PULLBACK_3DAY` > `MEAN_REVERSION` > `TREND_PULLBACK` > `TREND_ZLE05` > `EMA_RECLAIM`. Legacy rows with `signal_type = TREND` exit like `TREND_PULLBACK`; positions with no signal type get only the profit target and the time stop.
+
+Exits that apply to every setup:
+- **Profit target** — 5% for `TREND_ZLE05`, 10% for every other setup; close immediately
 - **20 trading days** — time stop
 - **-5% stop loss** — two layers: Alpaca GTC stop order (Capa A) + manual cycle check (Capa B)
-- **Trailing stop** — activates at signal-specific profit threshold, floors at buy price
+
+Setup exit: the "Setup exit" column above (not applied to positions with no signal type).
+
+Protective stop (one per setup, never both):
+- **`MEAN_REVERSION` — profit floor**: activates once the high reaches +5% above entry; the stop is entry × (1 + max(3%, high% − 3 pp)), so it ratchets up 3 pp behind the high and never drops. It replaces the ATR trailing stop for this setup only.
+- **All other setups — ATR trailing stop**: activates at +6% (`TREND_PULLBACK`, `TREND_PULLBACK_3DAY`), +3% (`TREND_ZLE05`), +4% (`EMA_RECLAIM`), +5% (no signal type); ATR multiplier 1.5 / 1.5 / 1.0 / 1.0 / 1.2 respectively; floored at the buy price.
 
 ---
 

@@ -39,7 +39,7 @@ Claude's output schema (strict JSON — no markdown):
 
 **Do NOT approve changes to these without explicit confirmation from Amaury:**
 - `ZSCORE_ENTRY_THRESHOLD = -1.3`
-- `MAX_SPREAD_BPS = 50`
+- `MAX_SPREAD_BPS = 100`
 - `MAX_QUOTE_AGE_SECONDS = 60`
 - `INSTRUMENT_BLACKLIST` (inverse/leveraged ETFs)
 
@@ -69,7 +69,7 @@ Halved if no Kalman confirmation (Seykota undertrade mandate).
 ## Execution Gates (must execute in this order)
 
 1. Liquidity: ≥ 1M previous day volume
-2. Spread: ≤ 50bps
+2. Spread: ≤ 100bps
 3. Trading hours: 9:45am–3:30pm ET
 4. Max 5 buys/day
 5. Portfolio risk check (risk-manager.ts)

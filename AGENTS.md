@@ -1,7 +1,7 @@
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 
-**Version in use: 16.2.1** — This is not Next.js 14 or 15. There are breaking changes.
+**Version in use: 16.4.4** — This is not Next.js 14 or 15. There are breaking changes.
 APIs, conventions, router behavior, and file structure may all differ from your training data.
 
 **Before writing any Next.js code:**

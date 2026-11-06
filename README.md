@@ -69,8 +69,8 @@ TRADING_WATCHLIST=AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,JPM,V,UNH
 # Comma-separated list of sector ETFs for regime detection
 SECTOR_WATCHLIST=XLK,XLF,XLV,XLE,XLI,XLY,XLP,XLB,XLU,XLRE
 
-# Maximum dollar amount per position (e.g. 1000 = $1,000 per trade)
-MAX_POSITION_SIZE=1000
+# Max position size as a fraction of equity, shown to Claude in the prompt only (e.g. 0.10 = 10%); it does not limit the order quantity
+MAX_POSITION_SIZE=0.10
 
 # Maximum number of open positions at the same time
 MAX_POSITIONS=5
@@ -78,8 +78,8 @@ MAX_POSITIONS=5
 # Stop loss percentage (e.g. 0.05 = 5%)
 STOP_LOSS_PCT=0.05
 
-# Risk percentage of portfolio per trade (e.g. 0.02 = 2%)
-RISK_PCT=0.02
+# Risk percentage of portfolio per trade (e.g. 0.01 = 1%)
+RISK_PCT=0.01
 ```
 
 ### 3. Set up the Supabase database
@@ -150,8 +150,8 @@ All times are Eastern Time (ET). The bot only runs on weekdays (Mon–Fri).
 | Workflow | Schedule | What it does |
 |---|---|---|
 | **Exit Check** | 9:30 AM ET | Checks open positions for exit signals at market open |
-| **Trading Cycle** | Every hour, 10 AM – 3 PM ET | Full cycle: analyze watchlist, enter/exit positions |
-| **Exit Check** | 3:30 PM ET | Final exit check before market close |
+| **Trading Cycle** | Every hour, 10 AM – 4 PM ET | Full cycle: analyze watchlist, enter/exit positions |
+| **Exit Check** | 3:55 PM ET | Final exit check before market close |
 | **Weekly Report** | Fridays 5 PM ET | Generates PDF performance report and saves to Supabase |
 
 You can also trigger any workflow manually from the **Actions** tab in GitHub.
@@ -221,20 +221,21 @@ These are set via environment variables and can be tuned without touching code:
 |---|---|---|
 | `ZSCORE_ENTRY_THRESHOLD` | `-1.3` | Z-score level required to consider an entry (hardcoded in `src/lib/config.ts`) |
 | `MAX_POSITIONS` | `5` | Max simultaneous open positions |
-| `MAX_POSITION_SIZE` | `$1,000` | Max dollar size per position |
+| `MAX_POSITION_SIZE` | `0.10` | Fraction of equity shown to Claude in the prompt only; does not limit order quantity (the real cap is a fixed 10% of equity) |
 | `STOP_LOSS_PCT` | `5%` | Hard stop loss below entry price |
-| `RISK_PCT` | `2%` | Portfolio risk per trade (used for sizing) |
+| `RISK_PCT` | `1%` | Portfolio risk per trade (used for sizing) |
 
 ---
 
 ## Signal Types
 
-The bot uses four entry signals:
+The bot uses five entry signals:
 
 | Signal | Condition |
 |---|---|
-| `MEAN_REVERSION` | Z-score below `-1.3` in a ranging market |
+| `MEAN_REVERSION` | Z-score at or below `-1.3` (news-adjusted); blocked when the regime is ranging and ADX < 18 |
 | `TREND_PULLBACK` | Price in uptrend (above EMA50 > EMA200), z-score ≤ 0 |
+| `TREND_PULLBACK_3DAY` | Previous close above SMA200 after three consecutive lower closes, price not above SMA5 |
 | `TREND_ZLE05` | Same trend, z-score between 0 and 1.25 |
 | `EMA_RECLAIM` | Price reclaims EMA50 from below (sized at 0.75x) |
 
