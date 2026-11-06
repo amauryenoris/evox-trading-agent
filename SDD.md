@@ -73,7 +73,7 @@ Execution Gates (in order):
   1. Max positions < MAX_POSITIONS
   2. Buys today < 5
   3. Liquidity: prevDayVolume ≥ 1,000,000
-  4. Spread: spreadBps ≤ MAX_SPREAD_BPS (50)
+  4. Spread: spreadBps ≤ MAX_SPREAD_BPS (100)
   5. Quote freshness: age ≤ MAX_QUOTE_AGE_SECONDS (60)
   6. Trading hours: 9:45am–3:30pm ET
   7. Portfolio risk: drawdown > -15%, total risk < 10%, correlated < 3

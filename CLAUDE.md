@@ -80,7 +80,7 @@ reference confidence thresholds by regime, use language like "prohibits" or "blo
 | File | Description |
 |------|-------------|
 | `config.ts` | **PROTECTED ZONE** — trading parameters (see below) |
-| `claude-agent.ts` | Main agent loop — `runAgentCycle()`, signal detection, exit rules, position sizing |
+| `claude-agent.ts` | Main agent loop — `runAgentCycle()`, signal detection, exit rules; calls `position-sizing.ts` for the BUY quantity and `prompt-builder.ts` for the prompt |
 | `prompt-builder.ts` | Builds the exact system prompt and per-symbol user prompt sent to Claude (pure; env values passed as an argument) — changes alter analyst input |
 | `position-sizing.ts` | BUY quantity: Kovner formula, regime multipliers, Kalman halving, buying-power and equity caps, confidence factor; `Z_SIZING_OVERRIDE_ENABLED` (false) |
 | `protective-stop.ts` | Profit target, profit-floor and trailing-activation settings and protective-stop calculations (pure) |
@@ -145,7 +145,7 @@ WeeklyReportsCard, MarketStatusBadge, GenerateReportButton, LogoutButton
 
 ```ts
 ZSCORE_ENTRY_THRESHOLD = -1.3   // Mean reversion entry threshold
-MAX_SPREAD_BPS = 50             // Max bid-ask spread allowed
+MAX_SPREAD_BPS = 100            // Max bid-ask spread allowed
 MAX_QUOTE_AGE_SECONDS = 60      // Max quote staleness
 INSTRUMENT_BLACKLIST            // Inverse + leveraged ETFs — never trade
 ```
@@ -175,13 +175,15 @@ Universal exits (all signal types):
 |----------|---------|-------------|
 | `RISK_PCT` | 0.01 | Capital at risk per trade (Kovner 1% rule) |
 | `STOP_LOSS_PCT` | 0.05 | Stop loss below entry |
-| `MAX_POSITION_SIZE` | 0.10 | Max position as % of equity |
+| `MAX_POSITION_SIZE` | 0.10 | Prompt text only: feeds the `Max Position Size` and `Max Position Value Allowed` lines Claude sees (`prompt-builder.ts`); it does not limit the order quantity |
 | `MAX_POSITIONS` | 5 | Max simultaneous positions |
 | `TRADING_WATCHLIST` | fallback list | Static symbols if screener fails |
 
+Real position caps (constants in `position-sizing.ts`, not env): `MAX_POSITION_EQUITY_FRACTION = 0.10` (10% of equity per position) and `BUYING_POWER_FRACTION = 0.95` (95% of buying power). The formula result is limited by both caps before the confidence factor is applied.
+
 Position sizing: `qty = (equity × RISK_PCT) / (price × STOP_LOSS_PCT)` × regime multiplier × confidence multiplier (floor 50%). Halved if no Kalman confirmation (Seykota undertrade mandate). The z <= -2 sizing override is **disabled** (`Z_SIZING_OVERRIDE_ENABLED = false` in `position-sizing.ts`, code path kept dormant), so the confidence factor `max(0.5, confidence)` applies to every entry, including z <= -2.
 
-Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 50bps) → trading hours (9:45am–3:30pm ET) → max 5 buys/day → portfolio risk check.
+Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 100bps) → trading hours (9:45am–3:30pm ET) → max 5 buys/day → portfolio risk check.
 
 ---
 
@@ -255,7 +257,7 @@ schedule: "0 21 * * 5"          # Friday 5pm ET (21:00 UTC)
 ```
 
 Every workflow installs dependencies with `npm ci` on Node 24. `npm audit` runs only in `security-audit.yml` (weekdays 12:00 UTC; level `critical` unless a manual run chooses another; it opens or closes a GitHub issue); no other workflow runs it.
-Other workflows not listed above: `daily-bars-sync.yml`, `earnings-calendar-sync.yml`, `position-health.yml`, `security-audit.yml` and `pr-review.yml` — see `.github/workflows/` for their triggers.
+Other workflows not listed above: `daily-bars-sync.yml`, `earnings-calendar-sync.yml`, `position-health.yml` and `pr-review.yml` — see `.github/workflows/` for their triggers.
 Env vars injected per workflow — see each `.github/workflows/*.yml` for the full list.
 
 ---
