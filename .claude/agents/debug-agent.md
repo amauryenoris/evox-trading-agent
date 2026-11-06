@@ -27,9 +27,14 @@ Three independent failure domains: **GitHub Actions**, **Supabase**, **Alpaca AP
 
 | Workflow | File | Schedule |
 |----------|------|----------|
-| Full agent cycle | `.github/workflows/trading-cycle.yml` | Every 30min, 9am–3:30pm ET Mon–Fri |
-| Exit-only sweep | `.github/workflows/exit-only.yml` | 3:45pm ET Mon–Fri |
-| Weekly report | `.github/workflows/weekly-report.yml` | Friday 4pm ET |
+| Trading Agent Cycle | `.github/workflows/agent-cron.yml` | `0 14-20 * * 1-5` UTC (hourly; 10am–4pm EDT / 9am–3pm EST) |
+| Exit Check — Open and Close | `.github/workflows/agent-exits.yml` | `30 13 * * 1-5` and `55 19 * * 1-5` UTC (9:30am and 3:55pm EDT / 8:30am and 2:55pm EST) |
+| Position Health Check | `.github/workflows/position-health.yml` | `45 13 * * 1-5` and `10 20 * * 1-5` UTC (9:45am and 4:10pm EDT / 8:45am and 3:10pm EST) |
+| Daily Bars Sync | `.github/workflows/daily-bars-sync.yml` | `0 21 * * 1-5` UTC (5:00pm EDT / 4:00pm EST) |
+| Earnings Calendar Sync | `.github/workflows/earnings-calendar-sync.yml` | `17 11 * * 1-5` UTC (7:17am EDT / 6:17am EST) |
+| Security Audit | `.github/workflows/security-audit.yml` | `0 12 * * 1-5` UTC (8:00am EDT / 7:00am EST) |
+| Weekly Trading Report | `.github/workflows/weekly-report.yml` | `0 21 * * 5` UTC (Friday 5pm EDT / 4pm EST) |
+| PR Review | `.github/workflows/pr-review.yml` | On pull requests to main (opened, synchronize, reopened); no cron |
 
 ### Required Secrets (must be set in GitHub Secrets)
 

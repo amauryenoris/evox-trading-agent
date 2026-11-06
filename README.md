@@ -145,14 +145,14 @@ Once these are set, the bot will run automatically on the schedule below.
 
 ## Automation Schedule
 
-All times are Eastern Time (ET). The bot only runs on weekdays (Mon–Fri).
+Schedules are cron expressions in UTC; local times are shown for daylight time (EDT, UTC-4) and standard time (EST, UTC-5). The bot only runs on weekdays (Mon–Fri).
 
 | Workflow | Schedule | What it does |
 |---|---|---|
-| **Exit Check** | 9:30 AM ET | Checks open positions for exit signals at market open |
-| **Trading Cycle** | Every hour, 10 AM – 4 PM ET | Full cycle: analyze watchlist, enter/exit positions |
-| **Exit Check** | 3:55 PM ET | Final exit check before market close |
-| **Weekly Report** | Fridays 5 PM ET | Generates PDF performance report and saves to Supabase |
+| **Exit Check** | `30 13 * * 1-5` UTC = 9:30 AM EDT / 8:30 AM EST | Checks open positions for exit signals at market open |
+| **Trading Cycle** | `0 14-20 * * 1-5` UTC = every hour, 10 AM – 4 PM EDT / 9 AM – 3 PM EST | Full cycle: analyze watchlist, enter/exit positions |
+| **Exit Check** | `55 19 * * 1-5` UTC = 3:55 PM EDT / 2:55 PM EST | Final exit check before market close |
+| **Weekly Report** | `0 21 * * 5` UTC = Fridays 5 PM EDT / 4 PM EST | Generates PDF performance report and saves to Supabase |
 
 You can also trigger any workflow manually from the **Actions** tab in GitHub.
 

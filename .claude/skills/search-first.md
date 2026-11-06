@@ -23,7 +23,7 @@ and intentional design decisions that aren't visible from filenames alone.
 
 ## Specific things you cannot assume
 
-- **Signal types**: there are 4 (`MEAN_REVERSION`, `TREND_PULLBACK`, `TREND_ZLE05`, `EMA_RECLAIM`). Any new one requires changes in: setup detection, exit rules, trailing stop config, sizing multipliers, prompt context, and CLAUDE.md.
+- **Signal types**: there are 5 (`MEAN_REVERSION`, `TREND_PULLBACK`, `TREND_PULLBACK_3DAY`, `TREND_ZLE05`, `EMA_RECLAIM`). Any new one requires changes in: setup detection, exit rules, trailing stop config, sizing multipliers, prompt context, and CLAUDE.md.
 - **Exit rules**: exits are deterministic and run BEFORE Claude is called. Claude does not trigger exits.
 - **Config values**: `ZSCORE_ENTRY_THRESHOLD`, `MAX_SPREAD_BPS`, `INSTRUMENT_BLACKLIST` live in `config.ts`. Do not hardcode these values anywhere else.
 - **Env vars**: there are two Supabase client patterns (browser vs server). Check which context you're in before choosing a client.

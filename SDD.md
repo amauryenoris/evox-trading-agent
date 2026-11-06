@@ -214,7 +214,7 @@ The effective threshold for each symbol is: `thresholdMap[symbol] ?? ZSCORE_ENTR
 
 ---
 
-## 12. Database Schema (9 Tables)
+## 12. Database Schema (Core Tables)
 
 | Table | Written by | Read by |
 |-------|-----------|---------|
@@ -226,7 +226,9 @@ The effective threshold for each symbol is: `thresholdMap[symbol] ?? ZSCORE_ENTR
 | `pattern_library` | `evaluateClosedTrade` | `buildLearningContext`, dashboard |
 | `selection_history` | `selectStocksForAnalysis` | Screener learning |
 | `selection_evaluations` | `recordSelectionOutcome` | Screener learning |
-| `weekly_reports` | `report-generator.ts` | Dashboard (PDF download) |
+| `reports` | `report-generator.ts` | Dashboard (PDF download) |
+
+Other tables the code reads or writes (`.from(...)` calls in `src/`): `market_daily_briefings`, `symbol_cooldowns`, `position_health_snapshots`, `daily_bars`, `selection_failures`.
 
 ---
 
@@ -234,7 +236,7 @@ The effective threshold for each symbol is: `thresholdMap[symbol] ?? ZSCORE_ENTR
 
 | File | Key | Used in |
 |------|-----|---------|
-| `supabase/client.ts` | `SUPABASE_ANON_KEY` | Browser components (`'use client'`) |
+| `supabase/client.ts` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser components (`'use client'`) |
 | `supabase/server.ts` | Reads cookies | Server components (SSR) |
 | `db.ts` | `SUPABASE_SERVICE_ROLE_KEY` | Server-only — bypasses RLS |
 
@@ -258,9 +260,9 @@ Claude's `action` field in the response is **always overwritten to `'HOLD'`** by
 
 | Workflow | File | Schedule | Command |
 |----------|------|----------|---------|
-| Full agent cycle | `agent-cron.yml` | Hourly, 14–20 UTC (10am–4pm ET), Mon–Fri | `npm run cycle` |
-| Exit-only sweep | `agent-exits.yml` | 13:30 UTC (9:30am ET) + 19:55 UTC (3:55pm ET), Mon–Fri | `npm run exit-only` |
-| Weekly report | `weekly-report.yml` | Friday 21:00 UTC (5pm ET) | `npm run report` |
+| Full agent cycle | `agent-cron.yml` | Hourly, 14–20 UTC (10am–4pm EDT / 9am–3pm EST), Mon–Fri | `npm run cycle` |
+| Exit-only sweep | `agent-exits.yml` | 13:30 UTC (9:30am EDT / 8:30am EST) + 19:55 UTC (3:55pm EDT / 2:55pm EST), Mon–Fri | `npm run exit-only` |
+| Weekly report | `weekly-report.yml` | Friday 21:00 UTC (5pm EDT / 4pm EST) | `npm run report` |
 
 Scheduled workflows can be disabled by GitHub after 60 days without repo activity; check Actions if the repo goes quiet.
 
@@ -274,13 +276,13 @@ All workflows run with Node 24 and `npm ci`. `npm audit` runs only in `security-
 Decisions are persisted to `agent_log` only **after the full symbol loop completes** (`appendAgentLogEntries` at the end of `runAgentCycle`). If the process crashes (OOM, Vercel timeout, unhandled rejection) mid-cycle, all decisions from that cycle are lost. Fix: persist per-symbol inside the loop.
 
 ### IOC fill uncertainty
-Orders are submitted as IOC (Immediate-or-Cancel) at the ask price. A cancelled IOC (no liquidity at ask) is logged but `orderExecuted` may still be set to `true` before the status is checked. Dashboard shows the order as executed — misleading on cancelled IOC fills.
+Orders are submitted as IOC (Immediate-or-Cancel) at the ask price. The synchronous Alpaca response is not trusted: `resolveIocFinalState` re-fetches the order up to 4 times (1500 ms apart) and forces a cancel if it is still unresolved (`claude-agent.ts:945-982`). `orderExecuted` is set to `true` only when at least one share filled; a 0-fill IOC is logged as `IOC_NOT_FILLED` and the action stays `HOLD` (`claude-agent.ts:2227-2243`).
 
 ### Trailing stop context
 `highSinceEntry`, `trailingStop`, and `trailingActivated` are stored in `open_position_contexts`. If a row is deleted mid-position (e.g., manual cleanup), the trailing stop resets to unactivated state.
 
 ### Position rotation mutation
-In rotation mode, the local `positions` array is mutated (`positions.splice(...)`) to optimistically free a slot. If the close order fails but the splice already happened, `openPositionsCount` may undercount for that cycle.
+In rotation mode, the local `positions` array is mutated (`positions.splice(...)`) after `closePosition` returns; a thrown close error skips it (`claude-agent.ts:1612-1624`). `openPositionsCount` is set once from `positions.length` (`:1468`) and the rotation splice does not decrement it, so the max-positions gate (`:2100`) and the ranking slot count (`:1483`) still count the rotated-out position for the rest of the cycle.
 
 ### Legacy positions
 Positions entered before `signalType` was recorded have `signal_type = null`. The exit engine applies only profit target and time stop to these — no z-score or EMA exit is applied (intentional).

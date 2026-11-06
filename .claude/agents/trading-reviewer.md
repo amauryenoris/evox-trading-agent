@@ -45,20 +45,25 @@ Claude's output schema (strict JSON — no markdown):
 
 If a diff touches config.ts, flag it immediately as CRITICAL and ask Amaury to confirm.
 
-## 4 Trading Signals to Verify
+## Trading Signals to Verify
 
 | Signal | Entry Condition | Exit |
 |--------|----------------|------|
-| `MEAN_REVERSION` | Ranging, z-score ≤ -1.3, RSI < 45, %B < 0.2 | z-score ≥ -0.8 |
-| `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, ADX ≥ 20, EMA50 slope rising | Price < EMA50 |
-| `TREND_ZLE05` | Same uptrend, z-score 0–1.25, positive MACD histogram, ADX ≥ 18 (or ≥ 15 with MACD > 0.25) | Price < EMA50 |
-| `EMA_RECLAIM` | Price crossed above EMA50 from below (prior day confirmed), z-score < 0 | Price < EMA50 |
+| `MEAN_REVERSION` | z-score ≤ effective threshold (base -1.3); blocked when regime is RANGING and ADX < 18 | z-score ≥ -0.8 |
+| `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, EMA50 slope rising, ADX ≥ 20 (or ADX unavailable), MACD histogram > -2.0 | Price < EMA50 |
+| `TREND_PULLBACK_3DAY` | Previous close > SMA200, three consecutive lower closes before it, price not above SMA5 (no z-score, ADX or MACD condition) | Price > SMA5 |
+| `TREND_ZLE05` | Same uptrend, 0 < z-score ≤ 1.25, EMA50 slope rising, ADX ≥ 18 (or ≥ 15 with MACD > 0.25), MACD histogram > 0 | z-score ≥ 1.25 (EMA50 break is not an exit) |
+| `EMA_RECLAIM` | Price above EMA50 by more than 0.2%, previous close ≤ previous EMA50, z-score < 0, momentum confirmed | Price < EMA50 |
 
-**Universal exits (must always be present):**
-- +10% profit target
-- 20 trading day time stop
+Classification priority when several match: `TREND_PULLBACK_3DAY` > `MEAN_REVERSION` > `TREND_PULLBACK` > `TREND_ZLE05` > `EMA_RECLAIM`.
+
+**Exits (must always be present):**
+- Profit target: 5% for `TREND_ZLE05`, 10% for every other setup
+- 20 trading day time stop (all setups)
 - -5% stop loss (Capa A: Alpaca GTC order, Capa B: cycle check)
-- Trailing stop activates at signal-specific threshold, floors at buy price
+- Setup exit: the Exit column above
+- `MEAN_REVERSION` only: profit floor (activates at +5%, floor +3%, ratchets 3 pp behind the high) instead of the ATR trailing stop
+- All other setups: ATR trailing stop (activation 6% `TREND_PULLBACK` and `TREND_PULLBACK_3DAY`, 3% `TREND_ZLE05`, 4% `EMA_RECLAIM`), floors at buy price
 
 ## Position Sizing Formula
 
@@ -79,8 +84,8 @@ Halved if no Kalman confirmation (Seykota undertrade mandate).
 For every diff touching `src/lib/`:
 
 - [ ] **Analyst purity**: Does Claude's output schema remain unchanged? Is Claude still prevented from making trade decisions?
-- [ ] **Signal integrity**: Are all 4 signal conditions unmodified (unless Amaury explicitly approved)?
-- [ ] **Exit rules**: Are all 4 universal exits still enforced?
+- [ ] **Signal integrity**: Are all 5 signal conditions unmodified (unless Amaury explicitly approved)?
+- [ ] **Exit rules**: Are the profit target, time stop and stop loss still enforced for every setup, and the setup exit and protective stop intact?
 - [ ] **Risk parameters**: Are RISK_PCT, STOP_LOSS_PCT, MAX_POSITIONS read from env (not hardcoded)?
 - [ ] **Position sizing**: Is the Kovner formula intact? Is the Kalman halving still applied?
 - [ ] **Gate order**: Do execution gates run in the correct sequence?

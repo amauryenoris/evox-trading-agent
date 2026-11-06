@@ -120,24 +120,29 @@ Flag as **CRITICAL** if the diff:
 - Changes Claude's role from analyst to decision-maker
 
 Flag as **HIGH** if the diff:
-- Modifies any of the 4 signal conditions without referencing a spec
+- Modifies any of the 5 signal conditions without referencing a spec
 - Changes entry gate order
-- Removes or weakens a universal exit rule
+- Removes or weakens an exit rule (profit target, time stop, stop loss, setup exit or protective stop)
 
-**4 Signal conditions (must be preserved unless spec-approved):**
+**5 Signal conditions (must be preserved unless spec-approved):**
 
 | Signal | Key conditions |
 |--------|---------------|
-| `MEAN_REVERSION` | z-score ≤ -1.3, RSI < 45, %B < 0.2, ranging market |
-| `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, ADX ≥ 20, EMA50 slope rising |
-| `TREND_ZLE05` | same uptrend, z-score 0–1.25, MACD histogram > 0, ADX ≥ 18 (or ≥ 15 with MACD > 0.25) |
-| `EMA_RECLAIM` | crossed above EMA50 from below (prior day confirmed), z-score < 0 |
+| `MEAN_REVERSION` | z-score ≤ effective threshold (base -1.3); blocked when regime is RANGING and ADX < 18 |
+| `TREND_PULLBACK` | price > EMA50 > EMA200, z-score ≤ 0, EMA50 slope rising, ADX ≥ 20 (or ADX unavailable), MACD histogram > -2.0 |
+| `TREND_PULLBACK_3DAY` | previous close > SMA200, three consecutive lower closes before it, price not above SMA5 (no z-score, ADX or MACD condition) |
+| `TREND_ZLE05` | same uptrend, 0 < z-score ≤ 1.25, EMA50 slope rising, ADX ≥ 18 (or ≥ 15 with MACD > 0.25), MACD histogram > 0 |
+| `EMA_RECLAIM` | price above EMA50 by more than 0.2%, previous close ≤ previous EMA50, z-score < 0, momentum confirmed |
 
-**Universal exits (must always be enforced):**
-- +10% profit target
-- 20 trading day time stop
+Classification priority when several match: `TREND_PULLBACK_3DAY` > `MEAN_REVERSION` > `TREND_PULLBACK` > `TREND_ZLE05` > `EMA_RECLAIM`.
+
+**Exits (must always be enforced):**
+- Profit target: 5% for `TREND_ZLE05`, 10% for every other setup
+- 20 trading day time stop (all setups)
 - -5% stop loss (Capa A: Alpaca GTC, Capa B: cycle check)
-- Trailing stop at signal-specific threshold, floors at buy price
+- Setup exit: `MEAN_REVERSION` z-score ≥ -0.8; `TREND_PULLBACK` and `EMA_RECLAIM` price < EMA50; `TREND_ZLE05` z-score ≥ 1.25; `TREND_PULLBACK_3DAY` price > SMA5
+- `MEAN_REVERSION` only: profit floor (activates at +5%, floor +3%, ratchets 3 pp behind the high) instead of the ATR trailing stop
+- All other setups: ATR trailing stop (activation 6% `TREND_PULLBACK` and `TREND_PULLBACK_3DAY`, 3% `TREND_ZLE05`, 4% `EMA_RECLAIM`), floors at buy price
 
 ---
 

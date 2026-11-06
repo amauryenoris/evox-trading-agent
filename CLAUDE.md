@@ -252,16 +252,16 @@ vi.mock('@supabase/supabase-js', () => ({
 ```yaml
 # .github/workflows/agent-cron.yml
 # Full agent cycle — runs hourly during market hours Mon–Fri
-schedule: "0 14-20 * * 1-5"     # top of each hour, 10am–4pm ET (14–20 UTC)
+schedule: "0 14-20 * * 1-5"     # top of each hour, 14–20 UTC = 10am–4pm EDT / 9am–3pm EST
 
 # .github/workflows/agent-exits.yml
 # Exit sweep — runs twice: market open and market close
-schedule: "30 13 * * 1-5"       # 9:30am ET (13:30 UTC) — morning sweep
-schedule: "55 19 * * 1-5"       # 3:55pm ET (19:55 UTC) — closing sweep
+schedule: "30 13 * * 1-5"       # 13:30 UTC = 9:30am EDT / 8:30am EST — morning sweep
+schedule: "55 19 * * 1-5"       # 19:55 UTC = 3:55pm EDT / 2:55pm EST — closing sweep
 
 # .github/workflows/weekly-report.yml
 # Weekly report generation
-schedule: "0 21 * * 5"          # Friday 5pm ET (21:00 UTC)
+schedule: "0 21 * * 5"          # Friday 21:00 UTC = 5pm EDT / 4pm EST
 ```
 
 Every workflow installs dependencies with `npm ci` on Node 24. `npm audit` runs only in `security-audit.yml` (weekdays 12:00 UTC; level `critical` unless a manual run chooses another; it opens or closes a GitHub issue); no other workflow runs it.

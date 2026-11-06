@@ -216,11 +216,11 @@ mockFetch.mockResolvedValueOnce({
 
 ---
 
-## Realistic Test Data — 4 Trading Signals
+## Realistic Test Data — Trading Signals
 
 Use these fixtures for indicator values that actually trigger each signal.
 
-### MEAN_REVERSION — triggers at z-score ≤ -1.3, RSI < 45, %B < 0.2
+### MEAN_REVERSION — triggers at z-score ≤ effective threshold (base -1.3) unless regime is RANGING and ADX < 18
 
 ```ts
 const meanReversionFixture = {
