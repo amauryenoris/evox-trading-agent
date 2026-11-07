@@ -9,17 +9,17 @@ export interface SetupDefinition {
 export const ACTIVE_SETUPS = [
   {
     name: 'TREND_PULLBACK_3DAY',
-    criteria: 'Price above SMA200 (uptrend) with exactly 3 consecutive lower daily closes immediately before entry; enters on the 4th day. No z-score, ADX, or MACD condition.',
+    criteria: 'Previous close above SMA200 (uptrend) with 3 consecutive lower daily closes ending at the previous close; price not above SMA5. No z-score, ADX, or MACD condition.',
     active: true,
   },
   {
     name: 'MEAN_REVERSION',
-    criteria: 'Ranging market regime, z-score <= -1.3 (or news-adjusted threshold), RSI < 45, %B < 0.2.',
+    criteria: 'Z-score <= -1.3 (or news-adjusted threshold); not taken when the regime is RANGING and ADX < 18.',
     active: true,
   },
   {
     name: 'TREND_PULLBACK',
-    criteria: 'Uptrend structure (price > EMA50 > EMA200), z-score <= 0, EMA50 slope rising, ADX >= 20, momentum confirmed.',
+    criteria: 'Uptrend structure (price > EMA50 > EMA200), z-score <= 0, EMA50 slope rising, ADX >= 20 (or ADX unavailable), MACD histogram > -2.0, momentum confirmed.',
     active: true,
   },
   {

@@ -264,7 +264,7 @@ const trendZle05Fixture = {
   price: 420.0,
   ema50: 410.0,
   ema200: 390.0,
-  zscore: 0.3,          // in 0–0.5 band
+  zscore: 0.3,          // 0 < z <= 1.25 (entry ceiling)
   macdHistogram: 0.8,   // positive
   ema50Slope: 0.5,
   adx: 25,
@@ -287,14 +287,24 @@ const emaReclaimFixture = {
 }
 ```
 
-### Universal exit conditions (test these for every signal)
+### Exit conditions by setup (test the ones that apply to each signal)
 
 ```ts
-const profitTargetExit    = { entryPrice: 100, currentPrice: 111 }  // +11% > 10%
-const stopLossExit        = { entryPrice: 100, currentPrice:  94 }  // -6% < -5%
-const timeLimitExit       = { tradingDaysHeld: 21 }                  // > 20 days
-const meanReversionExit   = { zscore: -0.7 }                        // ≥ -0.8 (reverted)
-const trendSignalExit     = { price: 155, ema50: 160 }              // price < EMA50
+// Apply to every setup
+const profitTargetExit    = { entryPrice: 100, currentPrice: 110 }  // >= +10% (default target)
+const zle05ProfitTarget   = { entryPrice: 100, currentPrice: 105 }  // TREND_ZLE05 only: >= +5%
+const stopLossExit        = { entryPrice: 100, currentPrice:  95 }  // -5% (GTC stop order + cycle check)
+const timeLimitExit       = { tradingDaysHeld: 20 }                  // >= 20 trading days
+
+// Setup exits
+const meanReversionExit   = { zscore: -0.8 }                        // >= -0.8 (Kalman EXIT_LONG)
+const pullbackExit        = { price: 155, ema50: 160 }              // TREND_PULLBACK: price < EMA50
+const emaReclaimExit      = { price: 155, ema50: 160 }              // EMA_RECLAIM: price < EMA50
+const zle05Exit           = { zscore: 1.25 }                        // TREND_ZLE05: z >= 1.25 (EMA50 break is not an exit)
+const pullback3DayExit    = { price: 101, sma5: 100 }               // TREND_PULLBACK_3DAY: price > SMA5
+
+// MEAN_REVERSION protective stop (replaces the ATR trailing stop for this setup only)
+const meanReversionFloor  = { activationPct: 5, floorPct: 3, ratchetPp: 3 }  // stop = entry * (1 + max(3%, high% - 3pp))
 ```
 
 ---

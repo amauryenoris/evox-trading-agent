@@ -396,3 +396,55 @@ describe('selectStocksForAnalysis — SelectionStepError step isolation', () => 
     })
   })
 })
+
+const EXPECTED_SETUP_CRITERIA = [
+  ['TREND_PULLBACK_3DAY', 'Previous close above SMA200 (uptrend) with 3 consecutive lower daily closes ending at the previous close; price not above SMA5. No z-score, ADX, or MACD condition.'],
+  ['MEAN_REVERSION', 'Z-score <= -1.3 (or news-adjusted threshold); not taken when the regime is RANGING and ADX < 18.'],
+  ['TREND_PULLBACK', 'Uptrend structure (price > EMA50 > EMA200), z-score <= 0, EMA50 slope rising, ADX >= 20 (or ADX unavailable), MACD histogram > -2.0, momentum confirmed.'],
+  ['TREND_ZLE05', 'Uptrend structure (price > EMA50 > EMA200), 0 < z-score <= 1.25, EMA50 slope rising, ADX >= 18 (or >= 15 with MACD histogram > 0.25), MACD histogram positive.'],
+  ['EMA_RECLAIM', 'Price crossed above EMA50 from below (confirmed vs. prior day), z-score < 0, distance from EMA50 > 0.2%, momentum confirmed.'],
+] as const
+
+describe('selectStocksForAnalysis — setup criteria in the selection prompt', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    mockGetSelectionEvaluations.mockResolvedValue([])
+    mockGetStockSnapshots.mockResolvedValue([])
+    mockInsertSelectionDecision.mockReset()
+    mockMessagesCreate.mockReset()
+  })
+
+  async function sentSystemPrompt(): Promise<string> {
+    mockClaudeSelection(['SYM00'])
+    await selectStocksForAnalysis(manyPoolACandidates(12), ACCOUNT, NO_POSITIONS)
+    return mockMessagesCreate.mock.calls[0][0].system as string
+  }
+
+  it.each(EXPECTED_SETUP_CRITERIA)('sends the exact criteria line for %s', async (name, criteria) => {
+    // Arrange / Act
+    const system = await sentSystemPrompt()
+
+    // Assert
+    expect(system).toContain(`    * ${name}: ${criteria}`)
+  })
+
+  it('does not send the RSI < 45 or %B < 0.2 conditions', async () => {
+    // Arrange / Act
+    const system = await sentSystemPrompt()
+
+    // Assert
+    expect(system).not.toContain('RSI < 45')
+    expect(system).not.toContain('%B < 0.2')
+  })
+
+  it('keeps ACTIVE_SETUPS pinned to the expected names, order and criteria', async () => {
+    // Arrange
+    const { ACTIVE_SETUPS } = await import('../setups')
+
+    // Act
+    const actual = ACTIVE_SETUPS.map((s) => [s.name, s.criteria, s.active])
+
+    // Assert
+    expect(actual).toEqual(EXPECTED_SETUP_CRITERIA.map(([n, c]) => [n, c, true]))
+  })
+})

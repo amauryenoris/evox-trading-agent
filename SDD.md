@@ -260,9 +260,14 @@ Claude's `action` field in the response is **always overwritten to `'HOLD'`** by
 
 | Workflow | File | Schedule | Command |
 |----------|------|----------|---------|
-| Full agent cycle | `agent-cron.yml` | Hourly, 14–20 UTC (10am–4pm EDT / 9am–3pm EST), Mon–Fri | `npm run cycle` |
-| Exit-only sweep | `agent-exits.yml` | 13:30 UTC (9:30am EDT / 8:30am EST) + 19:55 UTC (3:55pm EDT / 2:55pm EST), Mon–Fri | `npm run exit-only` |
-| Weekly report | `weekly-report.yml` | Friday 21:00 UTC (5pm EDT / 4pm EST) | `npm run report` |
+| Trading Agent Cycle | `agent-cron.yml` | `0 14-20 * * 1-5` — hourly 14–20 UTC (10am–4pm EDT / 9am–3pm EST) | `npm run cycle` |
+| Exit Check — Open and Close | `agent-exits.yml` | `30 13 * * 1-5` (9:30am EDT / 8:30am EST) and `55 19 * * 1-5` (3:55pm EDT / 2:55pm EST) | `npm run exit-only` |
+| Position Health Check | `position-health.yml` | `45 13 * * 1-5` (9:45am EDT / 8:45am EST) and `10 20 * * 1-5` (4:10pm EDT / 3:10pm EST) | `npm run health-check` |
+| Daily Bars Sync | `daily-bars-sync.yml` | `0 21 * * 1-5` (5:00pm EDT / 4:00pm EST) | `npm run daily-bars-sync` |
+| Earnings Calendar Sync | `earnings-calendar-sync.yml` | `17 11 * * 1-5` (7:17am EDT / 6:17am EST) | `npm run earnings-calendar-sync` |
+| Security Audit | `security-audit.yml` | `0 12 * * 1-5` (8:00am EDT / 7:00am EST) | `npm audit` (level `critical` by default) |
+| Weekly Trading Report | `weekly-report.yml` | `0 21 * * 5` — Fridays (5pm EDT / 4pm EST) | `npm run report` |
+| PR Review | `pr-review.yml` | No cron; pull request opened, synchronize or reopened on `main` | `tsc --noEmit`, `vitest run`, Protected Zone audit, Claude review, PR comment and label |
 
 Scheduled workflows can be disabled by GitHub after 60 days without repo activity; check Actions if the repo goes quiet.
 

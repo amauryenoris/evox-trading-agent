@@ -99,7 +99,7 @@ if (indicators.kalman) {
 ## Signal type literal union
 
 ```typescript
-type SignalType = 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_ZLE05' | 'EMA_RECLAIM'
+type SignalType = 'MEAN_REVERSION' | 'TREND_PULLBACK' | 'TREND_PULLBACK_3DAY' | 'TREND_ZLE05' | 'EMA_RECLAIM'
 ```
 
 Use this instead of `string` whenever referring to a signal type.
