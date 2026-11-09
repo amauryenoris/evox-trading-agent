@@ -281,13 +281,13 @@ All workflows run with Node 24 and `npm ci`. `npm audit` runs only in `security-
 Decisions are persisted to `agent_log` only **after the full symbol loop completes** (`appendAgentLogEntries` at the end of `runAgentCycle`). If the process crashes (OOM, Vercel timeout, unhandled rejection) mid-cycle, all decisions from that cycle are lost. Fix: persist per-symbol inside the loop.
 
 ### IOC fill uncertainty
-Orders are submitted as IOC (Immediate-or-Cancel) at the ask price. The synchronous Alpaca response is not trusted: `resolveIocFinalState` re-fetches the order up to 4 times (1500 ms apart) and forces a cancel if it is still unresolved (`claude-agent.ts:945-982`). `orderExecuted` is set to `true` only when at least one share filled; a 0-fill IOC is logged as `IOC_NOT_FILLED` and the action stays `HOLD` (`claude-agent.ts:2227-2243`).
+Orders are submitted as IOC (Immediate-or-Cancel) at the ask price. The synchronous Alpaca response is not trusted: `resolveIocFinalState` re-fetches the order up to 4 times (1500 ms apart) and forces a cancel if it is still unresolved (`resolveIocFinalState` in `claude-agent.ts`). `orderExecuted` is set to `true` only when at least one share filled; a 0-fill IOC is logged as `IOC_NOT_FILLED` and the action stays `HOLD` (the `IOC_NOT_FILLED` branch of the buy path in `runAgentCycle`, `claude-agent.ts`).
 
 ### Trailing stop context
 `highSinceEntry`, `trailingStop`, and `trailingActivated` are stored in `open_position_contexts`. If a row is deleted mid-position (e.g., manual cleanup), the trailing stop resets to unactivated state.
 
 ### Position rotation mutation
-In rotation mode, the local `positions` array is mutated (`positions.splice(...)`) after `closePosition` returns; a thrown close error skips it (`claude-agent.ts:1612-1624`). `openPositionsCount` is set once from `positions.length` (`:1468`) and the rotation splice does not decrement it, so the max-positions gate (`:2100`) and the ranking slot count (`:1483`) still count the rotated-out position for the rest of the cycle.
+In rotation mode, the local `positions` array is mutated (`positions.splice(...)`) after `closePosition` returns; a thrown close error skips it (the rotation block of `runAgentCycle` in `claude-agent.ts`). `openPositionsCount` is set once from `positions.length` (`let openPositionsCount = positions.length` in `runAgentCycle`) and the rotation splice does not decrement it, so the max-positions gate (`if (openPositionsCount >= maxPositions)`) and the ranking slot count (`slotsAvailable = maxPositions - openPositionsCount`) still count the rotated-out position for the rest of the cycle.
 
 ### Legacy positions
 Positions entered before `signalType` was recorded have `signal_type = null`. The exit engine applies only profit target and time stop to these — no z-score or EMA exit is applied (intentional).

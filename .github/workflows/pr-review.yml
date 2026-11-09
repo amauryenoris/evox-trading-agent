@@ -79,6 +79,7 @@ jobs:
             "src/lib/watchlist-monitor.ts"
             "src/lib/learning.ts"
             "src/lib/prompt-builder.ts"
+            "src/lib/exit-cooldown.ts"
           )
           CHANGED=$(git diff "origin/${{ github.base_ref }}...HEAD" --name-only 2>/dev/null || true)
           FOUND=""

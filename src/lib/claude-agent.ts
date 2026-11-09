@@ -204,6 +204,9 @@ export async function enforceExitRules(
     if (pnlPct >= profitTargetPct) {
       exitReason = `Exit rule: profit target reached (${(pnlPct * 100).toFixed(1)}% >= ${(profitTargetPct * 100).toFixed(0)}%)`
     }
+    if (!exitReason && !Number.isFinite(daysOpen)) {
+      console.warn('[TIME_STOP_SKIPPED_INVALID_TIMESTAMP] symbol=' + position.symbol + ' buyTimestamp=' + ctx.buyTimestamp)
+    }
     if (!exitReason && daysOpen >= 20) {
       exitReason = `Exit rule: 20-day time stop (${daysOpen} trading days open)`
     }

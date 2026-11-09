@@ -69,7 +69,7 @@ describe('self_flagged_disqualifying_risk persistence guard', () => {
 })
 
 describe('decision.action HOLD override is independent of self_flagged_disqualifying_risk', () => {
-  // Replicates claude-agent.ts:1652's unconditional override — this test
+  // Replicates claude-agent.ts's unconditional `decision.action = 'HOLD'` override — this test
   // documents that the override is a plain assignment with no branching on
   // any decision field, so a new field cannot influence it.
   function forceHold(decision: AgentDecision): AgentDecision {

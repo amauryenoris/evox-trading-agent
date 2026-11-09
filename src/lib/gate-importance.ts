@@ -7,7 +7,7 @@ export const DIMENSION_IMPORTANCE: Record<string, Record<string, GateImportance>
   TREND_PULLBACK: { adx: 'hard-gated', macd: 'hard-gated', z: 'hard-gated', regime: 'not-gated' },
   TREND_ZLE05:    { adx: 'hard-gated', macd: 'hard-gated', z: 'hard-gated', regime: 'not-gated' },
   EMA_RECLAIM:    { adx: 'not-gated', macd: 'not-gated', z: 'hard-gated', regime: 'not-gated' },
-  // Derived directly from TREND_PULLBACK_3DAY's own entry condition (claude-agent.ts:1711-1728:
+  // Derived directly from TREND_PULLBACK_3DAY's own entry condition (claude-agent.ts trendPullback3DayUptrendOk and trendPullback3DayStreakOk:
   // prevClose > sma200 + 3 consecutive lower closes) — not borrowed from TREND_ZLE05 or any other
   // setup. adx/macd/z: the entry gate never reads any of them, so not-gated. regime: the entry
   // gate never reads indicators.marketRegime either (only checks sma200 directly) — same as its
