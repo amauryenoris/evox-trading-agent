@@ -81,6 +81,8 @@ jobs:
             "src/lib/prompt-builder.ts"
             "src/lib/exit-cooldown.ts"
             "src/lib/execution-gates.ts"
+            "src/lib/signal-rotation.ts"
+            "src/lib/macro-bars-staleness.ts"
           )
           CHANGED=$(git diff "origin/${{ github.base_ref }}...HEAD" --name-only 2>/dev/null || true)
           FOUND=""

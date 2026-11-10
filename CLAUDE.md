@@ -86,6 +86,7 @@ reference confidence thresholds by regime, use language like "prohibits" or "blo
 | `protective-stop.ts` | Profit target, profit-floor and trailing-activation settings and protective-stop calculations (pure) |
 | `exit-cooldown.ts` | Trading-day count, exit-reason mapping and cooldown date rules (pure helpers used by `claude-agent.ts`) |
 | `execution-gates.ts` | Liquidity and trading-hours gate helpers (pure; clock and `Intl` are global) |
+| `signal-rotation.ts` | Legacy signal classifier (RANGING/TRENDING criteria) and position-rotation chooser — used only for the `[SIGNAL]` log and the rotation trigger, NOT the live setup detection |
 | `run-cycle.ts` | Exit-only runner — calls `enforceExitRules()` without entry analysis |
 | `indicators.ts` | Kalman filter, RSI, MACD, Bollinger Bands, ADX, ATR, EMA calculations |
 | `alpaca.ts` | Alpaca API client — orders, positions, bars, quotes, news |
@@ -224,6 +225,7 @@ Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 1
 | `src/lib/prompt-builder.ts` | Builds the exact text Claude receives — changes alter analyst input |
 | `src/lib/exit-cooldown.ts` | Exit reason mapping and cooldown rules — decides when a symbol can be re-entered |
 | `src/lib/execution-gates.ts` | Entry gates (liquidity, trading hours) — decide whether a BUY may be placed |
+| `src/lib/signal-rotation.ts` | Rotation trigger and rotation candidate choice — can close a live position |
 | `.env` / `.env.local` | Secrets and broker config |
 | `vercel.json` | Deployment config |
 | Any DB migration | Supabase schema changes |

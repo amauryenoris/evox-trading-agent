@@ -16,7 +16,7 @@ export default defineConfig({
     },
     coverage: {
       provider: 'v8',
-      include: ['src/lib/db.ts', 'src/lib/claude-agent.ts', 'src/lib/prompt-builder.ts', 'src/lib/exit-cooldown.ts', 'src/lib/execution-gates.ts'],
+      include: ['src/lib/db.ts', 'src/lib/claude-agent.ts', 'src/lib/prompt-builder.ts', 'src/lib/exit-cooldown.ts', 'src/lib/execution-gates.ts', 'src/lib/signal-rotation.ts', 'src/lib/macro-bars-staleness.ts'],
     },
   },
 })
