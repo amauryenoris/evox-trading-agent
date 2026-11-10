@@ -25,7 +25,8 @@ import { calculateAllIndicators } from './indicators'
 import { getAdxBucket, getMacdBucket, getAtrBucket, getZBucket, computeSpxSnapshot } from './state-fingerprint'
 import { computeSectorRotation, formatSectorRotationContext } from './sector-rotation'
 import { generateDailyBriefing, computeVixyChangePct } from './market-daily-briefing'
-import { isMacroBarsStale } from './macro-bars-staleness'
+import { guardMacroBars } from './macro-bars-staleness'
+import { checkLiquidity, checkTradingHours } from './execution-gates'
 import { appendAgentLogEntries } from './agent-log'
 import {
   detectClosedPositions,
@@ -68,7 +69,6 @@ import type {
   AgentDecision,
   AgentLogEntry,
   AlpacaAccount,
-  AlpacaBar,
   AlpacaOrder,
   AlpacaPosition,
   FillAttempt,
@@ -740,26 +740,6 @@ async function callClaudeWithRetry(
 // EXECUTION GATES
 // ============================================================
 
-function checkLiquidity(prevDayVolume: number): boolean {
-  return prevDayVolume >= 1_000_000
-}
-
-function checkTradingHours(): boolean {
-  const now = new Date()
-  const etFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false,
-  })
-  const parts = etFormatter.formatToParts(now)
-  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
-  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
-  const totalMinutes = hour * 60 + minute
-  // 9:45 AM ET = 585 minutes, 3:30 PM ET = 930 minutes
-  return totalMinutes >= 585 && totalMinutes <= 930
-}
-
 async function checkOvertradingLimit(): Promise<boolean> {
   const count = await getTodayBuyExecutions()
   return count < 5
@@ -1016,16 +996,6 @@ export async function executeIocWithRemainderRetry(
     attempts,
     firstOrder,
   }
-}
-
-function guardMacroBars(symbol: string, bars: AlpacaBar[]): AlpacaBar[] {
-  if (!isMacroBarsStale(bars, new Date())) return bars
-  const lastBar = bars.length > 0 ? bars[bars.length - 1].t.split('T')[0] : 'none'
-  const ageDays = bars.length > 0
-    ? Math.floor((Date.now() - new Date(bars[bars.length - 1].t).getTime()) / (24 * 60 * 60 * 1000))
-    : -1
-  console.warn(`[STALE_MACRO_BARS] symbol=${symbol} lastBar=${lastBar} ageDays=${ageDays}`)
-  return []
 }
 
 export async function runAgentCycle(): Promise<AgentCycleResult> {
