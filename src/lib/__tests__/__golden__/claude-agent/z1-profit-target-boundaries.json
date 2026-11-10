@@ -1,0 +1,204 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0990, zScore=-1.000, signalType=TREND_PULLBACK, d",
+        "symbol": "N1"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0490, zScore=-1.000, signalType=TREND_ZLE05, days",
+        "symbol": "Z1"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "SELL",
+            "error": null,
+            "orderExecuted": true,
+            "quantity": 0,
+            "reasoningPrefix": "Exit rule: profit target reached (10.0% >= 10%)",
+            "symbol": "N2"
+          },
+          {
+            "action": "SELL",
+            "error": null,
+            "orderExecuted": true,
+            "quantity": 0,
+            "reasoningPrefix": "Exit rule: profit target reached (5.0% >= 5%)",
+            "symbol": "Z2"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "db.getAllOpenPositionContexts {}",
+    "getMacroNews {}",
+    "news.layer {\"symbols\":[]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "getBars {\"symbol\":\"N1\"}",
+    "getBars {\"symbol\":\"N2\"}",
+    "getBars {\"symbol\":\"Z1\"}",
+    "getBars {\"symbol\":\"Z2\"}",
+    "db.getAllOpenPositionContexts {}",
+    "cancelOrder {\"orderId\":\"stop-N1\"}",
+    "submitStopLimitOrder {\"limitPrice\":106.36,\"qty\":10,\"side\":\"sell\",\"stopPrice\":106.9,\"symbol\":\"N1\",\"type\":\"stop_limit\"}",
+    "db.updatePositionContext {\"patch\":{\"stopOrderId\":null,\"trailingStopOrderId\":\"stoplimit-1\"},\"symbol\":\"N1\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":109.9,\"trailingActivated\":true,\"trailingStop\":106.9},\"symbol\":\"N1\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":110,\"trailingActivated\":true,\"trailingStop\":107},\"symbol\":\"N2\"}",
+    "closePosition {\"side\":\"sell\",\"symbol\":\"N2\",\"type\":\"market_close\"}",
+    "getLatestSellOrder {\"symbol\":\"N2\"}",
+    "learning.evaluateClosedTrade {\"sellPrice\":110,\"symbol\":\"N2\"}",
+    "db.deleteOpenPositionContext {\"symbol\":\"N2\"}",
+    "cancelOrder {\"orderId\":\"stop-Z1\"}",
+    "submitStopLimitOrder {\"limitPrice\":102.38,\"qty\":10,\"side\":\"sell\",\"stopPrice\":102.9,\"symbol\":\"Z1\",\"type\":\"stop_limit\"}",
+    "db.updatePositionContext {\"patch\":{\"stopOrderId\":null,\"trailingStopOrderId\":\"stoplimit-2\"},\"symbol\":\"Z1\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":104.9,\"trailingActivated\":true,\"trailingStop\":102.9},\"symbol\":\"Z1\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":105,\"trailingActivated\":true,\"trailingStop\":103},\"symbol\":\"Z2\"}",
+    "closePosition {\"side\":\"sell\",\"symbol\":\"Z2\",\"type\":\"market_close\"}",
+    "getLatestSellOrder {\"symbol\":\"Z2\"}",
+    "learning.evaluateClosedTrade {\"sellPrice\":105,\"symbol\":\"Z2\"}",
+    "db.deleteOpenPositionContext {\"symbol\":\"Z2\"}",
+    "cooldown.upsert {\"reason\":\"PROFIT_TARGET\",\"symbol\":\"N2\",\"until\":\"<ts>\"}",
+    "cooldown.upsert {\"reason\":\"PROFIT_TARGET\",\"symbol\":\"Z2\",\"until\":\"<ts>\"}",
+    "db.getOpenPositionContexts {}",
+    "cooldown.getActive {}",
+    "db.getTodayBuyExecutions {}",
+    "cooldown.getActive {}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "stopOrderId": null,
+        "trailingStopOrderId": "stoplimit-1"
+      },
+      "symbol": "N1"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 109.9,
+        "trailingActivated": true,
+        "trailingStop": 106.9
+      },
+      "symbol": "N1"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 110,
+        "trailingActivated": true,
+        "trailingStop": 107
+      },
+      "symbol": "N2"
+    },
+    {
+      "op": "db.deleteOpenPositionContext",
+      "symbol": "N2"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "stopOrderId": null,
+        "trailingStopOrderId": "stoplimit-2"
+      },
+      "symbol": "Z1"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 104.9,
+        "trailingActivated": true,
+        "trailingStop": 102.9
+      },
+      "symbol": "Z1"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 105,
+        "trailingActivated": true,
+        "trailingStop": 103
+      },
+      "symbol": "Z2"
+    },
+    {
+      "op": "db.deleteOpenPositionContext",
+      "symbol": "Z2"
+    }
+  ],
+  "decisions": [
+    {
+      "action": "SELL",
+      "error": null,
+      "orderExecuted": true,
+      "quantity": 0,
+      "symbol": "N2"
+    },
+    {
+      "action": "SELL",
+      "error": null,
+      "orderExecuted": true,
+      "quantity": 0,
+      "symbol": "Z2"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": [
+    {
+      "qty": 10,
+      "side": "sell",
+      "symbol": "N1",
+      "type": "stop_limit"
+    },
+    {
+      "qty": null,
+      "side": "sell",
+      "symbol": "N2",
+      "type": "market_close"
+    },
+    {
+      "qty": 10,
+      "side": "sell",
+      "symbol": "Z1",
+      "type": "stop_limit"
+    },
+    {
+      "qty": null,
+      "side": "sell",
+      "symbol": "Z2",
+      "type": "market_close"
+    }
+  ]
+}

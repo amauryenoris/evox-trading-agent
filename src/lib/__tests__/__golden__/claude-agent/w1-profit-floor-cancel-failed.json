@@ -1,0 +1,73 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "trailing_stop_naked",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: profit-floor stop CANCEL FAILED for order stop-HLD — new stop $103.00 not subm",
+        "symbol": "HLD"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0500, zScore=-1.000, signalType=MEAN_REVERSION, d",
+        "symbol": "HLD"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "entries": []
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "db.getAllOpenPositionContexts {}",
+    "getMacroNews {}",
+    "news.layer {\"symbols\":[]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "getBars {\"symbol\":\"HLD\"}",
+    "db.getAllOpenPositionContexts {}",
+    "cancelOrder {\"orderId\":\"stop-HLD\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":106},\"symbol\":\"HLD\"}",
+    "db.getOpenPositionContexts {}",
+    "cooldown.getActive {}",
+    "db.getTodayBuyExecutions {}",
+    "cooldown.getActive {}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 106
+      },
+      "symbol": "HLD"
+    }
+  ],
+  "decisions": [],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": []
+}

@@ -12,6 +12,7 @@ export const PINS = {
 export interface Quote { bid: number; ask: number; spread: number; spreadBps: number; fresh: boolean }
 export interface Call { fn: string; args: Record<string, unknown> }
 export type FillMode = 'full' | 'zero'
+export interface SellOrderScript { id: string; filledAvgPrice: string | null; filledAt: string | null }
 
 export interface WorldConfig {
   marketOpen: boolean
@@ -29,6 +30,12 @@ export interface WorldConfig {
   earnings: Record<string, { reportDate: string; session: 'BMO' | 'AMC' | 'UNKNOWN' } | null>
   buysToday: number
   activeCooldowns: Array<{ symbol: string; exit_reason: string; cooldown_until: string }>
+  sellOrders: Record<string, SellOrderScript>
+  evaluatedTrades: string[]
+  openOrders: AlpacaOrder[]
+  filledOrders: AlpacaOrder[]
+  cancelErrors: Record<string, string>
+  stopErrors: Record<string, string>
 }
 
 const MACRO_SYMBOLS = new Set(['SPY', 'GDX', 'XLE', 'XLK', 'VIXY'])
@@ -61,6 +68,7 @@ function defaults(): WorldConfig {
     marketOpen: true, account: defaultAccount(), positions: [], contexts: [], indicators: {},
     watchlist: [], autoEntry: [], quotes: {}, claude: () => claudeJson(0.6), risk: { allowed: true },
     fill: {}, orderError: {}, earnings: {}, buysToday: 0, activeCooldowns: [],
+    sellOrders: {}, evaluatedTrades: [], openOrders: [], filledOrders: [], cancelErrors: {}, stopErrors: {},
   }
 }
 
@@ -148,17 +156,32 @@ function makeOrderApi({ s, rec }: Ctx) {
     },
     submitStopOrder: async (symbol: string, qty: number, stopPrice: number) => {
       rec('submitStopOrder', { symbol, qty, stopPrice, side: 'sell', type: 'stop' })
+      if (s.cfg.stopErrors[symbol]) throw new Error(s.cfg.stopErrors[symbol])
       return makeOrder(nextId('stop'), symbol, 'sell', qty, 'new', 0, null)
     },
     submitStopLimitOrder: async (symbol: string, qty: number, stopPrice: number, limitPrice: number) => {
       rec('submitStopLimitOrder', { symbol, qty, stopPrice, limitPrice, side: 'sell', type: 'stop_limit' })
       return makeOrder(nextId('stoplimit'), symbol, 'sell', qty, 'new', 0, limitPrice)
     },
-    cancelOrder: async (orderId: string) => { rec('cancelOrder', { orderId }) },
+    cancelOrder: async (orderId: string) => {
+      rec('cancelOrder', { orderId })
+      if (s.cfg.cancelErrors[orderId]) throw new Error(s.cfg.cancelErrors[orderId])
+    },
     getOrder: async (orderId: string) => { rec('getOrder', { orderId }); return s.orders.get(orderId) as AlpacaOrder },
-    getOrders: async (status: string) => { rec('getOrders', { status }); return [] as AlpacaOrder[] },
+    getOrders: async (status: string) => {
+      rec('getOrders', { status })
+      if (status === 'open') return s.cfg.openOrders
+      if (status === 'filled') return s.cfg.filledOrders
+      return [] as AlpacaOrder[]
+    },
     closePosition: async (symbol: string) => { rec('closePosition', { symbol, side: 'sell', type: 'market_close' }) },
-    getLatestSellOrder: async (symbol: string) => { rec('getLatestSellOrder', { symbol }); return null },
+    getLatestSellOrder: async (symbol: string) => {
+      rec('getLatestSellOrder', { symbol })
+      const script = s.cfg.sellOrders[symbol]
+      if (!script) return null
+      const order = makeOrder(script.id, symbol, 'sell', 10, 'filled', script.filledAvgPrice === null ? 0 : 10, script.filledAvgPrice === null ? null : Number(script.filledAvgPrice))
+      return { ...order, filled_at: script.filledAt, filled_avg_price: script.filledAvgPrice }
+    },
   }
 }
 
@@ -167,7 +190,7 @@ function makeDbReads({ s, rec }: Ctx) {
     getAllOpenPositionContexts: async () => { rec('db.getAllOpenPositionContexts'); return s.cfg.contexts },
     getOpenPositionContexts: async () => { rec('db.getOpenPositionContexts'); return s.cfg.contexts },
     getTodayBuyExecutions: async () => { rec('db.getTodayBuyExecutions'); return s.cfg.buysToday },
-    tradeEvaluationExists: async (symbol: string, buyTimestamp: string) => { rec('db.tradeEvaluationExists', { symbol, buyTimestamp }); return false },
+    tradeEvaluationExists: async (symbol: string, buyTimestamp: string) => { rec('db.tradeEvaluationExists', { symbol, buyTimestamp }); return s.cfg.evaluatedTrades.includes(symbol) },
     getActiveNearMissForSymbol: async () => null,
     getAgentLog: async () => [],
     getTradeEvaluations: async () => [],
