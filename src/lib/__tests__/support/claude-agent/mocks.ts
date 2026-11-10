@@ -30,7 +30,15 @@ vi.mock('../../../agent-log', () => ({
   },
 }))
 
-vi.mock('../../../peak-high', async (orig) => ({ ...(await orig<typeof import('../../../peak-high')>()), getPeakHighSinceLastCheck: async () => null }))
+vi.mock('../../../peak-high', async (orig) => ({
+  ...(await orig<typeof import('../../../peak-high')>()),
+  getPeakHighSinceLastCheck: async (symbol: string) => w.cfg.peakHighs[symbol] ?? null,
+}))
+
+vi.mock('../../../exit-cooldown', async (orig) => {
+  const actual = await orig<typeof import('../../../exit-cooldown')>()
+  return { ...actual, toExitReason: (reason?: string | null) => (w.cfg.forceUnknownExitReason ? 'UNKNOWN' : actual.toExitReason(reason)) }
+})
 
 vi.mock('../../../learning', async (orig) => ({
   ...(await orig<typeof import('../../../learning')>()),

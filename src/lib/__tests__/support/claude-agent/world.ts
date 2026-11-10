@@ -12,6 +12,7 @@ export const PINS = {
 export interface Quote { bid: number; ask: number; spread: number; spreadBps: number; fresh: boolean }
 export interface Call { fn: string; args: Record<string, unknown> }
 export type FillMode = 'full' | 'zero'
+export type FillStep = { filled: number } | { unfilled: number }
 export interface SellOrderScript { id: string; filledAvgPrice: string | null; filledAt: string | null }
 
 export interface WorldConfig {
@@ -36,6 +37,12 @@ export interface WorldConfig {
   filledOrders: AlpacaOrder[]
   cancelErrors: Record<string, string>
   stopErrors: Record<string, string>
+  fillPlan: Record<string, FillStep[]>
+  quoteSequence: Record<string, Quote[]>
+  peakHighs: Record<string, number>
+  closeErrors: Record<string, string>
+  contextReadFailures: number
+  forceUnknownExitReason: boolean
 }
 
 const MACRO_SYMBOLS = new Set(['SPY', 'GDX', 'XLE', 'XLK', 'VIXY'])
@@ -69,10 +76,11 @@ function defaults(): WorldConfig {
     watchlist: [], autoEntry: [], quotes: {}, claude: () => claudeJson(0.6), risk: { allowed: true },
     fill: {}, orderError: {}, earnings: {}, buysToday: 0, activeCooldowns: [],
     sellOrders: {}, evaluatedTrades: [], openOrders: [], filledOrders: [], cancelErrors: {}, stopErrors: {},
+    fillPlan: {}, quoteSequence: {}, peakHighs: {}, closeErrors: {}, contextReadFailures: 0, forceUnknownExitReason: false,
   }
 }
 
-function makeOrder(id: string, symbol: string, side: string, qty: number, status: string, filledQty: number, price: number | null): AlpacaOrder {
+export function makeOrder(id: string, symbol: string, side: string, qty: number, status: string, filledQty: number, price: number | null): AlpacaOrder {
   const iso = PINS.nowIso
   return {
     id, client_order_id: `client-${id}`, created_at: iso, updated_at: iso, submitted_at: iso,
@@ -103,12 +111,15 @@ interface State {
   orders: Map<string, AlpacaOrder>
   barOwner: WeakMap<object, string>
   counter: { uuid: number; order: number }
+  limitCalls: Record<string, number>
+  quoteCalls: Record<string, number>
+  contextReads: number
 }
 
 interface Ctx { s: State; rec: (fn: string, args?: Record<string, unknown>) => void }
 
 function makeCtx(): Ctx {
-  const s: State = { cfg: defaults(), calls: [], prompts: [], orders: new Map(), barOwner: new WeakMap(), counter: { uuid: 0, order: 0 } }
+  const s: State = { cfg: defaults(), calls: [], prompts: [], orders: new Map(), barOwner: new WeakMap(), counter: { uuid: 0, order: 0 }, limitCalls: {}, quoteCalls: {}, contextReads: 0 }
   return { s, rec: (fn, args = {}) => { s.calls.push({ fn, args }) } }
 }
 
@@ -134,7 +145,13 @@ function makeMarketApi({ s, rec }: Ctx) {
       s.barOwner.set(bars, symbol)
       return bars
     },
-    getQuote: async (symbol: string) => { rec('getQuote', { symbol }); return s.cfg.quotes[symbol] ?? null },
+    getQuote: async (symbol: string) => {
+      rec('getQuote', { symbol })
+      const index = s.quoteCalls[symbol] ?? 0
+      s.quoteCalls[symbol] = index + 1
+      const scripted = s.cfg.quoteSequence[symbol]?.[index]
+      return scripted ?? s.cfg.quotes[symbol] ?? null
+    },
     getMarketMovers: async () => { rec('getMarketMovers'); return Array.from({ length: MOVER_COUNT }, (_, i) => `MOV${i}`) },
     getMacroNews: async () => { rec('getMacroNews'); return [] },
     getNewsForSymbols: async (symbols: string[]) => { rec('getNewsForSymbols', { symbols }); return [] },
@@ -149,6 +166,15 @@ function makeOrderApi({ s, rec }: Ctx) {
       rec('submitLimitOrder', { symbol, qty, side, limitPrice, type: 'limit' })
       if (s.cfg.orderError[symbol]) throw new Error(s.cfg.orderError[symbol])
       const id = nextId('order')
+      const callIndex = s.limitCalls[symbol] ?? 0
+      s.limitCalls[symbol] = callIndex + 1
+      const step = s.cfg.fillPlan[symbol]?.[callIndex]
+      if (step) {
+        const filledQty = 'filled' in step ? Math.min(step.filled, qty) : Math.max(qty - step.unfilled, 0)
+        const planned = makeOrder(id, symbol, side, qty, filledQty >= qty ? 'filled' : 'canceled', filledQty, limitPrice)
+        s.orders.set(id, planned)
+        return planned
+      }
       const isFull = (s.cfg.fill[symbol] ?? 'full') === 'full'
       const order = makeOrder(id, symbol, side, qty, isFull ? 'filled' : 'canceled', isFull ? qty : 0, limitPrice)
       s.orders.set(id, order)
@@ -174,7 +200,10 @@ function makeOrderApi({ s, rec }: Ctx) {
       if (status === 'filled') return s.cfg.filledOrders
       return [] as AlpacaOrder[]
     },
-    closePosition: async (symbol: string) => { rec('closePosition', { symbol, side: 'sell', type: 'market_close' }) },
+    closePosition: async (symbol: string) => {
+      rec('closePosition', { symbol, side: 'sell', type: 'market_close' })
+      if (s.cfg.closeErrors[symbol]) throw new Error(s.cfg.closeErrors[symbol])
+    },
     getLatestSellOrder: async (symbol: string) => {
       rec('getLatestSellOrder', { symbol })
       const script = s.cfg.sellOrders[symbol]
@@ -187,7 +216,11 @@ function makeOrderApi({ s, rec }: Ctx) {
 
 function makeDbReads({ s, rec }: Ctx) {
   return {
-    getAllOpenPositionContexts: async () => { rec('db.getAllOpenPositionContexts'); return s.cfg.contexts },
+    getAllOpenPositionContexts: async () => {
+      rec('db.getAllOpenPositionContexts')
+      if (s.contextReads++ < s.cfg.contextReadFailures) throw new Error('contexts unavailable')
+      return s.cfg.contexts
+    },
     getOpenPositionContexts: async () => { rec('db.getOpenPositionContexts'); return s.cfg.contexts },
     getTodayBuyExecutions: async () => { rec('db.getTodayBuyExecutions'); return s.cfg.buysToday },
     tradeEvaluationExists: async (symbol: string, buyTimestamp: string) => { rec('db.tradeEvaluationExists', { symbol, buyTimestamp }); return s.cfg.evaluatedTrades.includes(symbol) },
@@ -224,6 +257,9 @@ function resetState(s: State, overrides: Partial<WorldConfig>): void {
   s.prompts.length = 0
   s.orders.clear()
   s.counter = { uuid: 0, order: 0 }
+  s.limitCalls = {}
+  s.quoteCalls = {}
+  s.contextReads = 0
   s.cfg = { ...defaults(), ...overrides }
 }
 

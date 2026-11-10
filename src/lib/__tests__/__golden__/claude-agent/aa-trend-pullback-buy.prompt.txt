@@ -1,0 +1,84 @@
+CLAUDE CALL PARAMS {
+  "model": "claude-sonnet-4-6",
+  "maxTokens": 1024,
+  "paramKeys": [
+    "max_tokens",
+    "messages",
+    "model",
+    "system"
+  ],
+  "messageRoles": [
+    "user"
+  ],
+  "systemIsString": true,
+  "extraParams": {}
+}
+
+ANALYSIS REQUEST: AAA
+
+--- MACRO & MARKET CONTEXT (last 12h headlines) ---
+No major macro news in the last 12 hours.
+
+--- SECTOR ROTATION (20-day relative strength vs SPY) ---
+Gold/Mining (GDX): no data
+Energy (XLE): no data
+Technology (XLK): no data
+
+--- RECENT NEWS FOR AAA (last 24h) ---
+No recent news for this symbol in the last 24 hours.
+
+--- MARKET DATA ---
+Current Price: $100.00
+Volume: 2,000,000
+
+--- PRIMARY SIGNAL: KALMAN FILTER (E.P. Chan) ---
+Fair Value Estimate: $100.00
+Forecast Error e(t): -0.5000 (price is BELOW fair value)
+Error Std Dev Q(t): 1.0000
+Z-Score: -0.500
+Signal: NEUTRAL — no statistical edge detected
+
+--- MARKET REGIME ---
+ADX(14): 25.00 (TRANSITION — regime unclear)
+ATR(14) Percentile: 50% 
+Regime: TRENDING → Position size multiplier: 1.00x
+
+--- SECONDARY INDICATORS (context only — confirm Kalman signal, do not replace it) ---
+RSI(14): 50.00 (neutral)
+MACD: line=0.5000, signal=0.0000, histogram=0.5000 (BULLISH — momentum increasing)
+Bollinger Bands: upper=$110.00, middle=$100.00, lower=$90.00, %B=0.500 (mid-range)
+SMA50: $100.00 (0.0% — BELOW SMA50)
+SMA200: $100.00 (0.0% — BELOW SMA200)
+EMA50: $95.00 (price -4.80% from EMA50)
+EMA200: $90.00 — EMA50 > EMA200 (uptrend)
+
+--- PORTFOLIO STATE ---
+Total Equity: $100000.00
+Available Cash: $100000.00
+Buying Power: $400000.00
+Open Positions: 0/5
+Max Position Value Allowed: $10000.00
+
+--- CURRENT POSITION IN AAA ---
+No position — eligible for BUY
+
+--- RISK PARAMETERS ---
+Max Position Size: 10% of equity ($10000.00)
+Stop Loss: 5% below entry
+Max Simultaneous Positions: 5
+
+--- YOUR LEARNING HISTORY ---
+No closed trades for TREND_PULLBACK yet.
+This block informs; it never gates entries.
+
+--- ACTIVE SETUP TYPE ---
+The system detected a TREND_PULLBACK setup for this symbol.
+
+Setup context:
+TREND_PULLBACK: Price pulled back in an established uptrend.
+Edge: EMA50 > EMA200 (trend intact), z-score <= 0 (near fair value), ADX >= 20 (trend has strength), EMA50 slope rising.
+Key indicators: trend structure, pullback depth, momentum recovery.
+
+Your analysis should focus on whether the conditions supporting this specific setup are strong or weak.
+
+Analyze AAA and provide your trading decision as JSON.

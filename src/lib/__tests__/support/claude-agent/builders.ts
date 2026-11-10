@@ -58,3 +58,26 @@ export function context(symbol: string, overrides: Partial<OpenPositionContext> 
     ...overrides,
   }
 }
+
+// TREND_PULLBACK setup: uptrend structure, z <= 0, rising EMA50, ADX >= 20 and MACD histogram above the -2.0 floor.
+export function trendPullbackIndicators(overrides: Partial<TechnicalIndicators> = {}): TechnicalIndicators {
+  return makeIndicators({
+    currentPrice: 100, ema50: 95, ema200: 90, ema50Prev: 94, prevClose: 99,
+    kalman: kalman(-0.5), marketRegime: 'TRENDING', adx: 25, macd: { macdLine: 0.5, signalLine: 0, histogram: 0.5 },
+    ...overrides,
+  })
+}
+
+// TREND_ZLE05 setup: same uptrend, 0 < z <= 1.25, ADX >= 20 (the PULLBACK quality filter also applies, see scenario ad-2) and a positive histogram.
+export function trendZle05Indicators(overrides: Partial<TechnicalIndicators> = {}): TechnicalIndicators {
+  return trendPullbackIndicators({ kalman: kalman(0.5), adx: 22, ...overrides })
+}
+
+// EMA_RECLAIM setup: price above a rising EMA50 by more than 0.2% after a close at or below the previous EMA50, z < 0, no uptrend structure.
+export function emaReclaimIndicators(overrides: Partial<TechnicalIndicators> = {}): TechnicalIndicators {
+  return makeIndicators({
+    currentPrice: 100, ema50: 99.5, ema50Prev: 99.4, ema200: 105, prevClose: 99,
+    kalman: kalman(-0.2), marketRegime: 'TRENDING', adx: 25, macd: { macdLine: 0.5, signalLine: 0, histogram: 0.5 },
+    ...overrides,
+  })
+}

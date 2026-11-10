@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { pump, installHarness, world } from './support/claude-agent/harness'
 import { buildRecord, claudeCallAt, promptAt } from './support/claude-agent/record'
-import { context, kalman, makeIndicators, mrIndicators, position, quote, trend3DayIndicators } from './support/claude-agent/builders'
-import { PINS, claudeJson } from './support/claude-agent/world'
+import { context, emaReclaimIndicators, kalman, makeIndicators, mrIndicators, position, quote, trend3DayIndicators, trendPullbackIndicators, trendZle05Indicators } from './support/claude-agent/builders'
+import { PINS, claudeJson, makeOrder } from './support/claude-agent/world'
 import { runAgentCycle } from '../claude-agent'
 import type { AlpacaOrder } from '../types'
 
@@ -642,5 +642,320 @@ describe('orphaned positions and missing indicators', () => {
     expect(callsOf('db.insertAgentLogEntry').some((e) => e.error === 'exit_rules_skip')).toBe(true)
     expect(callsOf('closePosition')).toEqual([])
     await expect(record).toMatchFileSnapshot(`${GOLDEN}/z5-exit-rules-skip-no-kalman.json`)
+  })
+})
+
+const NO_CLAUDE_AND_NO_ORDER = () => {
+  expect(world.calls.some((c) => c.fn === 'claude.create')).toBe(false)
+  expect(world.calls.some((c) => c.fn === 'submitLimitOrder')).toBe(false)
+}
+
+function holdEntries() {
+  return world.calls.filter((c) => c.fn === 'db.insertAgentLogEntry' || c.fn === 'agentLog.append')
+}
+
+function holdsOf(result: Awaited<ReturnType<typeof runAgentCycle>>, symbol: string) {
+  return result.decisions.filter((d) => d.symbol === symbol)
+}
+
+describe('entries by setup', () => {
+  it('(aa) TREND_PULLBACK BUY: classification, Claude call, sizing, IOC, stop and context with the setup', async () => {
+    world.reset({
+      watchlist: [SYMBOL], indicators: { [SYMBOL]: trendPullbackIndicators() },
+      quotes: { [SYMBOL]: quote({ bid: 99.95, ask: 100 }) }, claude: () => claudeJson(0.7),
+    })
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.decision.action).toBe('BUY')
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('[TREND_PULLBACK_STATS] blockedMacd=0'))
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aa-trend-pullback-buy.json`)
+    await expect(`${callHeader()}\n\n${promptAt(world)?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/aa-trend-pullback-buy.prompt.txt`)
+  })
+
+  it('(ab) TREND_ZLE05 BUY: classification, Claude call, sizing, IOC, stop and context with the setup', async () => {
+    world.reset({
+      watchlist: [SYMBOL], indicators: { [SYMBOL]: trendZle05Indicators() },
+      quotes: { [SYMBOL]: quote({ bid: 99.95, ask: 100 }) }, claude: () => claudeJson(0.7),
+    })
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.decision.action).toBe('BUY')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ab-trend-zle05-buy.json`)
+    await expect(`${callHeader()}\n\n${promptAt(world)?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/ab-trend-zle05-buy.prompt.txt`)
+  })
+
+  it('(ac) EMA_RECLAIM BUY: the 0.75 setup size factor shows in the quantity and the context', async () => {
+    world.reset({
+      watchlist: [SYMBOL], indicators: { [SYMBOL]: emaReclaimIndicators() },
+      quotes: { [SYMBOL]: quote({ bid: 99.95, ask: 100 }) }, claude: () => claudeJson(0.7),
+    })
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.decision.action).toBe('BUY')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ac-ema-reclaim-buy.json`)
+    await expect(`${callHeader()}\n\n${promptAt(world)?.user}\n`).toMatchFileSnapshot(`${GOLDEN}/ac-ema-reclaim-buy.prompt.txt`)
+  })
+})
+
+describe('setup near-misses that end in HOLD', () => {
+  it('(ad-1) TREND_PULLBACK blocked by the MACD floor: generic no-setup HOLD, counted in the stats line, Claude not called', async () => {
+    world.reset({
+      watchlist: [SYMBOL],
+      indicators: { [SYMBOL]: trendPullbackIndicators({ macd: { macdLine: -2.5, signalLine: 0, histogram: -2.5 } }) },
+      quotes: { [SYMBOL]: quote({ bid: 99.95, ask: 100 }) },
+    })
+
+    const { record } = await runAndRecord()
+
+    NO_CLAUDE_AND_NO_ORDER()
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('[TREND_PULLBACK_BLOCKED_MACD] symbol=AAA'))
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('[TREND_PULLBACK_STATS] blockedMacd=1'))
+    expect(holdEntries().length).toBeGreaterThan(0)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ad1-trend-pullback-macd-floor-hold.json`)
+  })
+
+  it('(ad-2) QUIRK: a TREND_ZLE05 candidate with ADX 19 passes its own ADX gate (>= 18) but is held by the TREND_PULLBACK quality filter (>= 20)', async () => {
+    world.reset({
+      watchlist: [SYMBOL], indicators: { [SYMBOL]: trendZle05Indicators({ adx: 19 }) },
+      quotes: { [SYMBOL]: quote({ bid: 99.95, ask: 100 }) },
+    })
+
+    const { record, result } = await runAndRecord()
+
+    NO_CLAUDE_AND_NO_ORDER()
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('TREND_QUALITY_FAIL: adx=19.0 slope=ok')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ad2-trend-zle05-quality-fail-hold.json`)
+  })
+
+  it('(ad-3) EMA_RECLAIM_NEAR: cross detected but the distance is too small, HOLD without a Claude call', async () => {
+    world.reset({
+      watchlist: [SYMBOL],
+      indicators: { [SYMBOL]: emaReclaimIndicators({ ema50: 99.9, ema50Prev: 99.8 }) },
+      quotes: { [SYMBOL]: quote({ bid: 99.95, ask: 100 }) },
+    })
+
+    const { record, result } = await runAndRecord()
+
+    NO_CLAUDE_AND_NO_ORDER()
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('EMA_RECLAIM_NEAR: conditions not met')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ad3-ema-reclaim-near-hold.json`)
+  })
+})
+
+describe('order execution: partial fills and stop-submit failure', () => {
+  const mrEntry = (overrides: Parameters<typeof world.reset>[0] = {}) => ({
+    watchlist: [SYMBOL], indicators: { [SYMBOL]: mrIndicators() }, quotes: { [SYMBOL]: quote() }, claude: () => claudeJson(0.32),
+    ...overrides,
+  })
+
+  it('(ae) partial fill, remainder inside the drift and size gates, second order fills: weighted average price, fillAttempts and a stop for the filled total', async () => {
+    world.reset(mrEntry({
+      fillPlan: { [SYMBOL]: [{ filled: 60 }, { filled: 40 }] },
+      quoteSequence: { [SYMBOL]: [quote(), quote({ bid: 50, ask: 50.05 })] },
+    }))
+
+    const { record, result } = await runAndRecord()
+
+    const limitOrders = callsOf('submitLimitOrder')
+    expect(limitOrders.map((o) => o.qty)).toEqual([100, 40])
+    expect(limitOrders.map((o) => o.limitPrice)).toEqual([50, 50.05])
+    expect(callsOf('submitStopOrder')).toEqual([{ symbol: SYMBOL, qty: 100, stopPrice: 47.5, side: 'sell', type: 'stop' }])
+    expect(holdsOf(result, SYMBOL)[0]?.decision.quantity).toBe(100)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ae-ioc-partial-fill-remainder-retry.json`)
+  })
+
+  it('(af-1) partial fill, remainder retry skipped because the ask drifted above the limit: stop covers only the filled quantity', async () => {
+    world.reset(mrEntry({
+      fillPlan: { [SYMBOL]: [{ filled: 60 }] },
+      quoteSequence: { [SYMBOL]: [quote(), quote({ bid: 50.45, ask: 50.5 })] },
+    }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitLimitOrder')).toHaveLength(1)
+    expect(callsOf('submitStopOrder')).toEqual([{ symbol: SYMBOL, qty: 60, stopPrice: 47.5, side: 'sell', type: 'stop' }])
+    expect(holdsOf(result, SYMBOL)[0]?.decision.quantity).toBe(60)
+    expect(console.log).toHaveBeenCalledWith(`[ORDER] ${SYMBOL} IOC_PARTIAL_FILL: requested 100, filled 60`)
+    expect(console.log).toHaveBeenCalledWith(`[IOC_RETRY] ${SYMBOL} stopping remainder retries — gate check failed (remainder=40)`)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/af1-ioc-partial-fill-drift-skip.json`)
+  })
+
+  it('(af-2) partial fill, remainder retry skipped because the remainder is below the USD minimum: stop covers only the filled quantity', async () => {
+    world.reset(mrEntry({ fillPlan: { [SYMBOL]: [{ unfilled: 2 }] } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitLimitOrder')).toHaveLength(1)
+    expect(callsOf('submitStopOrder')).toEqual([{ symbol: SYMBOL, qty: 98, stopPrice: 47.5, side: 'sell', type: 'stop' }])
+    expect(holdsOf(result, SYMBOL)[0]?.decision.quantity).toBe(98)
+    expect(console.log).toHaveBeenCalledWith(`[ORDER] ${SYMBOL} IOC_PARTIAL_FILL: requested 100, filled 98`)
+    expect(console.log).toHaveBeenCalledWith(`[IOC_RETRY] ${SYMBOL} stopping remainder retries — gate check failed (remainder=2)`)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/af2-ioc-partial-fill-remainder-too-small.json`)
+  })
+
+  it('(ag) QUIRK: the BUY fills but the GTC stop fails twice; the position is left unprotected with only STOP_SUBMIT_FAILED in the error field and the context saved without a stop id', async () => {
+    world.reset(mrEntry({ stopErrors: { [SYMBOL]: 'stop rejected' } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitStopOrder')).toHaveLength(2)
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('STOP_SUBMIT_FAILED: stop rejected')
+    expect(holdsOf(result, SYMBOL)[0]?.orderExecuted).toBe(true)
+    expect(callsOf('db.saveOpenPositionContext')).toHaveLength(1)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ag-stop-submit-failed-after-buy.json`)
+  })
+})
+
+describe('skips in the main loop', () => {
+  it('(ah) a blacklisted symbol, a symbol with an open position and a symbol without cached indicators are skipped; only the last one is logged as a HOLD', async () => {
+    world.reset({
+      watchlist: ['SQQQ', HELD, 'NOIND'],
+      positions: [heldAt(101, '0.01')],
+      contexts: [context(HELD, { signalType: 'TREND_PULLBACK' })],
+      indicators: { [HELD]: heldIndicators(-1), SQQQ: mrIndicators() },
+      quotes: { SQQQ: quote() },
+    })
+
+    const { record, result } = await runAndRecord()
+
+    NO_CLAUDE_AND_NO_ORDER()
+    expect(callsOf('closePosition')).toEqual([])
+    expect(result.decisions.filter((d) => d.symbol === 'SQQQ')).toEqual([])
+    expect(console.log).toHaveBeenCalledWith('[AGENT] SQQQ skipped — blacklisted instrument')
+    expect(console.log).toHaveBeenCalledWith(`[AGENT] ${HELD} skipped — open position, handled by enforceExitRules`)
+    expect(result.decisions.filter((d) => d.symbol === 'NOIND').map((d) => d.error)).toEqual(['Skipped: no indicators available in cache'])
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ah-main-loop-skips.json`)
+  })
+})
+
+describe('leftovers: trailing exit, peak high, orphan lookup, unknown reason, Capa B failures', () => {
+  it('(ai) QUIRK: the ATR trailing stop is raised and replaced, and in the same pass the price at the stop sells the position', async () => {
+    world.reset({
+      positions: [heldAt(103.9, '0.039')],
+      contexts: [context(HELD, { signalType: 'TREND_PULLBACK', highSinceEntry: 108, trailingActivated: true, trailingStop: 104, trailingStopOrderId: 'trail-HLD' })],
+      indicators: { [HELD]: heldIndicators(-1) },
+    })
+
+    const { record, result } = await runAndRecord()
+
+    expect(result.decisions.filter((d) => d.decision.action === 'SELL').map((d) => d.symbol)).toEqual([HELD])
+    expect(result.decisions[0]?.decision.reasoning).toMatch(/^Trailing stop triggered: price \$103\.90 <= stop \$105\.00 \(high: \$108\.00\)$/)
+    expect(callsOf('cancelOrder')).toEqual([{ orderId: 'trail-HLD' }])
+    expect(callsOf('submitStopLimitOrder')).toHaveLength(1)
+    expect(upserts()).toEqual([{ symbol: HELD, reason: 'TRAILING_STOP', until: NEXT_TRADING_DAY_1 }])
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ai-atr-trailing-stop-exit.json`)
+  })
+
+  it('(aj) ghost-close with a profit and an existing cooldown: COOLDOWN_SKIP, no second cooldown write', async () => {
+    world.reset({
+      contexts: [context(GHOST, { buyPrice: 100 })],
+      sellOrders: ghostSellOrder('sell-gho', '110'),
+      activeCooldowns: [{ symbol: GHOST, exit_reason: 'Z_SCORE_EXIT', cooldown_until: END_OF_TRADING_DAY }],
+    })
+
+    const { record, result } = await runAndRecord()
+
+    expect(result.evaluations).toHaveLength(1)
+    expect(upserts()).toEqual([])
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aj-ghost-close-profit-existing-cooldown.json`)
+  })
+
+  it('(ak) a scripted peak high above the stored high is persisted and drives the profit floor', async () => {
+    world.reset({
+      positions: [heldAt(106, '0.06')],
+      contexts: [context(HELD, { signalType: 'MEAN_REVERSION', highSinceEntry: 102 })],
+      indicators: { [HELD]: heldIndicators(-1) },
+      peakHighs: { [HELD]: 108 },
+    })
+
+    const { record } = await runAndRecord()
+
+    expect(callsOf('db.updatePositionContext').some((e) => (e.patch as Record<string, unknown>).highSinceEntry === 108)).toBe(true)
+    expect(callsOf('submitStopOrder')).toEqual([{ symbol: HELD, qty: 10, stopPrice: 105, side: 'sell', type: 'stop' }])
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ak-peak-high-update.json`)
+  })
+
+  it('(al-1) orphan reconciliation takes the buy timestamp from the latest filled buy order of the symbol', async () => {
+    const buy = (id: string, filledAt: string, symbol = HELD, side = 'buy') =>
+      ({ ...makeOrder(id, symbol, side, 10, 'filled', 10, 100), filled_at: filledAt })
+    world.reset({
+      positions: [heldAt(101, '0.01')],
+      contexts: [],
+      indicators: { [HELD]: heldIndicators(-1) },
+      filledOrders: [
+        buy('buy-old', '2026-10-30T14:00:00.000Z'),
+        buy('buy-new', '2026-11-02T15:00:00.000Z'),
+        buy('buy-other-symbol', '2026-11-03T15:00:00.000Z', 'OTH'),
+        buy('sell-newest', '2026-11-04T10:00:00.000Z', HELD, 'sell'),
+      ],
+    })
+
+    const { record } = await runAndRecord()
+
+    const saved = world.calls.find((c) => c.fn === 'db.saveOpenPositionContext')?.args.ctx as { buyTimestamp: string }
+    expect(saved.buyTimestamp).toBe('2026-11-02T15:00:00.000Z')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/al1-orphan-buy-timestamp-from-orders.json`)
+  })
+
+  it('(al-2) orphan reconciliation without a matching buy order falls back to the cycle timestamp and warns', async () => {
+    world.reset({ positions: [heldAt(101, '0.01')], contexts: [], indicators: { [HELD]: heldIndicators(-1) } })
+
+    const { record } = await runAndRecord()
+
+    const saved = world.calls.find((c) => c.fn === 'db.saveOpenPositionContext')?.args.ctx as { buyTimestamp: string }
+    expect(saved.buyTimestamp).toBe(PINS.nowIso)
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining(`[RECONCILE] ${HELD} no matching filled buy order found`))
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/al2-orphan-buy-timestamp-fallback.json`)
+  })
+
+  it('(am) an UNKNOWN exit reason (forced through the exit-cooldown mock hook) sells but applies no cooldown and warns', async () => {
+    world.reset({
+      positions: [heldAt(110, '0.1')],
+      contexts: [context(HELD, { signalType: 'TREND_PULLBACK', highSinceEntry: 110 })],
+      indicators: { [HELD]: heldIndicators(-1) },
+      forceUnknownExitReason: true,
+    })
+
+    const { record, result } = await runAndRecord()
+
+    expect(result.decisions.filter((d) => d.decision.action === 'SELL').map((d) => d.symbol)).toEqual([HELD])
+    expect(upserts()).toEqual([])
+    expect(console.warn).toHaveBeenCalledWith(`[EXIT_COOLDOWN_UNKNOWN_REASON] symbol=${HELD}`)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/am-unknown-exit-reason-no-cooldown.json`)
+  })
+
+  it('(an-1) Capa B: closePosition fails for a position down 6%: the error is logged and no STOP_LOSS cooldown is written', async () => {
+    world.reset({
+      positions: [heldAt(94, '-0.06')],
+      contexts: [context(HELD, { signalType: 'TREND_PULLBACK', buyPrice: 100 })],
+      indicators: { [HELD]: heldIndicators(-1) },
+      closeErrors: { [HELD]: 'close rejected' },
+    })
+
+    const { record } = await runAndRecord()
+
+    expect(callsOf('closePosition')).toEqual([{ symbol: HELD, side: 'sell', type: 'market_close' }])
+    expect(upserts()).toEqual([])
+    expect(console.error).toHaveBeenCalledWith(`[enforceStopLosses] Failed to close ${HELD}:`, expect.any(Error))
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/an1-stop-loss-close-failed.json`)
+  })
+
+  it('(an-2) Capa B: the first context read fails, so no stop loss is enforced this cycle', async () => {
+    world.reset({
+      positions: [heldAt(94, '-0.06')],
+      contexts: [context(HELD, { signalType: 'TREND_PULLBACK', buyPrice: 100 })],
+      indicators: { [HELD]: heldIndicators(-1) },
+      contextReadFailures: 1,
+    })
+
+    const { record } = await runAndRecord()
+
+    expect(callsOf('closePosition')).toEqual([])
+    expect(upserts()).toEqual([])
+    expect(console.error).toHaveBeenCalledWith('[enforceStopLosses] CRITICAL: Failed to fetch positions — stop losses NOT enforced:', expect.any(Error))
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/an2-stop-loss-context-read-failed.json`)
   })
 })

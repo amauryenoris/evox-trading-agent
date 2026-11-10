@@ -1,0 +1,101 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "SELL",
+            "error": null,
+            "orderExecuted": true,
+            "quantity": 0,
+            "reasoningPrefix": "Trailing stop triggered: price $103.90 <= stop $105.00 (high: $108.00)",
+            "symbol": "HLD"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "db.getAllOpenPositionContexts {}",
+    "getMacroNews {}",
+    "news.layer {\"symbols\":[]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "getBars {\"symbol\":\"HLD\"}",
+    "db.getAllOpenPositionContexts {}",
+    "cancelOrder {\"orderId\":\"trail-HLD\"}",
+    "submitStopLimitOrder {\"limitPrice\":104.47,\"qty\":10,\"side\":\"sell\",\"stopPrice\":105,\"symbol\":\"HLD\",\"type\":\"stop_limit\"}",
+    "db.updatePositionContext {\"patch\":{\"trailingStopOrderId\":\"stoplimit-1\"},\"symbol\":\"HLD\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":108,\"trailingActivated\":true,\"trailingStop\":105},\"symbol\":\"HLD\"}",
+    "closePosition {\"side\":\"sell\",\"symbol\":\"HLD\",\"type\":\"market_close\"}",
+    "getLatestSellOrder {\"symbol\":\"HLD\"}",
+    "learning.evaluateClosedTrade {\"sellPrice\":103.9,\"symbol\":\"HLD\"}",
+    "db.deleteOpenPositionContext {\"symbol\":\"HLD\"}",
+    "cooldown.upsert {\"reason\":\"TRAILING_STOP\",\"symbol\":\"HLD\",\"until\":\"<ts>\"}",
+    "db.getOpenPositionContexts {}",
+    "cooldown.getActive {}",
+    "db.getTodayBuyExecutions {}",
+    "cooldown.getActive {}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "trailingStopOrderId": "stoplimit-1"
+      },
+      "symbol": "HLD"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 108,
+        "trailingActivated": true,
+        "trailingStop": 105
+      },
+      "symbol": "HLD"
+    },
+    {
+      "op": "db.deleteOpenPositionContext",
+      "symbol": "HLD"
+    }
+  ],
+  "decisions": [
+    {
+      "action": "SELL",
+      "error": null,
+      "orderExecuted": true,
+      "quantity": 0,
+      "symbol": "HLD"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": [
+    {
+      "qty": 10,
+      "side": "sell",
+      "symbol": "HLD",
+      "type": "stop_limit"
+    },
+    {
+      "qty": null,
+      "side": "sell",
+      "symbol": "HLD",
+      "type": "market_close"
+    }
+  ]
+}

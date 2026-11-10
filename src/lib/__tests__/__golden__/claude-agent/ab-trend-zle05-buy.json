@@ -1,0 +1,152 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "BUY",
+            "effectiveThreshold": -1.3,
+            "error": null,
+            "newsAdjustment": 0,
+            "orderExecuted": true,
+            "quantity": 70,
+            "reasoningPrefix": "Scripted analysis: indicators consistent with the detected setup.",
+            "requestedQty": 70,
+            "symbol": "AAA"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "db.getAllOpenPositionContexts {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "news.layer {\"symbols\":[\"AAA\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "db.getAllOpenPositionContexts {}",
+    "db.getOpenPositionContexts {}",
+    "cooldown.getActive {}",
+    "db.getTodayBuyExecutions {}",
+    "cooldown.getActive {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":2}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":4}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":5}",
+    "getNewsForSymbols {\"symbols\":[\"AAA\"]}",
+    "claude.create {\"extraParams\":{},\"maxTokens\":1024,\"messageRoles\":[\"user\"],\"model\":\"claude-sonnet-4-6\",\"paramKeys\":[\"max_tokens\",\"messages\",\"model\",\"system\"],\"systemIsString\":true}",
+    "getQuote {\"symbol\":\"AAA\"}",
+    "db.getAllOpenPositionContexts {}",
+    "risk.isNewPositionAllowed {\"symbol\":\"AAA\"}",
+    "submitLimitOrder {\"limitPrice\":100,\"qty\":70,\"side\":\"buy\",\"symbol\":\"AAA\",\"type\":\"limit\"}",
+    "submitStopOrder {\"qty\":70,\"side\":\"sell\",\"stopPrice\":95,\"symbol\":\"AAA\",\"type\":\"stop\"}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [
+    {
+      "buyPrice": 100,
+      "claudeReasoning": "Scripted analysis: indicators consistent with the detected s",
+      "indicators": {
+        "effectiveThreshold": -1.3,
+        "fillAttempts": [
+          {
+            "avgFillPrice": 100,
+            "limitPrice": 100,
+            "orderId": "order-1",
+            "qtyFilled": 70,
+            "qtyRequested": 70,
+            "status": "filled"
+          }
+        ],
+        "newsAdjustment": 0,
+        "requestedQty": 70,
+        "spx_regime": null,
+        "state_fingerprint": {
+          "adx_bucket": "MID",
+          "atr_bucket": "MID",
+          "macd_bucket": "POSITIVE",
+          "market_regime": "TRENDING",
+          "signal_type": "TREND_ZLE05",
+          "spx_regime": null,
+          "z_bucket": "CHOP"
+        },
+        "zle05_population_bucket": "CHOP"
+      },
+      "learningContext": {
+        "asOf": "<ts>",
+        "baseline": {
+          "avgPnlPct": null,
+          "bestPnlPct": null,
+          "medianPnlPct": null,
+          "n": 0,
+          "winRate": null,
+          "wins": 0,
+          "worstPnlPct": null
+        },
+        "bucketsShown": [],
+        "earnings": {
+          "blocked": false,
+          "nextReportDate": null,
+          "session": null,
+          "source": "nasdaq",
+          "status": "OK",
+          "tradingDaysAway": null
+        },
+        "excludedLessonCount": 0,
+        "exploratoryHidden": 0,
+        "filteredLessonCount": 0,
+        "hardRuleLessonsFiltered": 0,
+        "lessonsShown": [],
+        "setup": "TREND_ZLE05",
+        "text": "<81 chars>",
+        "version": 3
+      },
+      "op": "db.saveOpenPositionContext",
+      "patternIdsUsed": [],
+      "quantity": 70,
+      "signalType": "TREND_ZLE05",
+      "stopOrderId": "stop-2",
+      "symbol": "AAA"
+    }
+  ],
+  "decisions": [
+    {
+      "action": "BUY",
+      "error": null,
+      "orderExecuted": true,
+      "quantity": 70,
+      "symbol": "AAA"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": [
+    {
+      "qty": 70,
+      "side": "buy",
+      "symbol": "AAA",
+      "type": "limit"
+    },
+    {
+      "qty": 70,
+      "side": "sell",
+      "symbol": "AAA",
+      "type": "stop"
+    }
+  ]
+}
