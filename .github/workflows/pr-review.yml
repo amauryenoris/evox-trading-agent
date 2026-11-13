@@ -84,6 +84,7 @@ jobs:
             "src/lib/signal-rotation.ts"
             "src/lib/macro-bars-staleness.ts"
             "src/lib/protective-orders.ts"
+            "src/lib/order-execution.ts"
           )
           CHANGED=$(git diff "origin/${{ github.base_ref }}...HEAD" --name-only 2>/dev/null || true)
           FOUND=""

@@ -88,6 +88,7 @@ reference confidence thresholds by regime, use language like "prohibits" or "blo
 | `execution-gates.ts` | Liquidity and trading-hours gate helpers (pure; clock and `Intl` are global) |
 | `signal-rotation.ts` | Legacy signal classifier (RANGING/TRENDING criteria) and position-rotation chooser — used only for the `[SIGNAL]` log and the rotation trigger, NOT the live setup detection |
 | `protective-orders.ts` | Protective stop replacement, profit-floor application and stop-submit retries used by `enforceExitRules` |
+| `order-execution.ts` | Places live BUY orders, polls and force-cancels them, and retries partial fills — an error can leave an unprotected or orphaned position |
 | `run-cycle.ts` | Exit-only runner — calls `enforceExitRules()` without entry analysis |
 | `indicators.ts` | Kalman filter, RSI, MACD, Bollinger Bands, ADX, ATR, EMA calculations |
 | `alpaca.ts` | Alpaca API client — orders, positions, bars, quotes, news |
@@ -228,6 +229,7 @@ Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 1
 | `src/lib/execution-gates.ts` | Entry gates (liquidity, trading hours) — decide whether a BUY may be placed |
 | `src/lib/signal-rotation.ts` | Rotation trigger and rotation candidate choice — can close a live position |
 | `src/lib/protective-orders.ts` | Places, replaces and cancels live stop orders — an error can leave a position unprotected |
+| `src/lib/order-execution.ts` | Places live BUY orders, polls and force-cancels them, and retries partial fills — an error can leave an unprotected or orphaned position |
 | `.env` / `.env.local` | Secrets and broker config |
 | `vercel.json` | Deployment config |
 | Any DB migration | Supabase schema changes |
