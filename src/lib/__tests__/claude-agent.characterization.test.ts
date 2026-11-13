@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { pump, installHarness, world } from './support/claude-agent/harness'
 import { buildRecord, claudeCallAt, promptAt } from './support/claude-agent/record'
 import { context, emaReclaimIndicators, kalman, makeIndicators, mrIndicators, position, quote, trend3DayIndicators, trendPullbackIndicators, trendZle05Indicators } from './support/claude-agent/builders'
-import { PINS, claudeJson, makeOrder } from './support/claude-agent/world'
+import { PINS, claudeJson, defaultAccount, makeOrder } from './support/claude-agent/world'
 import { runAgentCycle } from '../claude-agent'
 import type { AlpacaOrder } from '../types'
 
@@ -957,5 +957,312 @@ describe('leftovers: trailing exit, peak high, orphan lookup, unknown reason, Ca
     expect(upserts()).toEqual([])
     expect(console.error).toHaveBeenCalledWith('[enforceStopLosses] CRITICAL: Failed to fetch positions — stop losses NOT enforced:', expect.any(Error))
     await expect(record).toMatchFileSnapshot(`${GOLDEN}/an2-stop-loss-context-read-failed.json`)
+  })
+})
+
+const HOLD_NO_ORDER = () => {
+  expect(world.calls.some((c) => c.fn === 'submitLimitOrder')).toBe(false)
+  expect(world.calls.some((c) => c.fn === 'submitStopOrder')).toBe(false)
+}
+
+function claudeCalls(): number {
+  return world.calls.filter((c) => c.fn === 'claude.create').length
+}
+
+const mrCandidate = (overrides: Parameters<typeof world.reset>[0] = {}) => ({
+  watchlist: [SYMBOL], indicators: { [SYMBOL]: mrIndicators() }, quotes: { [SYMBOL]: quote() }, claude: () => claudeJson(0.32),
+  ...overrides,
+})
+
+const HELD_SLOTS = ['P1', 'P2', 'P3', 'P4']
+
+const rankingWorld = (overrides: Parameters<typeof world.reset>[0] = {}) => ({
+  watchlist: [SYMBOL], positions: HELD_SLOTS.map((s) => position(s)), contexts: HELD_SLOTS.map((s) => context(s)),
+  indicators: { ...Object.fromEntries(HELD_SLOTS.map((s) => [s, heldIndicators(-1)])), [SYMBOL]: mrIndicators() },
+  quotes: { [SYMBOL]: quote() }, claude: () => claudeJson(0.32),
+  ...overrides,
+})
+
+const rankedIndicators = (symbolZ: number, otherZ: number) => ({
+  ...Object.fromEntries(HELD_SLOTS.map((s) => [s, heldIndicators(-1)])),
+  [SYMBOL]: mrIndicators({ kalman: kalman(symbolZ, 'MEAN_REVERSION_LONG') }),
+  BBB: mrIndicators({ kalman: kalman(otherZ, 'MEAN_REVERSION_LONG') }),
+})
+
+describe('entry gates in normal mode', () => {
+  it('(ao) liquidity gate: previous-day volume 999,999 is held after the Claude call and no order is sent', async () => {
+    world.reset(mrCandidate({ indicators: { [SYMBOL]: mrIndicators({ prevDayVolume: 999_999 }) } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Liquidity gate: prev day volume 999,999 < 1,000,000')
+    expect(holdsOf(result, SYMBOL)[0]?.decision.action).toBe('HOLD')
+    expect(claudeCalls()).toBe(1)
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ao-liquidity-gate-below-minimum.json`)
+  })
+
+  it('(ao-b) liquidity gate: previous-day volume exactly 1,000,000 passes and the buy is sent', async () => {
+    world.reset(mrCandidate({ indicators: { [SYMBOL]: mrIndicators({ prevDayVolume: 1_000_000 }) } }))
+
+    const { result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: undefined, orderExecuted: true, decision: { action: 'BUY', quantity: 100 } })
+    expect(callsOf('submitLimitOrder')).toHaveLength(1)
+    expect(callsOf('submitStopOrder')).toHaveLength(1)
+  })
+
+  it('(ap-1) spread gate: no quote is held with Spread gate: no quote available', async () => {
+    world.reset(mrCandidate({ quotes: { [SYMBOL]: null } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Spread gate: no quote available')
+    expect(claudeCalls()).toBe(1)
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ap1-no-quote-gate.json`)
+  })
+
+  it('(ap-2) spread gate: a stale quote is held with Spread gate: stale quote', async () => {
+    world.reset(mrCandidate({ quotes: { [SYMBOL]: quote({ fresh: false }) } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Spread gate: stale quote')
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ap2-stale-quote-gate.json`)
+  })
+
+  it('(ap-3) spread gate: a spread exactly at MAX_SPREAD_BPS (100) passes and the buy is sent', async () => {
+    world.reset(mrCandidate({ quotes: { [SYMBOL]: quote({ spreadBps: PINS.maxSpreadBps }) } }))
+
+    const { result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: undefined, orderExecuted: true, decision: { action: 'BUY', quantity: 100 } })
+    expect(console.log).toHaveBeenCalledWith(`[ORDER] ${SYMBOL} limit IOC BUY @ $50 id: order-1 status: filled filled: 100/100 spread: 100bps`)
+  })
+
+  it('(aq-1) trading-hours gate: 9:44 ET is held with the outside-window error and no order is sent', async () => {
+    world.reset(mrCandidate())
+    vi.setSystemTime(new Date('2026-11-04T14:44:00.000Z'))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Trading hours gate: outside 9:45am–3:30pm ET window')
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aq1-trading-hours-before-open.json`)
+  })
+
+  it('(aq-2) trading-hours gate: 15:31 ET is held with the outside-window error and no order is sent', async () => {
+    world.reset(mrCandidate())
+    vi.setSystemTime(new Date('2026-11-04T20:31:00.000Z'))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Trading hours gate: outside 9:45am–3:30pm ET window')
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aq2-trading-hours-after-close.json`)
+  })
+
+  it('(aq-3) trading-hours gate: exactly 9:45 ET passes and the buy is sent', async () => {
+    world.reset(mrCandidate())
+    vi.setSystemTime(new Date('2026-11-04T14:45:00.000Z'))
+
+    const { result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: undefined, orderExecuted: true, decision: { action: 'BUY' } })
+  })
+
+  it('(aq-4) trading-hours gate: exactly 15:30 ET passes and the buy is sent', async () => {
+    world.reset(mrCandidate())
+    vi.setSystemTime(new Date('2026-11-04T20:30:00.000Z'))
+
+    const { result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: undefined, orderExecuted: true, decision: { action: 'BUY' } })
+  })
+
+  it('(ar) early max-buys gate: with 5 buys already today the candidate is held with Gate: max buys per day (5/5) and the near miss is recorded twice', async () => {
+    world.reset(mrCandidate({ buysToday: 5 }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Gate: max buys per day (5/5)')
+    expect(claudeCalls()).toBe(1)
+    expect(world.calls.filter((c) => c.fn === 'watchlist.detectNearMisses')).toHaveLength(2)
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ar-max-buys-per-day-gate.json`)
+  })
+
+  it('(av) market closed with an open position: the candidate gets the queued-not-executed error and no order, but Claude is still called', async () => {
+    world.reset(mrCandidate({
+      marketOpen: false, positions: [position(HELD)], contexts: [context(HELD)],
+      indicators: { [HELD]: heldIndicators(-1), [SYMBOL]: mrIndicators() },
+    }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Market closed — order queued but not executed')
+    expect(claudeCalls()).toBe(1)
+    HOLD_NO_ORDER()
+    expect(console.log).toHaveBeenCalledWith('[AGENT] Market closed — running exit evaluation only')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/av-market-closed-with-position.json`)
+  })
+})
+
+describe('setup variants that end in HOLD or no order', () => {
+  it('(as) TREND_ZGT125: a trend-aligned candidate with z-score 1.5 is excluded before Claude is called', async () => {
+    world.reset(mrCandidate({ indicators: { [SYMBOL]: trendPullbackIndicators({ kalman: kalman(1.5) }) } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('TREND_ZGT125: excluded — zScore > 1.25')
+    expect(console.log).toHaveBeenCalledWith(`[SETUP-GATE] ${SYMBOL}: TREND_ZGT125 — trend aligned but zScore 1.500 > 1.25, excluded (price above fair value)`)
+    NO_CLAUDE_AND_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/as-trend-zgt125-excluded.json`)
+  })
+
+  it('(at) TREND_PULLBACK_3DAY with the price above SMA5 is held with the SMA5 reason before Claude is called', async () => {
+    world.reset(mrCandidate({ indicators: { [SYMBOL]: trend3DayIndicators({ sma5: 99 }) } }))
+
+    const { record, result } = await runAndRecord()
+
+    const reason = 'TREND_3DAY_ABOVE_SMA5: price $100.00 >= SMA5 $99.00 (3DAY exit would fire immediately)'
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe(reason)
+    expect(console.log).toHaveBeenCalledWith(`[SETUP-GATE] ${SYMBOL}: ${reason}`)
+    NO_CLAUDE_AND_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/at-3day-above-sma5-blocked.json`)
+  })
+
+  it('(au) insufficient buying power: the sizing gives 0 shares, the candidate is held and no order is sent', async () => {
+    world.reset(mrCandidate({ account: { ...defaultAccount(), buying_power: '10' } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Insufficient buying power for position')
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining(`[BUY SIZING] ${SYMBOL}: baseShares=0`))
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/au-insufficient-buying-power.json`)
+  })
+})
+
+describe('auto-entry through the normal-mode path (current behavior)', () => {
+  it('(aw-1) QUIRK: an auto-entry symbol with no setup logs that it bypasses the setup gate and is then skipped: no Claude call, no order and no decision entry', async () => {
+    world.reset(mrCandidate({ autoEntry: [SYMBOL], indicators: { [SYMBOL]: makeIndicators() } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(console.log).toHaveBeenCalledWith(`[WATCHLIST] ${SYMBOL}: auto-entry bypassing setup gate (monitored from near-miss watchlist)`)
+    expect(console.warn).toHaveBeenCalledWith(`[LEARNING] ${SYMBOL}: reached learning context without a setup — skipping`)
+    expect(holdsOf(result, SYMBOL)).toEqual([])
+    NO_CLAUDE_AND_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aw1-auto-entry-without-setup.json`)
+  })
+
+  it('(aw-2) auto-entry keeps the entry gates: a setup symbol with previous-day volume 999,999 is held by the liquidity gate', async () => {
+    world.reset(mrCandidate({ autoEntry: [SYMBOL], indicators: { [SYMBOL]: mrIndicators({ prevDayVolume: 999_999 }) } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Liquidity gate: prev day volume 999,999 < 1,000,000')
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aw2-auto-entry-liquidity-gate.json`)
+  })
+
+  it('(aw-3) auto-entry does not skip the TREND_ZGT125 exclusion: the bypass log is followed by the exclusion HOLD', async () => {
+    world.reset(mrCandidate({ autoEntry: [SYMBOL], indicators: { [SYMBOL]: trendPullbackIndicators({ kalman: kalman(1.5) }) } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(console.log).toHaveBeenCalledWith(`[WATCHLIST] ${SYMBOL}: auto-entry bypassing setup gate (monitored from near-miss watchlist)`)
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('TREND_ZGT125: excluded — zScore > 1.25')
+    NO_CLAUDE_AND_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/aw3-auto-entry-trend-zgt125.json`)
+  })
+})
+
+describe('ranking mode (one free slot) execution paths', () => {
+  it('(ax-1) the ranking winner has no quote at ranking time: the error text of the thrown gate is kept on the entry and no order is sent', async () => {
+    world.reset(rankingWorld({ quotes: { [SYMBOL]: null }, quoteSequence: { [SYMBOL]: [quote()] } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: 'Error: Spread gate: no quote at ranking execution', orderExecuted: false })
+    expect(callsOf('getQuote').filter((c) => c.symbol === SYMBOL)).toHaveLength(2)
+    HOLD_NO_ORDER()
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax1-ranking-no-quote.json`)
+  })
+
+  it('(ax-2) the ranking winner gets a zero fill: IOC_NOT_FILLED on the entry, no stop and no saved context', async () => {
+    world.reset(rankingWorld({ fill: { [SYMBOL]: 'zero' } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: 'IOC_NOT_FILLED: limit buy canceled, 0 shares filled at $50', orderExecuted: false })
+    expect(callsOf('submitStopOrder')).toEqual([])
+    expect(callsOf('db.saveOpenPositionContext')).toEqual([])
+    expect(console.log).toHaveBeenCalledWith(`[ORDER] ${SYMBOL} IOC not filled — 0 shares filled at $50`)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax2-ranking-zero-fill.json`)
+  })
+
+  it('(ax-3) the ranking winner is partially filled: IOC_PARTIAL_FILL is logged and the stop and the saved quantity cover only the filled shares', async () => {
+    world.reset(rankingWorld({ fillPlan: { [SYMBOL]: [{ unfilled: 2 }] } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(console.log).toHaveBeenCalledWith(`[ORDER] ${SYMBOL} IOC_PARTIAL_FILL: requested 100, filled 98`)
+    expect(callsOf('submitStopOrder')).toEqual([{ symbol: SYMBOL, qty: 98, stopPrice: 47.5, side: 'sell', type: 'stop' }])
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ orderExecuted: true, error: undefined, decision: { action: 'BUY', quantity: 98 } })
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax3-ranking-partial-fill.json`)
+  })
+
+  it('(ax-4) QUIRK: the ranking winner fills but its GTC stop fails twice; STOP_SUBMIT_FAILED is the only trace on an executed entry and the context is still saved', async () => {
+    world.reset(rankingWorld({ stopErrors: { [SYMBOL]: 'stop rejected' } }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitStopOrder')).toHaveLength(2)
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ error: 'STOP_SUBMIT_FAILED: stop rejected', orderExecuted: true, decision: { action: 'BUY', quantity: 100 } })
+    expect(callsOf('db.saveOpenPositionContext')).toHaveLength(1)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax4-ranking-stop-submit-failed.json`)
+  })
+
+  it('(ax-5) two candidates without the z <= -2 edge: the lower z-score wins, is bought and the other is logged as outranked', async () => {
+    world.reset(rankingWorld({
+      watchlist: [SYMBOL, 'BBB'], indicators: rankedIndicators(-1.5, -1.6), quotes: { [SYMBOL]: quote(), BBB: quote() },
+    }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitLimitOrder').map((o) => o.symbol)).toEqual(['BBB'])
+    expect(holdsOf(result, 'BBB')[0]).toMatchObject({ orderExecuted: true, decision: { action: 'BUY', quantity: 100 } })
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Outranked by BBB (z=-1.600 vs z=-1.500)')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax5-ranking-different-z.json`)
+  })
+
+  it('(ax-6) two candidates with the same z-score: the higher confidence wins, is bought and the other is logged as outranked', async () => {
+    world.reset(rankingWorld({
+      watchlist: [SYMBOL, 'BBB'], indicators: rankedIndicators(-1.5, -1.5), quotes: { [SYMBOL]: quote(), BBB: quote() },
+      claude: (prompt: string) => claudeJson(prompt.includes('ANALYSIS REQUEST: BBB') ? 0.7 : 0.5),
+    }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitLimitOrder').map((o) => ({ symbol: o.symbol, qty: o.qty }))).toEqual([{ symbol: 'BBB', qty: 140 }])
+    expect(holdsOf(result, SYMBOL)[0]?.error).toBe('Outranked by BBB (z=-1.500 vs z=-1.500)')
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax6-ranking-same-z-confidence.json`)
+  })
+
+  it('(ax-7) current behavior: the quote re-fetched at ranking time is not checked for staleness or spread, so a stale 500 bps quote still gets the order at its ask', async () => {
+    world.reset(rankingWorld({
+      quoteSequence: { [SYMBOL]: [quote(), quote({ fresh: false, spreadBps: 500, bid: 49.7, ask: 50.2 })] },
+    }))
+
+    const { record, result } = await runAndRecord()
+
+    expect(callsOf('submitLimitOrder')).toEqual([{ symbol: SYMBOL, qty: 100, side: 'buy', limitPrice: 50.2, type: 'limit' }])
+    expect(holdsOf(result, SYMBOL)[0]).toMatchObject({ orderExecuted: true, error: undefined, decision: { action: 'BUY', quantity: 100 } })
+    expect(console.log).toHaveBeenCalledWith(`[ORDER] ${SYMBOL} limit IOC BUY @ $50.2 id: order-1 status: filled filled: 100/100 spread: 500bps`)
+    await expect(record).toMatchFileSnapshot(`${GOLDEN}/ax7-ranking-requote-not-regated.json`)
   })
 })

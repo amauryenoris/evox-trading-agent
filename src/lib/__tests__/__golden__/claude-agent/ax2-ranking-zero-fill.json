@@ -1,0 +1,174 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0100, zScore=-1.000, signalType=TREND_PULLBACK, d",
+        "symbol": "P1"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0100, zScore=-1.000, signalType=TREND_PULLBACK, d",
+        "symbol": "P2"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0100, zScore=-1.000, signalType=TREND_PULLBACK, d",
+        "symbol": "P3"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "action": "HOLD",
+        "error": "exit_rules_check",
+        "orderExecuted": false,
+        "quantity": 0,
+        "reasoningPrefix": "EXIT-RULES: no exit triggered — pnlPct=0.0100, zScore=-1.000, signalType=TREND_PULLBACK, d",
+        "symbol": "P4"
+      },
+      "fn": "db.insertAgentLogEntry"
+    },
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "HOLD",
+            "effectiveThreshold": -1.3,
+            "error": "IOC_NOT_FILLED: limit buy canceled, 0 shares filled at $50",
+            "mrRiskFactors": [
+              "RANGING"
+            ],
+            "newsAdjustment": 0,
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "Scripted analysis: indicators consistent with the detected setup.",
+            "requestedQty": 100,
+            "symbol": "AAA"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "db.getAllOpenPositionContexts {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "news.layer {\"symbols\":[\"AAA\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "getBars {\"symbol\":\"P1\"}",
+    "getBars {\"symbol\":\"P2\"}",
+    "getBars {\"symbol\":\"P3\"}",
+    "getBars {\"symbol\":\"P4\"}",
+    "db.getAllOpenPositionContexts {}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":101,\"trailingActivated\":false,\"trailingStop\":null},\"symbol\":\"P1\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":101,\"trailingActivated\":false,\"trailingStop\":null},\"symbol\":\"P2\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":101,\"trailingActivated\":false,\"trailingStop\":null},\"symbol\":\"P3\"}",
+    "db.updatePositionContext {\"patch\":{\"highSinceEntry\":101,\"trailingActivated\":false,\"trailingStop\":null},\"symbol\":\"P4\"}",
+    "db.getOpenPositionContexts {}",
+    "cooldown.getActive {}",
+    "db.getTodayBuyExecutions {}",
+    "cooldown.getActive {}",
+    "watchlist.detectNearMisses {\"opts\":null,\"symbol\":\"AAA\"}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":2}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":4}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":5}",
+    "getNewsForSymbols {\"symbols\":[\"AAA\"]}",
+    "claude.create {\"extraParams\":{},\"maxTokens\":1024,\"messageRoles\":[\"user\"],\"model\":\"claude-sonnet-4-6\",\"paramKeys\":[\"max_tokens\",\"messages\",\"model\",\"system\"],\"systemIsString\":true}",
+    "getQuote {\"symbol\":\"AAA\"}",
+    "db.getAllOpenPositionContexts {}",
+    "risk.isNewPositionAllowed {\"symbol\":\"AAA\"}",
+    "cooldown.cleanExpired {}",
+    "getQuote {\"symbol\":\"AAA\"}",
+    "submitLimitOrder {\"limitPrice\":50,\"qty\":100,\"side\":\"buy\",\"symbol\":\"AAA\",\"type\":\"limit\"}",
+    "getOrder {\"orderId\":\"order-1\"}"
+  ],
+  "contexts": [
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 101,
+        "trailingActivated": false,
+        "trailingStop": null
+      },
+      "symbol": "P1"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 101,
+        "trailingActivated": false,
+        "trailingStop": null
+      },
+      "symbol": "P2"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 101,
+        "trailingActivated": false,
+        "trailingStop": null
+      },
+      "symbol": "P3"
+    },
+    {
+      "op": "db.updatePositionContext",
+      "patch": {
+        "highSinceEntry": 101,
+        "trailingActivated": false,
+        "trailingStop": null
+      },
+      "symbol": "P4"
+    }
+  ],
+  "decisions": [
+    {
+      "action": "HOLD",
+      "error": "IOC_NOT_FILLED: limit buy canceled, 0 shares filled at $50",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "AAA"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": [
+    {
+      "qty": 100,
+      "side": "buy",
+      "symbol": "AAA",
+      "type": "limit"
+    }
+  ]
+}

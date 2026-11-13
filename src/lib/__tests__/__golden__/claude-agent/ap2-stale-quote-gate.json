@@ -1,0 +1,72 @@
+{
+  "agentLog": [
+    {
+      "args": {
+        "entries": [
+          {
+            "action": "HOLD",
+            "effectiveThreshold": -1.3,
+            "error": "Spread gate: stale quote",
+            "mrRiskFactors": [
+              "RANGING"
+            ],
+            "newsAdjustment": 0,
+            "orderExecuted": false,
+            "quantity": 0,
+            "reasoningPrefix": "Scripted analysis: indicators consistent with the detected setup.",
+            "symbol": "AAA"
+          }
+        ]
+      },
+      "fn": "agentLog.append"
+    }
+  ],
+  "callLog": [
+    "getAccount {}",
+    "getPositions {}",
+    "getClock {}",
+    "getBars {\"symbol\":\"SPY\"}",
+    "getBars {\"symbol\":\"GDX\"}",
+    "getBars {\"symbol\":\"XLE\"}",
+    "getBars {\"symbol\":\"XLK\"}",
+    "getBars {\"symbol\":\"VIXY\"}",
+    "getMarketMovers {}",
+    "selector.select {}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "db.getAllOpenPositionContexts {}",
+    "getMacroNews {}",
+    "getBars {\"symbol\":\"AAA\"}",
+    "news.layer {\"symbols\":[\"AAA\"]}",
+    "watchlist.update {}",
+    "watchlist.checkAutoEntry {}",
+    "db.getAllOpenPositionContexts {}",
+    "db.getOpenPositionContexts {}",
+    "cooldown.getActive {}",
+    "db.getTodayBuyExecutions {}",
+    "cooldown.getActive {}",
+    "watchlist.detectNearMisses {\"opts\":null,\"symbol\":\"AAA\"}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":1}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":2}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":3}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":4}",
+    "getNextTradingDay {\"from\":\"2026-11-04\",\"n\":5}",
+    "getNewsForSymbols {\"symbols\":[\"AAA\"]}",
+    "claude.create {\"extraParams\":{},\"maxTokens\":1024,\"messageRoles\":[\"user\"],\"model\":\"claude-sonnet-4-6\",\"paramKeys\":[\"max_tokens\",\"messages\",\"model\",\"system\"],\"systemIsString\":true}",
+    "getQuote {\"symbol\":\"AAA\"}",
+    "cooldown.cleanExpired {}"
+  ],
+  "contexts": [],
+  "decisions": [
+    {
+      "action": "HOLD",
+      "error": "Spread gate: stale quote",
+      "orderExecuted": false,
+      "quantity": 0,
+      "symbol": "AAA"
+    }
+  ],
+  "evaluations": 0,
+  "marketOpen": true,
+  "orders": []
+}
