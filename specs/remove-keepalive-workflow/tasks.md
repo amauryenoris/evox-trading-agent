@@ -29,7 +29,7 @@
 
 ## Post-Implementation
 
-- [ ] Run /review remove-keepalive-workflow to verify the implementation matches the spec
+- [x] Run /review remove-keepalive-workflow to verify the implementation matches the spec
 - [ ] Confirm Protected Zone files unchanged
 - [ ] Nothing committed or pushed; commit is a separate request from Amaury
 

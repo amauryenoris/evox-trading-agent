@@ -6,6 +6,8 @@
 
 Re-verified at review time: `git status` and `git diff --name-only` (only the deleted workflow, `CLAUDE.md`, `SDD.md`), `sha256sum -c` of the 8 remaining workflows against the pre-change snapshot (0 mismatches), YAML parse of all 8 (0 failures), a search for "keepalive" in live files (0 matches), `needs:`/`workflow_run` (none), and the exact doc diffs. Nothing is committed. No workflow was run. The pre-change snapshot was taken by the implementation run, so "byte-identical" rests on that snapshot, not on a comparison with `HEAD` (the git diff also shows no change to those files).
 
+An independent second pass (/review, 2026-11-17) re-read the four spec files and checked the result against commit `7ab3994` (`chore: remove the Keepalive workflow`) and the current tree: the commit touches only `keepalive.yml` (deleted, 19 lines), `CLAUDE.md` (4 lines removed), `SDD.md` (row replaced by the 60-day note, text identical to FR-11) and this spec folder; `keepalive.yml` is absent; 8 workflows remain and all 8 parse with `js-yaml`; no `needs:` or `workflow_run` in any workflow; 0 matches for "keepalive" outside `specs/` (excluding `node_modules`, `.next`, `.git`, `.tmp`, `package-lock.json`); `.tmp/remove-keepalive-report.md` exists. It matched the spec and found no CRITICAL, HIGH or MEDIUM issue. Differences from the first pass, none affecting the decision: the change is now committed (FR-23 and C-04 held at implementation time); the "All workflows run `npm audit`" statement noted in L-2 is already corrected in `SDD.md` §15 by a later change; "byte-identical" (L-3) was not re-proven against a snapshot, only against the commit contents.
+
 ---
 
 ## Requirements Verification
