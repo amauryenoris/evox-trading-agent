@@ -90,6 +90,7 @@ reference confidence thresholds by regime, use language like "prohibits" or "blo
 | `protective-orders.ts` | Protective stop replacement, profit-floor application and stop-submit retries used by `enforceExitRules` |
 | `order-execution.ts` | Places live BUY orders, polls and force-cancels them, and retries partial fills — an error can leave an unprotected or orphaned position |
 | `claude-call.ts` | Retries the per-symbol Claude analysis call on 429/529 — a change alters how long and how often a symbol analysis waits |
+| `stop-loss-enforcement.ts` | Closes positions and writes the stop-loss cooldown when price falls through the -5% stop — an error can leave a losing position open or re-enterable |
 | `run-cycle.ts` | Exit-only runner — calls `enforceExitRules()` without entry analysis |
 | `indicators.ts` | Kalman filter, RSI, MACD, Bollinger Bands, ADX, ATR, EMA calculations |
 | `alpaca.ts` | Alpaca API client — orders, positions, bars, quotes, news |
@@ -232,6 +233,7 @@ Execution gates (in order): liquidity (≥ 1M prev day volume) → spread (≤ 1
 | `src/lib/protective-orders.ts` | Places, replaces and cancels live stop orders — an error can leave a position unprotected |
 | `src/lib/order-execution.ts` | Places live BUY orders, polls and force-cancels them, and retries partial fills — an error can leave an unprotected or orphaned position |
 | `src/lib/claude-call.ts` | Retries the per-symbol Claude analysis call on 429/529 — a change alters how long and how often a symbol analysis waits |
+| `src/lib/stop-loss-enforcement.ts` | Closes positions and writes the stop-loss cooldown when price falls through the -5% stop — an error can leave a losing position open or re-enterable |
 | `.env` / `.env.local` | Secrets and broker config |
 | `vercel.json` | Deployment config |
 | Any DB migration | Supabase schema changes |

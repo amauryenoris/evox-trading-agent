@@ -26,6 +26,7 @@ import { generateSignalType, evaluateRotation } from './signal-rotation'
 import { applyProfitFloor, replaceProtectiveOrder, resolveEntryPrice, submitStopWithRetry } from './protective-orders'
 import { executeIocWithRemainderRetry, resolveIocFinalState, IOC_NOT_FILLED, STOP_SUBMIT_FAILED, IOC_LATE_FILL } from './order-execution'
 import { callClaudeWithRetry } from './claude-call'
+import { enforceStopLosses } from './stop-loss-enforcement'
 import { appendAgentLogEntries } from './agent-log'
 import {
   detectClosedPositions,
@@ -442,47 +443,6 @@ export async function enforceExitRules(
 async function checkOvertradingLimit(): Promise<boolean> {
   const count = await getTodayBuyExecutions()
   return count < 5
-}
-
-// ============================================================
-// STOP LOSS ENFORCEMENT (Capa B — manual safety check each cycle)
-// ============================================================
-
-async function enforceStopLosses(positions: AlpacaPosition[], nextTradingDay3: Date | null): Promise<void> {
-  const stopLossPct = parseFloat(process.env.STOP_LOSS_PCT ?? '0.05')
-  let openContexts
-  try {
-    openContexts = await getAllOpenPositionContexts()
-  } catch (err) {
-    console.error('[enforceStopLosses] CRITICAL: Failed to fetch positions — stop losses NOT enforced:', err)
-    return
-  }
-
-  for (const ctx of openContexts) {
-    const alpacaPos = positions.find((p) => p.symbol === ctx.symbol)
-    if (!alpacaPos) continue // already closed
-
-    const currentPrice = parseFloat(alpacaPos.current_price)
-    const stopPrice = ctx.buyPrice * (1 - stopLossPct)
-
-    if (currentPrice <= stopPrice) {
-      console.warn(`[enforceStopLosses] Stop triggered: ${ctx.symbol} @ $${currentPrice.toFixed(2)} <= stop $${stopPrice.toFixed(2)}`)
-      try {
-        await closePosition(ctx.symbol)
-        if (nextTradingDay3 !== null) {
-          await upsertSymbolCooldown(ctx.symbol, 'STOP_LOSS', nextTradingDay3)
-          console.log(
-            `[COOLDOWN_PERSIST] symbol=${ctx.symbol}` +
-            ` reason=STOP_LOSS` +
-            ` until=${nextTradingDay3.toISOString()}` +
-            ` source=enforceStopLosses`
-          )
-        }
-      } catch (err) {
-        console.error(`[enforceStopLosses] Failed to close ${ctx.symbol}:`, err)
-      }
-    }
-  }
 }
 
 const COOLDOWN_UNKNOWN_EXIT_REASON = false

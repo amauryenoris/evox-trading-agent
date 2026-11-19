@@ -86,6 +86,7 @@ jobs:
             "src/lib/protective-orders.ts"
             "src/lib/order-execution.ts"
             "src/lib/claude-call.ts"
+            "src/lib/stop-loss-enforcement.ts"
           )
           CHANGED=$(git diff "origin/${{ github.base_ref }}...HEAD" --name-only 2>/dev/null || true)
           FOUND=""
